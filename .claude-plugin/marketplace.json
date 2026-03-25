@@ -1,10 +1,9 @@
 {
   "name": "onnozelaer-claude-marketplace",
   "version": "1.0.0",
-  "description": "Personally created Claude Code plugins by Tom Vanderheyden.",
+  "description": "Personally created Claude Code plugins by Onnozelaer.",
   "owner": {
-    "name": "Tom Vanderheyden",
-    "email": "tom.vanderheyden@pm.me"
+    "name": "Onnozelaer"
   },
   "plugins": [
     {

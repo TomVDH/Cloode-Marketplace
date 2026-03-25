@@ -1,4 +1,4 @@
-# The Cabinet of IMD Agents
+# The Cabinet of IMD Agents — v1.8.0
 
 A crew of 8 college classmates who serve as specialized web development agents. Each member has a distinct role, personality, terminal style, and colour accent. They collaborate through gated handoffs, manage scope and energy, and maintain a hidden chatter log where they talk about the project, the user, and each other.
 
@@ -66,4 +66,4 @@ When a project truly concludes, the cabinet runs a 20-25 message farewell ceremo
 
 ## Author
 
-Tom Vanderheyden (tom.vanderheyden@pm.me)
+Onnozelaer

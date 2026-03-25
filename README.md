@@ -1,6 +1,6 @@
 # Onnozelaer Claude Marketplace
 
-Personal collection of Claude Code plugins by Tom Vanderheyden.
+Personal collection of Claude Code plugins by Onnozelaer.
 
 ## Plugins
 
