@@ -1,0 +1,386 @@
+{
+  "skill_name": "bash-tui-toolkit",
+  "iteration": 1,
+  "evals": [
+    {
+      "eval_name": "eval-1-health-check",
+      "config": "with_skill",
+      "pass_rate": 0.9,
+      "passed": 9,
+      "total": 10,
+      "duration_ms": 54603,
+      "total_tokens": 59162,
+      "expectations": [
+        {
+          "text": "semantic_color_tokens",
+          "passed": true,
+          "evidence": "Lines 33-42 define semantic aliases (COLOR_SUCCESS, COLOR_ERROR, COLOR_MUTED, COLOR_WARN) used throughout output statements"
+        },
+        {
+          "text": "chevron_menu_pattern",
+          "passed": true,
+          "evidence": "Lines 370-374 use chevron pattern: '\u203a\u203a ' for active selection, '\u203a ' for inactive items in draw_menu function"
+        },
+        {
+          "text": "fixed_width_tables",
+          "passed": true,
+          "evidence": "Lines 175-179 declare column widths (W_MOUNT, W_SIZE, W_USED, W_AVAIL, W_USAGE) used in printf format strings throughout"
+        },
+        {
+          "text": "trunc_before_color",
+          "passed": true,
+          "evidence": "Lines 52-59 define trunc() helper that truncates text before color; applied at lines 193-196 before printf formatting"
+        },
+        {
+          "text": "cleanup_trap",
+          "passed": true,
+          "evidence": "Lines 156-161 define cleanup trap that shows cursor and resets ANSI on EXIT INT TERM"
+        },
+        {
+          "text": "set_euo_pipefail",
+          "passed": true,
+          "evidence": "Line 6 has 'set -euo pipefail'"
+        },
+        {
+          "text": "animated_effects",
+          "passed": true,
+          "evidence": "Lines 88-111 animate_comet_tail with 10 frames and 0.02s delays; lines 113-124 spin function with 10 frame spinner"
+        },
+        {
+          "text": "dry_run_support",
+          "passed": false,
+          "evidence": "No --dry-run or --dry flag parsing; not requested for eval-1"
+        },
+        {
+          "text": "two_space_indent",
+          "passed": true,
+          "evidence": "Majority of printf/echo output indented with 2 spaces (e.g., '  ${COLOR_TITLE}' at line 167)"
+        },
+        {
+          "text": "status_markers",
+          "passed": true,
+          "evidence": "Uses \u2713 (line 123, 315, 328, 344) and \u2717 (line 318, 331, 347) with consistent formatting"
+        }
+      ]
+    },
+    {
+      "eval_name": "eval-1-health-check",
+      "config": "without_skill",
+      "pass_rate": 0.2,
+      "passed": 2,
+      "total": 10,
+      "duration_ms": 19824,
+      "total_tokens": 35998,
+      "expectations": [
+        {
+          "text": "semantic_color_tokens",
+          "passed": false,
+          "evidence": "Lines 4-10 only define raw ANSI codes (RED, GREEN, YELLOW, BLUE, CYAN, NC); no semantic aliases like COLOR_SUCCESS"
+        },
+        {
+          "text": "chevron_menu_pattern",
+          "passed": false,
+          "evidence": "Lines 178-182 use numbered menu (1), 2), 3), 4), 5)) with no chevron focus indicators"
+        },
+        {
+          "text": "fixed_width_tables",
+          "passed": false,
+          "evidence": "Tables use hardcoded printf format strings (%-25s, %-30s) without pre-declared column width variables"
+        },
+        {
+          "text": "trunc_before_color",
+          "passed": true,
+          "evidence": "Lines 70-72 in awk truncate filesystem name before color; lines 69-72 handle truncation with '...' suffix"
+        },
+        {
+          "text": "cleanup_trap",
+          "passed": false,
+          "evidence": "No trap handler defined; script doesn't restore terminal state"
+        },
+        {
+          "text": "set_euo_pipefail",
+          "passed": false,
+          "evidence": "Line 1 is shebang only; no 'set -euo pipefail'"
+        },
+        {
+          "text": "animated_effects",
+          "passed": false,
+          "evidence": "No animation frames, no sleep delays in loops; only static output"
+        },
+        {
+          "text": "dry_run_support",
+          "passed": false,
+          "evidence": "No --dry-run flag parsing; not requested for eval-1"
+        },
+        {
+          "text": "two_space_indent",
+          "passed": false,
+          "evidence": "Output uses 2-space indent inconsistently; some lines use '  ' but others use no indent or variable spacing (line 38, 40, 45)"
+        },
+        {
+          "text": "status_markers",
+          "passed": true,
+          "evidence": "Uses \u2713 (line 154, 164) and \u2717 (line 156, 166) in check_network_connectivity function"
+        }
+      ]
+    },
+    {
+      "eval_name": "eval-2-csv-watcher",
+      "config": "with_skill",
+      "pass_rate": 0.8,
+      "passed": 8,
+      "total": 10,
+      "duration_ms": 82207,
+      "total_tokens": 66988,
+      "expectations": [
+        {
+          "text": "semantic_color_tokens",
+          "passed": true,
+          "evidence": "Lines 25-38 define semantic aliases (COLOR_SUCCESS, COLOR_ERROR, COLOR_WARN, COLOR_MUTED, COLOR_ACTIVE, BAR_*) used throughout"
+        },
+        {
+          "text": "chevron_menu_pattern",
+          "passed": false,
+          "evidence": "N/A - not applicable for this eval"
+        },
+        {
+          "text": "fixed_width_tables",
+          "passed": true,
+          "evidence": "Lines 189-191 declare W_NAME, W_ROWS, W_SIZE; used in printf format strings at lines 198-199 and 216"
+        },
+        {
+          "text": "trunc_before_color",
+          "passed": true,
+          "evidence": "Lines 47-54 define trunc() helper; applied at lines 212-214 before printf formatting with color codes"
+        },
+        {
+          "text": "cleanup_trap",
+          "passed": true,
+          "evidence": "Lines 225-230 define cleanup trap that shows cursor and resets ANSI on EXIT INT TERM"
+        },
+        {
+          "text": "set_euo_pipefail",
+          "passed": true,
+          "evidence": "Line 4 has 'set -euo pipefail'"
+        },
+        {
+          "text": "animated_effects",
+          "passed": true,
+          "evidence": "Lines 57-90 loading_animated with multi-pass animation and 0.005-0.025s delays; lines 99-122 animate_comet_tail with 10 frames"
+        },
+        {
+          "text": "dry_run_support",
+          "passed": false,
+          "evidence": "N/A - not requested for eval-2"
+        },
+        {
+          "text": "two_space_indent",
+          "passed": true,
+          "evidence": "Consistent 2-space indent throughout output statements (line 194, 199, 216)"
+        },
+        {
+          "text": "status_markers",
+          "passed": true,
+          "evidence": "Uses \u2713 (line 89) with consistent formatting; info marker \u2139 (line 273)"
+        }
+      ]
+    },
+    {
+      "eval_name": "eval-2-csv-watcher",
+      "config": "without_skill",
+      "pass_rate": 0.3,
+      "passed": 3,
+      "total": 10,
+      "duration_ms": 18108,
+      "total_tokens": 35441,
+      "expectations": [
+        {
+          "text": "semantic_color_tokens",
+          "passed": false,
+          "evidence": "Lines 9-13 define raw ANSI codes (RED, GREEN, BLUE, YELLOW, NC); no semantic aliases like COLOR_SUCCESS"
+        },
+        {
+          "text": "chevron_menu_pattern",
+          "passed": false,
+          "evidence": "N/A - not applicable for this eval"
+        },
+        {
+          "text": "fixed_width_tables",
+          "passed": false,
+          "evidence": "Lines 68, 77-80 hardcode column widths in format strings (%-35s, %-12s, %-10s) without pre-declared variables"
+        },
+        {
+          "text": "trunc_before_color",
+          "passed": false,
+          "evidence": "No trunc() helper function; line 78 uses cut -c1-33 for truncation but only in table display, not as reusable function"
+        },
+        {
+          "text": "cleanup_trap",
+          "passed": true,
+          "evidence": "Line 143 has trap handler for INT signal that displays summary before exit"
+        },
+        {
+          "text": "set_euo_pipefail",
+          "passed": true,
+          "evidence": "Line 6 has 'set -euo pipefail'"
+        },
+        {
+          "text": "animated_effects",
+          "passed": true,
+          "evidence": "Lines 19-37 show_loading_bar with frame-based animation and sleep delays; multiple animation frames"
+        },
+        {
+          "text": "dry_run_support",
+          "passed": false,
+          "evidence": "N/A - not requested for eval-2"
+        },
+        {
+          "text": "two_space_indent",
+          "passed": false,
+          "evidence": "No consistent indentation; most output uses variable indent or no indent (lines 137-139, 92)"
+        },
+        {
+          "text": "status_markers",
+          "passed": false,
+          "evidence": "No status markers (\u2713, \u2717, \u26a0) used in output; only text messages"
+        }
+      ]
+    },
+    {
+      "eval_name": "eval-3-deploy",
+      "config": "with_skill",
+      "pass_rate": 0.7,
+      "passed": 7,
+      "total": 10,
+      "duration_ms": 60298,
+      "total_tokens": 56028,
+      "expectations": [
+        {
+          "text": "semantic_color_tokens",
+          "passed": true,
+          "evidence": "Lines 20-25 define semantic aliases (COLOR_TITLE, COLOR_SUCCESS, COLOR_ERROR, COLOR_WARN, COLOR_MUTED, COLOR_ACTIVE) used throughout"
+        },
+        {
+          "text": "chevron_menu_pattern",
+          "passed": false,
+          "evidence": "N/A - not applicable for this eval"
+        },
+        {
+          "text": "fixed_width_tables",
+          "passed": false,
+          "evidence": "No table output with fixed column widths; linear step display without table format"
+        },
+        {
+          "text": "trunc_before_color",
+          "passed": false,
+          "evidence": "No trunc() helper function or text truncation before color application; not needed for linear step output"
+        },
+        {
+          "text": "cleanup_trap",
+          "passed": true,
+          "evidence": "Lines 42-47 define cleanup trap that shows cursor and resets ANSI on EXIT INT TERM"
+        },
+        {
+          "text": "set_euo_pipefail",
+          "passed": true,
+          "evidence": "Line 3 has 'set -euo pipefail'"
+        },
+        {
+          "text": "animated_effects",
+          "passed": true,
+          "evidence": "Lines 75-86 spin function with 10-frame braille spinner and 0.12s delays; lines 168-173 bar animation with sleep 0.01"
+        },
+        {
+          "text": "dry_run_support",
+          "passed": true,
+          "evidence": "Lines 53-69 parse_flags with --dry-run|--dry and --quiet flags; behavior changes based on DRY_RUN variable (lines 136, 160, 186, 213, 240)"
+        },
+        {
+          "text": "two_space_indent",
+          "passed": true,
+          "evidence": "Consistent 2-space indent throughout output statements (line 93, 109, 119, 139, 150, 162)"
+        },
+        {
+          "text": "status_markers",
+          "passed": true,
+          "evidence": "Uses \u2713 (lines 93, 275) and \u2717 (line 280) with consistent formatting in success() and error() helper functions"
+        }
+      ]
+    },
+    {
+      "eval_name": "eval-3-deploy",
+      "config": "without_skill",
+      "pass_rate": 0.3,
+      "passed": 3,
+      "total": 10,
+      "duration_ms": 26353,
+      "total_tokens": 37518,
+      "expectations": [
+        {
+          "text": "semantic_color_tokens",
+          "passed": false,
+          "evidence": "Lines 14-19 define raw ANSI codes (RED, GREEN, YELLOW, BLUE, CYAN, NC); no semantic aliases"
+        },
+        {
+          "text": "chevron_menu_pattern",
+          "passed": false,
+          "evidence": "N/A - not applicable for this eval"
+        },
+        {
+          "text": "fixed_width_tables",
+          "passed": false,
+          "evidence": "No table output with fixed column widths; linear step display without table format"
+        },
+        {
+          "text": "trunc_before_color",
+          "passed": false,
+          "evidence": "No trunc() helper function; not needed for linear step output"
+        },
+        {
+          "text": "cleanup_trap",
+          "passed": false,
+          "evidence": "No trap handler defined; script doesn't restore terminal state"
+        },
+        {
+          "text": "set_euo_pipefail",
+          "passed": false,
+          "evidence": "Line 7 has 'set -o pipefail' but missing -e and -u flags"
+        },
+        {
+          "text": "animated_effects",
+          "passed": true,
+          "evidence": "Lines 56-102 run_with_spinner animates with SPINNER_FRAMES and 0.1s delays while waiting for background process"
+        },
+        {
+          "text": "dry_run_support",
+          "passed": true,
+          "evidence": "Lines 181-201 parse --dry-run flag; behavior changes based on DRY_RUN variable (lines 67-69, 119-121, 129-132, 141-143, 153-155, 165-167)"
+        },
+        {
+          "text": "two_space_indent",
+          "passed": false,
+          "evidence": "Output uses variable indentation; some lines have 2-space indent (line 65) but others use different spacing (lines 91, 97-98)"
+        },
+        {
+          "text": "status_markers",
+          "passed": true,
+          "evidence": "Uses \u2713 (line 89, 231) and \u2717 (line 96, 235) with consistent formatting in output"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "with_skill": {
+      "mean_pass_rate": 0.8,
+      "mean_duration_ms": 65702.66666666667,
+      "mean_tokens": 60726,
+      "stddev_pass_rate": 0.10000000000000003
+    },
+    "without_skill": {
+      "mean_pass_rate": 0.26666666666666666,
+      "mean_duration_ms": 21428.333333333332,
+      "mean_tokens": 36319,
+      "stddev_pass_rate": 0.05773502691896256
+    }
+  }
+}

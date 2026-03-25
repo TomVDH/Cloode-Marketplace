@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Plugin build/cache artefacts
+**/.mcpb-cache/
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Archives and build artefacts
+*.zip
+*.plugin
+*.skill
+zijGCurO

@@ -1,0 +1,55 @@
+{
+  "run_id": "eval-3-deploy-with_skill",
+  "expectations": [
+    {
+      "text": "semantic_color_tokens",
+      "passed": true,
+      "evidence": "Lines 20-25 define semantic aliases (COLOR_TITLE, COLOR_SUCCESS, COLOR_ERROR, COLOR_WARN, COLOR_MUTED, COLOR_ACTIVE) used throughout"
+    },
+    {
+      "text": "chevron_menu_pattern",
+      "passed": false,
+      "evidence": "N/A - not applicable for this eval"
+    },
+    {
+      "text": "fixed_width_tables",
+      "passed": false,
+      "evidence": "No table output with fixed column widths; linear step display without table format"
+    },
+    {
+      "text": "trunc_before_color",
+      "passed": false,
+      "evidence": "No trunc() helper function or text truncation before color application; not needed for linear step output"
+    },
+    {
+      "text": "cleanup_trap",
+      "passed": true,
+      "evidence": "Lines 42-47 define cleanup trap that shows cursor and resets ANSI on EXIT INT TERM"
+    },
+    {
+      "text": "set_euo_pipefail",
+      "passed": true,
+      "evidence": "Line 3 has 'set -euo pipefail'"
+    },
+    {
+      "text": "animated_effects",
+      "passed": true,
+      "evidence": "Lines 75-86 spin function with 10-frame braille spinner and 0.12s delays; lines 168-173 bar animation with sleep 0.01"
+    },
+    {
+      "text": "dry_run_support",
+      "passed": true,
+      "evidence": "Lines 53-69 parse_flags with --dry-run|--dry and --quiet flags; behavior changes based on DRY_RUN variable (lines 136, 160, 186, 213, 240)"
+    },
+    {
+      "text": "two_space_indent",
+      "passed": true,
+      "evidence": "Consistent 2-space indent throughout output statements (line 93, 109, 119, 139, 150, 162)"
+    },
+    {
+      "text": "status_markers",
+      "passed": true,
+      "evidence": "Uses ✓ (lines 93, 275) and ✗ (line 280) with consistent formatting in success() and error() helper functions"
+    }
+  ]
+}

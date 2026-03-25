@@ -1,0 +1,55 @@
+{
+  "run_id": "eval-2-csv-watcher-with_skill",
+  "expectations": [
+    {
+      "text": "semantic_color_tokens",
+      "passed": true,
+      "evidence": "Lines 25-38 define semantic aliases (COLOR_SUCCESS, COLOR_ERROR, COLOR_WARN, COLOR_MUTED, COLOR_ACTIVE, BAR_*) used throughout"
+    },
+    {
+      "text": "chevron_menu_pattern",
+      "passed": false,
+      "evidence": "N/A - not applicable for this eval"
+    },
+    {
+      "text": "fixed_width_tables",
+      "passed": true,
+      "evidence": "Lines 189-191 declare W_NAME, W_ROWS, W_SIZE; used in printf format strings at lines 198-199 and 216"
+    },
+    {
+      "text": "trunc_before_color",
+      "passed": true,
+      "evidence": "Lines 47-54 define trunc() helper; applied at lines 212-214 before printf formatting with color codes"
+    },
+    {
+      "text": "cleanup_trap",
+      "passed": true,
+      "evidence": "Lines 225-230 define cleanup trap that shows cursor and resets ANSI on EXIT INT TERM"
+    },
+    {
+      "text": "set_euo_pipefail",
+      "passed": true,
+      "evidence": "Line 4 has 'set -euo pipefail'"
+    },
+    {
+      "text": "animated_effects",
+      "passed": true,
+      "evidence": "Lines 57-90 loading_animated with multi-pass animation and 0.005-0.025s delays; lines 99-122 animate_comet_tail with 10 frames"
+    },
+    {
+      "text": "dry_run_support",
+      "passed": false,
+      "evidence": "N/A - not requested for eval-2"
+    },
+    {
+      "text": "two_space_indent",
+      "passed": true,
+      "evidence": "Consistent 2-space indent throughout output statements (line 194, 199, 216)"
+    },
+    {
+      "text": "status_markers",
+      "passed": true,
+      "evidence": "Uses ✓ (line 89) with consistent formatting; info marker ℹ (line 273)"
+    }
+  ]
+}

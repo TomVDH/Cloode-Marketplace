@@ -1,0 +1,19 @@
+{
+  "run_id": "eval-2-with_skill_v2",
+  "expectations": [
+    {"text": "semantic_color_tokens", "passed": true, "evidence": "Lines 21-26 define COLOR_SUCCESS, COLOR_ERROR, COLOR_WARN, COLOR_MUTED, COLOR_ACTIVE, COLOR_TITLE. Used throughout (lines 137, 150, 191, 223)."},
+    {"text": "chevron_menu_pattern", "passed": true, "evidence": "N/A"},
+    {"text": "fixed_width_tables", "passed": true, "evidence": "Lines 165-167 pre-declare W_FILENAME, W_ROWS, W_SIZE. Used in printf at lines 170-171 and 191."},
+    {"text": "trunc_helper", "passed": true, "evidence": "Lines 34-41 define trunc() function. Used at lines 187-189 for filename, rows, and size cells."},
+    {"text": "cleanup_trap", "passed": true, "evidence": "Lines 5-6 define cleanup() with show_cur and printf RESET, trap set for EXIT INT TERM."},
+    {"text": "set_euo_pipefail", "passed": true, "evidence": "Line 2: 'set -euo pipefail'."},
+    {"text": "animated_effects", "passed": true, "evidence": "Lines 50-73 animate_comet_tail() with frame-based animation and sleep delays. Used at line 141."},
+    {"text": "dry_run_support", "passed": true, "evidence": "N/A"},
+    {"text": "two_space_indent", "passed": true, "evidence": "All output consistently uses 2-space indent: lines 137, 150, 162, 191, 223, 233 all start with '  '."},
+    {"text": "status_markers", "passed": true, "evidence": "Uses ✓ (lines 150, 191 implied) and ✗ (line 223) with ℹ (line 137). Format like '${COLOR_SUCCESS}✓${RESET}'."},
+    {"text": "no_echo_e", "passed": true, "evidence": "All colored output uses printf (lines 97, 107, 137, 150, 162, 191, 223). No 'echo -e' found."},
+    {"text": "no_numbered_menu", "passed": true, "evidence": "N/A"},
+    {"text": "section_headers", "passed": true, "evidence": "Line 162 uses '━━ Summary ━━' pattern: 'printf \"  ${COLOR_TITLE}${BOLD}━━ Summary ━━${RESET}\\n\\n\"'."},
+    {"text": "env_bash_shebang", "passed": true, "evidence": "Line 1: '#!/usr/bin/env bash'."}
+  ]
+}

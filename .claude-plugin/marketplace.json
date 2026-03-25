@@ -1,0 +1,17 @@
+{
+  "name": "onnozelaer-claude-marketplace",
+  "version": "1.0.0",
+  "description": "Personally created Claude Code plugins by Tom Vanderheyden.",
+  "owner": {
+    "name": "Tom Vanderheyden",
+    "email": "tom.vanderheyden@pm.me"
+  },
+  "plugins": [
+    {
+      "name": "cabinet-of-imd",
+      "version": "1.4.0",
+      "source": "./cabinet-of-imd",
+      "description": "The Cabinet of IMD Agents — a crew of college classmates who serve as specialized web development agents, each with distinct expertise, personality, and terminal style. Gated handoffs, scope management, tiered QA, code conventions, and a hidden chatter log."
+    }
+  ]
+}

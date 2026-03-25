@@ -1,0 +1,23 @@
+{
+  "skill_name": "bash-tui-toolkit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need a bash script that's a simple server health checker. It should have a menu where I can pick between checking disk usage, memory usage, or network connectivity (ping google.com). Show results in a nice table format. Make it look polished in the terminal — colors, a banner, the works. Save it as health-check.sh.",
+      "expected_output": "A single bash script with: ANSI color palette with semantic tokens, ASCII art splash banner, arrow-key navigable menu using the chevron pattern, fixed-width table output for results, status markers (checkmark/x), proper cleanup trap, and a main loop that returns to menu after each check.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Write me a bash script that monitors a directory for new CSV files and when it finds one, shows an animated loading bar while it counts the rows, then displays a summary table with filename, row count, and file size. It should keep watching until I hit Ctrl+C. Call it csv-watcher.sh.",
+      "expected_output": "A bash script with: color palette, a breathing spinner for the idle watch state, animated loading bar (comet tail style) when processing a file, fixed-width table for the summary, proper Ctrl+C cleanup that restores cursor, and clear status output with checkmarks.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Create a bash deployment script called deploy.sh that walks through 5 steps: check git status, run tests, build, upload artifacts, and update config. Each step should show a spinner while running, then a green checkmark or red X. Add a --dry-run flag that shows what would happen without doing anything. Include a splash banner at the top.",
+      "expected_output": "A bash script with: set -euo pipefail, color palette with semantic tokens, flag parsing (--dry-run, --help), splash banner, sequential step execution with braille spinner per step, green/red status markers, dry-run mode that prints what would happen, proper error trap, and help text.",
+      "files": []
+    }
+  ]
+}
