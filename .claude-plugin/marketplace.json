@@ -9,9 +9,15 @@
   "plugins": [
     {
       "name": "cabinet-of-imd",
-      "version": "1.4.0",
+      "version": "1.8.0",
       "source": "./cabinet-of-imd",
       "description": "The Cabinet of IMD Agents — a crew of college classmates who serve as specialized web development agents, each with distinct expertise, personality, and terminal style. Gated handoffs, scope management, tiered QA, code conventions, and a hidden chatter log."
+    },
+    {
+      "name": "bash-tui-toolkit",
+      "version": "1.0.0",
+      "source": "./bash-tui-toolkit",
+      "description": "Skill for generating polished Bash TUI scripts with consistent component patterns, colour palettes, and architecture."
     }
   ]
 }
