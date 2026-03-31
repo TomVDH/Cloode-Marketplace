@@ -28,3 +28,4 @@ The Cabinet of IMD Agents' persistent knowledge base. Project briefs, architectu
 - [[crew/preferences|Preferences]]
 - [[crew/lessons-learned|Lessons Learned]]
 - [[projects/_index|All Projects]]
+- [[crew/easter-eggs|🥚]]

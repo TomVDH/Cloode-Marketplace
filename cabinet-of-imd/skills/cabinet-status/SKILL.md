@@ -7,7 +7,7 @@ description: >
   writes it back to re-anchor state. Use when Tom asks "where are we",
   "status", "what's the state", or similar mid-session check-ins.
   Also serves as a recalibration tool after context compaction.
-version: 1.9.0
+version: 2.0.0
 ---
 
 # Cabinet Status

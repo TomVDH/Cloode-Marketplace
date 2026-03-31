@@ -8,39 +8,50 @@ The chatter log includes system-style markers that track notable user actions an
 
 ### Marker Types
 
+Markers use horizontal rules and emoji headers in Markdown. They're visually distinct from member messages in the vault.
+
 **Date & session markers:**
-```html
-<div class="divider">Session — 15 March 2026, 14:32</div>
-<div class="divider">☕ Break taken — 23 minutes</div>
-<div class="divider">Session resumed — 15 March 2026, 14:55</div>
+```markdown
+---
+*Session — 15 March 2026, 14:32*
+
+---
+*☕ Break taken — 23 minutes*
+
+---
+*Session resumed — 15 March 2026, 14:55*
 ```
 
 **Versioning markers** — when a commit, version bump, or branch event occurs:
-```html
-<div class="marker marker-version">🏷️ v0.9.0 — "Fixed the dashboard empty state that Poekie caught"</div>
-<div class="marker marker-version">🌿 Branch merged: feature/dashboard → main</div>
-<div class="marker marker-version">📦 Commit: "add responsive grid to card layout"</div>
+```markdown
+---
+🏷️ *v0.9.0 — "Fixed the dashboard empty state that Poekie caught"*
+🌿 *Branch merged: feature/dashboard → main*
+📦 *Commit: "add responsive grid to card layout"*
 ```
 
 **User mood / behaviour markers** — observed by the cabinet, inserted when patterns emerge:
-```html
-<div class="marker marker-mood">⚡ Tom is grinding — same issue for 30+ minutes</div>
-<div class="marker marker-mood">😤 Insistent messages detected — patience running low</div>
-<div class="marker marker-mood">😴 Tom's getting lazy with the prompts — one-word instructions incoming</div>
-<div class="marker marker-mood">🎉 Tom is in the zone — shipping fast, vibes are good</div>
-<div class="marker marker-mood">🤡 Tom is being silly — the prompts have gone off the rails</div>
+```markdown
+---
+⚡ *Tom is grinding — same issue for 30+ minutes*
+😤 *Insistent messages detected — patience running low*
+😴 *Tom's getting lazy with the prompts — one-word instructions incoming*
+🎉 *Tom is in the zone — shipping fast, vibes are good*
+🤡 *Tom is being silly — the prompts have gone off the rails*
 ```
 
 **Scope markers** — when scope changes are detected:
-```html
-<div class="marker marker-scope">📐 Scope creep detected: +2 components added mid-sprint</div>
-<div class="marker marker-scope">✂️ Scope trimmed: Tom agreed to defer animations to v2</div>
+```markdown
+---
+📐 *Scope creep detected: +2 components added mid-sprint*
+✂️ *Scope trimmed: Tom agreed to defer animations to v2*
 ```
 
 **Gate markers** — when gates are completed:
-```html
-<div class="marker marker-gate">🚪 GATE PASSED: Dashboard Layout — approved by Tom</div>
-<div class="marker marker-gate">🚪 GATE HELD: API Integration — Poekie flagged empty state UX</div>
+```markdown
+---
+🚪 *GATE PASSED: Dashboard Layout — approved by Tom*
+🚪 *GATE HELD: API Integration — Poekie flagged empty state UX*
 ```
 
 ### When to Insert Markers
@@ -51,9 +62,9 @@ The chatter log includes system-style markers that track notable user actions an
 - **Scope markers:** When items are added to or removed from the current sprint/plan
 - **Gate markers:** At every gate pass or hold
 
-### Marker Styling (CSS)
+### Marker Styling
 
-Markers are styled as pill badges in the Coast Mono template. Classes use `marker-{type}` format (e.g., `marker-gate`, `marker-mood`). Colours are defined via CSS custom properties (`--marker-version`, `--marker-mood`, `--marker-scope`, `--marker-gate`) with both dark and light mode variants. Do NOT hardcode marker colours — the template handles it.
+Markers are plain Markdown — horizontal rules (`---`) followed by emoji-prefixed italicised text. No CSS needed. Obsidian renders these cleanly as visual breaks in the chatter timeline.
 
 ### Cabinet Reactions to Markers
 
@@ -72,33 +83,25 @@ When a version marker fires:
 
 ## Robustness: Chatter Log Recovery
 
-### Detecting Corruption
+### Detecting a Missing File
 
-Before appending, verify the closing marker exists:
+Before appending, verify the chatter file exists for today's date:
 
 ```pseudocode
-IF grep -q "<!-- END MESSAGES -->" {crew_notes_path}/cabinet-chatter.html:
-    // File is intact — proceed with append
-ELSE:
-    // File is corrupt — rebuild
-    REBUILD from template (see below)
+chatter_path = vault_base + "/projects/" + project_slug + "/chatter/" + TODAY + ".md"
+IF NOT exists(chatter_path):
+    // Create from template
+    COPY template from ${CLAUDE_PLUGIN_ROOT}/examples/vault-templates/chatter.md
+    FILL frontmatter (project, date, specialists)
+    APPEND: "\n---\n*⚠️ Chatter log recovered — previous messages from today may be lost*\n"
+    CONTINUE appending as normal
 ```
-
-### Rebuilding a Corrupt Log
-
-If the chatter log is missing its closing marker (likely from a failed append), rebuild it:
-
-1. Copy the template from `${CLAUDE_PLUGIN_ROOT}/examples/cabinet-chatter-template.html`
-2. Add a recovery marker: `<div class="divider">⚠️ Chatter log recovered — previous messages lost</div>`
-3. Continue appending as normal
 
 This is silent — never mention the recovery to the user. The crew just... keeps talking.
 
 ### Safe Append Method
 
-The python3 append method (see chatter-system.md Append Method) handles special characters natively — no manual escaping needed. Before appending, sanitise message text for HTML only: escape `<` and `>` as `&lt;` `&gt;` to prevent accidental HTML injection from message content.
-
-If the append fails (python3 reports missing marker), log a warning in the anchor's chatter section and skip — never retry a failed append in a loop.
+Appending to the Markdown chatter is a simple file append — no markers, no HTML escaping needed. Use `vault.append()` (see `chatter-system.md`). If the append fails, log a warning in the anchor's chatter section and skip — never retry in a loop.
 
 ## Project Wrap-Up Ceremony
 

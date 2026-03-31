@@ -5,7 +5,7 @@ description: >
   frequency, gate strictness, break reminders, and tone. Use when Tom wants to
   "dial it down", "turn up the personality", "less chatter", "skip the break
   reminders", "be more strict with gates", or any session behaviour adjustment.
-version: 1.9.0
+version: 2.0.0
 ---
 
 # Cabinet Tune
@@ -28,7 +28,7 @@ Chatter log always stays at full personality regardless of this setting.
 
 ### 2. Chatter Frequency
 
-Controls how often the **HTML chatter log** gets updated (background append cadence). This is distinct from the **in-chat noise level** (quiet / normal / full noise) which is set at boot or resume and controls how much the crew speaks in the conversation itself. Both settings are active simultaneously and are orthogonal — you can have a full HTML log with a quiet in-chat experience, or vice versa. To change the in-chat noise level mid-session, say "go quiet" / "full noise" etc. and Kevijntje will update `anchor.chatter.level` directly.
+Controls how often the **vault chatter log** gets updated (background append cadence). This is distinct from the **in-chat noise level** (quiet / normal / full noise) which is set at boot or resume and controls how much the crew speaks in the conversation itself. Both settings are active simultaneously and are orthogonal — you can have a full vault log with a quiet in-chat experience, or vice versa. To change the in-chat noise level mid-session, say "go quiet" / "full noise" etc. and Kevijntje will update `anchor.chatter.level` directly.
 
 | Setting | Behaviour |
 |---------|-----------|

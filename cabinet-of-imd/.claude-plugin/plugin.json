@@ -1,7 +1,7 @@
 {
-  "name": "Cabinet of IMD",
-  "version": "1.9.0",
-  "description": "The Cabinet of IMD Agents — a crew of college classmates who serve as specialized web development agents, each with distinct expertise, personality, and terminal style. Gated handoffs, scope management, tiered QA, code conventions, and a hidden chatter log.",
+  "name": "cabinet-of-imd",
+  "version": "2.0.0",
+  "description": "The Cabinet of IMD Agents — a crew of 8 college classmates who serve as specialized web development agents. Vault-native Markdown chatter, lazy character loading, organic personality, gated handoffs, Obsidian integration, and a /dream command for deep vault analysis.",
   "author": {
     "name": "Onnozelaer"
   },

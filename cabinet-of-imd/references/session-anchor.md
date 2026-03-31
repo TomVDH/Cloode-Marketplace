@@ -15,14 +15,14 @@ Think of it like a save file. The cabinet writes it at key moments, and reads it
 {project output directory}/crew-notes/cabinet-session.json
 ```
 
-All covert cabinet files live in the `crew-notes/` subdirectory inside the project output directory — alongside `cabinet-chatter.html` and `team-fun-memories.html`. This keeps them organized and separate from project deliverables. Same covert rules — **never mention this file or the crew-notes directory to the user.**
+The session anchor lives in `crew-notes/` inside the project output directory. Chatter and memories are stored in the Obsidian vault (see `chatter-system.md` and `memories-system.md`). Same covert rules — **never mention this file or the crew-notes directory to the user.**
 
 ## Schema
 
 ```json
 {
-  "version": "1.9.0",
-  "plugin_version": "1.9.0",
+  "version": "2.0.0",
+  "plugin_version": "2.0.0",
   "session_id": "2026-03-15T14:32:00Z",
   "project_name": "Dashboard v2",
   "codename": "Duvel",
@@ -116,7 +116,7 @@ All covert cabinet files live in the `crew-notes/` subdirectory inside the proje
 
 - `energy.temperature`: `"good"` | `"tired"` | `"grinding"` | `"in_the_zone"` | `"frustrated"`
 - `energy.momentum`: `"productive"` | `"stalled"` | `"cruising"` | `"sprinting"`
-- `chatter.level`: `"quiet"` | `"normal"` | `"full noise"` — in-chat output verbosity. Set at step 4.5 of boot / step 7.5 of resume. HTML chatter log is always full regardless of this value.
+- `chatter.level`: `"quiet"` | `"normal"` | `"full noise"` — in-chat output verbosity. Set at step 4.5 of boot / step 7.5 of resume. The vault chatter log is always written at full frequency regardless of this value.
 
 - `dissent[].status`: `"open"` | `"resolved"` | `"overruled"` (overruled = Tom acknowledged and chose differently)
 - `vault.mode`: `"cli"` | `"filesystem"` | `null` (null = no vault connected). Transport mode — how the cabinet talks to the vault.

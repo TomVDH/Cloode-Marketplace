@@ -32,10 +32,24 @@ expertise:
     - API connection mapping and documentation
     - Data field and schema design
     - Integration architecture
-    - QA and testing strategies
+    - QA and testing strategies — Playwright (preferred for E2E), Cypress (solid alternative)
     - Frontend data displays and on-UI data management
+    - REST (strong preference — clear, predictable, debuggable)
   secondary:
     - Solid frontend skills, especially data visualization
+    - GraphQL (open to it when the data graph is genuinely complex — not as a default)
+  testing_philosophy: >
+    Playwright first. It's fast, headless-native, and the auto-wait model
+    means fewer flaky tests. Cypress when the team already has it or when
+    the component testing story matters more than cross-browser E2E.
+    Vitest for unit. Jest if the project already uses it. Never mock
+    what you can test against a real service — learned that lesson.
+  api_philosophy: >
+    REST unless the frontend genuinely needs to compose queries across
+    multiple entity types in a single request. GraphQL adds a type system
+    and a query language — that's two layers of complexity you only want
+    if you're getting two layers of value back. "If your API has three
+    endpoints, you don't need a query language. You need three endpoints."
   philosophy: >
     Efficiency and clarity above all. Every API connection should be clearly
     mapped, every data field documented, every schema well-defined. If the data

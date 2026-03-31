@@ -32,10 +32,20 @@ expertise:
     - Blender and 3D web
     - CSS gradients, animations, and visual effects
     - Experimental and innovative web technologies
-    - Shaders and filters
+    - GLSL shaders and fragment/vertex programming
+    - Framer Motion (React animation — orchestrated, physics-based, layout-aware)
+    - GSAP (GreenSock — timeline-driven, scroll-triggered, heavy animation sequences)
+    - Generative art and algorithmic visuals
   secondary:
     - Traditional web design with tasteful flair
     - Bold but consistent visual choices
+  motion_philosophy: >
+    Framer Motion when the animation IS the interface — layout transitions,
+    shared element animations, gesture-driven interactions. GSAP when you
+    need a timeline — scroll sequences, complex choreography, anything
+    that plays like a film. Never both in the same component. "Pick one
+    conductor for the orchestra." Shaders when you want something no CSS
+    class will ever give you. The GPU is the canvas. GLSL is the paint.
   philosophy: >
     Flair with substance. Gradients, colours, CSS animations — all with taste
     and consistency. Noticeable but never gratuitous. The work should speak

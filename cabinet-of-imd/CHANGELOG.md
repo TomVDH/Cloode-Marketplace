@@ -2,6 +2,42 @@
 
 All notable changes to the Cabinet of IMD plugin.
 
+## [2.0.0] — 2026-03-28
+
+### Added
+- **`/dream` skill** — new Chroniclers-driven vault analysis. Bostrol hunts contradictions, Jonasty flags stale info, Kevijntje maps dangling scopes. Triggers after 5+ sessions, 14+ day gaps, or 3+ scope drifts. Output is in-chat only (ephemeral). Token-budgeted.
+- **Vault chatter system** (`chatter-system.md`) — complete replacement of HTML chatter with Markdown files in `projects/{slug}/chatter/{YYYY-MM-DD}.md`. Organic event-driven frequency, horizontal-rule markers with emoji headers, simple `vault.append()` method. No HTML, no CSS, no python3 append scripts.
+- **Vault templates** — new templates for `chatter.md`, `tasks.md`, `easter-eggs.md`, `preferences.md`, `lessons-learned.md`, `memories.md` in `examples/vault-templates/`.
+- **"All Hands" pairing** (`dynamics.md`) — full 8-member war-room mode. Kevijntje facilitates, full-spectrum colour header.
+- **Codebase scaffold** (`vault-bridge/SKILL.md`) — `create-project` now also creates `assets/`, `concepts/`, `previews/` directories in the codebase root with human-style READMEs.
+- **Easter egg registry** — secret vault file at `crew/easter-eggs.md` with rules: rare during work, carte blanche at wrap-up.
+
+### Changed
+- **Chatter: HTML → Markdown** — all chatter output moved from `crew-notes/cabinet-chatter.html` to vault Markdown. Token cost reduced significantly. Wrap-up ceremony kept as HTML/Canvas/Three.js (sole exception).
+- **Memories: HTML → Markdown** — `team-fun-memories.html` replaced by `crew/memories.md` in the vault. Plain Markdown entries with emoji type badges.
+- **Lazy character loading** (`cabinet/SKILL.md`) — only Kevijntje and Poekie full YAMLs at boot. Other 6 load frontmatter only (~30 lines), full YAML on demand when activated.
+- **Gates: big milestones only** (`gate-protocol.md`) — eliminated minor gates. Single pre-gate QA tier. Pseudocode decision tree for when to gate vs skip.
+- **Bostrol's executive authority** (`protocols.md`) — Bostrol now writes documentation silently without approval gates. Chroniclers role shifted to vault auditing (`/dream`) and wrap-up sweeps.
+- **Tone scaling reframed** (`protocols.md`) — vibes not percentages. "Let people be people." Metered personality identified as the worst outcome.
+- **Character tech stacks** — Thieuke +Astro, Sakke flexible Node/Python/Go, Jonasty Playwright/REST, Pitr modern headless CMS, Henske +Framer Motion/GSAP/GLSL.
+- **Vault-bridge bumped to 3.0.0** — 3-tier storage model (session state, persistent vault, codebase structure). `create` now scaffolds `crew/memories.md` and `crew/easter-eggs.md`.
+- **Cabinet-resume bumped to 2.0.0** — all HTML references replaced with vault Markdown.
+- **Session-anchor schema** — version bumped to 2.0.0. Removed HTML file references from file location docs.
+- **Chatter-extended markers** — all HTML `<div>` markers replaced with Markdown horizontal rules + emoji italics. Recovery protocol rewritten for Markdown.
+- **Memories-system** — entire HTML implementation section replaced with vault-native Markdown structure.
+- **Cabinet-tune** — chatter frequency description updated from "HTML chatter log" to "vault chatter log".
+- **README** — chatter description updated, `/dream` skill added to skills table.
+
+### Removed
+- HTML chatter generation (all files)
+- HTML scrapbook / memories generation
+- HTML-specific recovery protocols (closing marker checks, python3 append)
+- Minor gate ceremonies
+- CSS marker styling references
+- Cadence-based chatter triggering (replaced by organic event-driven frequency)
+
+---
+
 ## [1.9.0] — 2026-03-26
 
 ### Added

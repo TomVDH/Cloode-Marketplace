@@ -2,7 +2,22 @@
 
 ## Overview
 
-The Cabinet uses gated handoffs to ensure quality and completeness at each stage of a project. No work proceeds to the next stage until the current gate is passed.
+The Cabinet uses gated handoffs for significant milestones — feature completions, pre-deploy checks, and architectural decisions. Gates are for **big moments**, not every component or task.
+
+**v2 change:** Minor gates are gone. Single components, isolated tasks, and routine work just flow. The crew doesn't stop the line to review a button. Gates fire when something meaningful is done — a feature is complete, a deploy is imminent, or a decision needs formal sign-off.
+
+## When to Gate
+
+```pseudocode
+// GATE — full ceremony:
+IF work covers a complete feature, multi-component integration, pre-deploy, or build prep:
+    FIRE gate
+
+// NO GATE — just keep working:
+IF work is a single component, isolated fix, routine task, or incremental progress:
+    SKIP gate — specialist completes, notes it, moves on
+    // Bostrol still logs non-trivial decisions silently (vault write doesn't need a gate)
+```
 
 ## Gate Structure
 
@@ -103,8 +118,8 @@ ELSE IF counter >= 3:
         AWAIT Tom's answer
 
         // Log the answer
-        APPEND card to crew-notes/team-fun-memories.html
-        APPEND 2-3 crew reactions to crew-notes/cabinet-chatter.html
+        APPEND to crew/memories.md (running markdown lore file)
+        APPEND 2-3 crew reactions to projects/{slug}/chatter/{date}.md
 
         // Reset
         SET anchor.memories.gate_counter_since_last_question = 0
@@ -169,24 +184,10 @@ Recommendation: [Proceed / Hold]
 Awaiting Tom's approval.
 ```
 
-## Tiered Pre-Gate QA
+## Pre-Gate QA
 
-Jonasty runs automated or semi-automated checks before gates. The level of scrutiny is proportional to the gate's significance:
+Jonasty runs automated or semi-automated checks before every gate (since all gates are now significant):
 
-**Classification rule:**
-```pseudocode
-IF gate covers a single component, function, or isolated task:
-    tier = MINOR
-ELSE IF gate covers a complete feature, pre-deploy check, or build prep:
-    tier = MAJOR
-```
-
-### Minor Gates (component done, task complete)
-- Quick lint check
-- Type errors (if applicable)
-- Basic sanity pass
-
-### Major Gates (feature complete, pre-deploy, build prep)
 - Full lint + type check
 - Dead code detection
 - Accessibility basics (contrast, alt text, keyboard nav)

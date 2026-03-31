@@ -7,7 +7,7 @@ description: >
   "pick up where we left off", "continue the project", "back to work on X",
   or invokes /cabinet on a project the anchor already knows about from a
   previous day.
-version: 1.9.0
+version: 2.0.0
 ---
 
 # Cabinet Resume
@@ -175,7 +175,7 @@ IF recent_decisions loaded:
 
 After the resume chatter, Kevijntje asks Tom how loud he wants the crew — same as `/cabinet` step 4.5, but shorter in tone since context is already established.
 
-**The HTML chatter log is always verbose regardless of this setting.**
+**The vault chatter log is always written at full frequency regardless of this setting.**
 
 ```pseudocode
 hour = CURRENT_HOUR()
@@ -230,8 +230,8 @@ WRITE anchor
 
 Same as `/cabinet` step 6-8:
 - Ensure `crew-notes/` exists
-- Append a resume divider to the chatter log: `<div class="divider">Session resumed — {NOW()}</div>`
-- Do NOT overwrite existing chatter log — append to it
+- Append a resume divider to the vault chatter: `"\n---\n*Session resumed — {NOW()}*\n"`
+- Do NOT overwrite existing chatter — append to it
 
 ### 10. Ready State
 

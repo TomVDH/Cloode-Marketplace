@@ -6,7 +6,7 @@ description: >
   session summaries. Use when setting up, checking, or manually syncing the
   vault connection.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-version: 2.1.0
+version: 3.0.0
 ---
 
 Bridge between the Cabinet of IMD and a persistent knowledge vault (Obsidian vault or any markdown folder). This skill handles explicit vault operations — creating, connecting, checking status, syncing, archiving, and housekeeping. During normal `/cabinet` sessions, all vault interactions are silent and automatic (see `vault-integration.md`).
@@ -34,7 +34,7 @@ ELSE: vault_layout = "dedicated", base = vault_path
 
 mkdir -p projects, archive, crew, templates
 COPY templates from plugin examples/vault-templates/
-CREATE Home.md, projects/_index.md, crew/preferences.md, crew/lessons-learned.md
+CREATE Home.md, projects/_index.md, crew/preferences.md, crew/lessons-learned.md, crew/memories.md, crew/easter-eggs.md
 
 // Detect transport mode
 IF cli_available():
@@ -55,16 +55,27 @@ SET anchor.vault = {
 
 ### create-project — Scaffold a project subfolder
 
-Auto-triggered when `/cabinet` starts on a new project, or manual.
+Auto-triggered when `/cabinet` starts on a new project, or manual. Creates a rigid, predictable structure — every project looks the same.
 
 ```pseudocode
 project_dir = base + "/projects/" + slugify(name)
 IF exists: STOP (already scaffolded)
 
-mkdir decisions, sessions inside project_dir
-WRITE brief.md from template
+// Vault scaffold (inside Obsidian vault)
+mkdir decisions, sessions, chatter, references, tasks inside project_dir
+WRITE brief.md from template (with repo and stack fields)
 WRITE decisions/_index.md (empty MOC)
+WRITE tasks/tasks.md from template
 UPDATE projects/_index.md, Home.md
+
+// Codebase scaffold (inside project working directory, if applicable)
+// Only create if a git root or working directory is detected
+IF codebase_root detected:
+    mkdir -p assets, concepts, previews inside codebase_root
+    IF NOT exists README.md:
+        WRITE README.md — human-written style, not AI boilerplate
+        // Must NOT read like AI generated it. Short, direct, useful.
+        // Project name, one-line description, stack, getting started.
 ```
 
 ### connect — Point at an existing vault
@@ -225,9 +236,11 @@ WRITE Home.md:
 
 ## Storage Tiers
 
-**Tier 1 — Project-scoped, ephemeral:** `{project_root}/crew-notes/` — session files (chatter, memories, anchor). Tied to project directory.
+**Tier 1 — Session state:** `{project_root}/crew-notes/` — the session anchor (`cabinet-session.json`). Tied to project directory. Ephemeral.
 
-**Tier 2 — Cross-project, persistent:** The vault. Project briefs, decisions, sessions, crew knowledge. Always optional — without it, the cabinet uses Tier 1 only.
+**Tier 2 — Persistent knowledge:** The vault. Everything that matters: project briefs, decisions, sessions, chatter, tasks, references, crew preferences, lessons, memories. Always optional — without it, the cabinet works but nothing persists.
+
+**Tier 3 — Codebase structure:** `{project_root}/` — the actual project files plus scaffolded directories (assets/, concepts/, previews/, README.md). Tied to the git repo.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cabinet maintains a hidden `crew-notes/team-fun-memories.html` file — a crew scrapbook that accumulates personality, lore, and shared history over time. It lives in the `crew-notes/` subdirectory alongside the chatter log and session anchor. It is fed by two sources: periodic fun questions asked to Tom during sessions, and project-derived memories the cabinet captures organically from the work.
+The Cabinet maintains a running Markdown lore file in the vault at `crew/memories.md` — a crew scrapbook that accumulates personality, lore, and shared history over time. It is fed by two sources: periodic fun questions asked to Tom during sessions, and project-derived memories the cabinet captures organically from the work.
 
 ## Covert — see cabinet/SKILL.md Core Rules
 
@@ -100,73 +100,47 @@ Beyond the periodic questions, the cabinet captures memorable moments from actua
 ### Capture Cadence
 
 - Maximum 2 project memories per session. Capture triggers: (1) after a gate where Pitr's razor was invoked, (2) after debugging that lasted 30+ minutes, (3) at project wrap-up.
-- Appended silently using the same python3 method as the chatter log — same covert rules as the chatter log
+- Appended silently to `crew/memories.md` in the vault — same covert rules as the chatter log
 - Written from the crew's perspective, not Tom's
 
-## HTML Implementation
+## Vault Implementation
 
 ### File Location
-- Filename: `team-fun-memories.html`
-- Same output directory as `cabinet-chatter.html`
-- Created silently during the first `/cabinet` session, populated over time
+- Path: `crew/memories.md` in the vault
+- Created during vault scaffolding (`/vault-bridge create`), populated over time
+- Global — not project-scoped. Memories span all projects.
 
 ### Structure
 
-The HTML should feel like a scrapbook or yearbook — warmer and more visual than the chatter log. Same Balatro-inspired CRT aesthetic but with a "memory card" layout instead of a linear chat.
+Plain Markdown. Each entry is a block with a type emoji, the asker/observer, content, date, and optional crew reactions as indented sub-items.
 
-Each entry is a "card" with:
-- **Type badge**: 🎤 Question / 📸 Memory / 🏆 Achievement
-- **Date**: When it was captured
-- **Who asked** (for questions) or **who observed** (for memories)
-- **The content**: Question + Tom's answer, or the memory description
-- **Crew reactions** (optional): 1-2 short reactions from other members
+```markdown
+### 🎤 Sakke — "What's the crew's official Friday beverage?" (2026-03-15)
+**Tom:** Duvel. No contest.
+  - **Thieuke:** Respect. 😐
+  - **Poekie:** Good choice. Hydrate after though.
+
+### 📸 Epic Debug — Tom vs. the CSS Grid (2026-03-18)
+*Observed by Jonasty.* 47 minutes. Tom lost. The grid won. Pitr fixed it in one line.
+  - **Henske:** That grid had feelings and Tom hurt them.
+
+### 🏆 First Clean Deploy — Dashboard v2 (2026-03-20)
+*Observed by Bostrol.* Zero rollbacks. Sakke checked CORS twice anyway.
+```
+
+### Entry Types
+
+- 🎤 **Question** — from periodic lore questions (asker + question + Tom's answer + reactions)
+- 📸 **Memory** — project-derived moments observed by the crew
+- 🏆 **Achievement** — ship moments, milestones, clean deploys
 
 ### Append Method
 
-Same python3 append as the chatter log — insert before closing tags, never re-read the file.
-
-```bash
-python3 -c "
-import sys
-marker = '</div><!-- END CARDS -->'
-content = '<div class=\"card TYPE_CLASS\"><div class=\"card-badge\">BADGE</div><div class=\"card-meta\"><span class=\"card-who\">WHO</span><span class=\"card-date\">DATE</span></div><div class=\"card-content\">CONTENT</div></div>'
-with open(sys.argv[1], 'r') as f:
-    data = f.read()
-if marker in data:
-    data = data.replace(marker, content + '\n' + marker)
-    with open(sys.argv[1], 'w') as f:
-        f.write(data)
-else:
-    print('WARN: closing marker missing', file=sys.stderr)
-" "{crew_notes_path}/team-fun-memories.html"
-```
-
-### Card Types
-
-The scrapbook template defines card types via CSS classes that use custom properties for both dark and light mode. Use card classes — never inline colour styles.
+Simple vault file append — no markers, no HTML. Append a new `###` block to the end of the file.
 
 ```pseudocode
-// CORRECT — class-based, theme-aware:
-<div class="card question">...</div>
-<div class="card memory">...</div>
-<div class="card achievement">...</div>
-<div class="card lore">...</div>
-
-// For who-asked names, use who-{member} classes:
-<span class="card-who who-sakke">Sakke</span>
-
-// For reaction names:
-<span class="reaction-name name-thieuke">Thieuke:</span>
-
-// WRONG — hardcoded colours that break in light mode:
-<div style="border-left: 3px solid #e6c84c">...</div>
+vault.append("crew/memories.md", new_entry_markdown)
 ```
-
-Card type colours (defined in template CSS, no need to specify):
-- `.card.question` → gold accent
-- `.card.memory` → blue accent
-- `.card.achievement` → green accent
-- `.card.lore` → purple accent
 
 ## Integration with Other Systems
 

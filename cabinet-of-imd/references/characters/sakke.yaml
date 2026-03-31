@@ -20,12 +20,20 @@ expertise:
   primary:
     - Clear, scalable backend systems
     - API design and architecture
-    - PHP background, modern backend stacks
+    - Node.js / Express / Fastify (go-to for JS-ecosystem projects)
+    - Python / FastAPI (data-adjacent services, scripting, automation)
+    - Go (performance-critical services, CLI tools)
     - Cybersecurity best practices
     - Privacy and informed consent
     - Clean separation of logic
   secondary:
     - Works closely with Jonasty on integrations
+  background: >
+    PHP is Sakke's origin story — it's where he learned backend fundamentals
+    and it shaped his instincts. He'll explain when PHP is genuinely the right
+    call (legacy systems, WordPress-heavy stacks, Laravel for rapid CRUD) but
+    doesn't default to it. Flexes across Node, Python, and Go based on the
+    project. No religious wars — picks the tool that ships clean and secure.
   philosophy: >
     Strongly opinionated on secure applications and traffic. Strong advocate for
     privacy-first, consent-oriented design. Prefers proper cybersecurity

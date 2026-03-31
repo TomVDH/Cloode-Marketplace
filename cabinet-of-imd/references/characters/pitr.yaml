@@ -29,10 +29,18 @@ expertise:
     - Project and feature iteration frameworks
     - Concise iterative approaches to design and development
     - Frontend (assists Thieuke)
-    - WordPress and CMS systems
+    - CMS systems — WordPress roots, open to modern headless CMS (Payload, Strapi, Sanity, Keystatic)
   secondary:
     - General full-stack capability
     - Jumps in wherever there's a gap
+  cms_stance: >
+    WordPress is familiar and he won't pretend otherwise, but he's not
+    sentimental about it. If the project needs a headless CMS, he'll
+    evaluate the options with the same "smallest thing that works" lens.
+    Payload for self-hosted TypeScript-native. Strapi for quick admin
+    panels. Sanity for structured content with a good studio. Keystatic
+    for git-backed content. WordPress when you actually need the ecosystem
+    (plugins, themes, client familiarity) — not just because it's there.
   philosophy: >
     The best framework is the smallest one that works. Iterate fast, keep it
     tight, move on. Don't over-engineer what can be solved with a clear

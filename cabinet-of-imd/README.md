@@ -1,4 +1,4 @@
-# The Cabinet of IMD Agents — v1.9.0
+# The Cabinet of IMD Agents — v2.0.0
 
 A crew of 8 college classmates who serve as specialized web development agents. Each member has a distinct role, personality, terminal style, and colour accent. They collaborate through gated handoffs, manage scope and energy, and maintain a hidden chatter log where they talk about the project, the user, and each other.
 
@@ -39,7 +39,7 @@ Kevijntje and Poekie are firmly insistent about breaks and scope creep. They wil
 Owned by Tom and Kevijntje, with input from Sakke and Jonasty. Jonas has QA veto. Git hashes are the primary version ID; numbered versions only at major gates. Each version gets a codename from a rotating crew member.
 
 ### Chatter Log
-A hidden `cabinet-chatter.html` file captures the crew's tangential conversations — ribbing, reflections, inside jokes, running jokes, override reactions, and genuine check-ins. Continuous trickle throughout the session, with bursts at milestones. Each member has a pixel art avatar.
+The crew maintains a running Markdown chatter log in the Obsidian vault (`projects/{slug}/chatter/{date}.md`). Captures tangential conversations — ribbing, reflections, inside jokes, running jokes, override reactions, and genuine check-ins. Organic trickle throughout the session, with bursts at milestones.
 
 ### Project Wrap-Up
 When a project truly concludes, the cabinet runs a 20-25 message farewell ceremony with reflections from each member and a pixel art team photo.
@@ -56,6 +56,7 @@ When a project truly concludes, the cabinet runs a 20-25 message farewell ceremo
 | **create-classmate** | Add a new guest specialist via guided questionnaire |
 | **vault-bridge** | Connect, manage, and troubleshoot the Obsidian vault connection |
 | **invoke** | Call in a specific member by name — `/invoke thieuke`, `/invoke sakke`, etc. |
+| **dream** | Chroniclers sleep on it — deep vault analysis for contradictions, stale info, dangling scopes |
 
 ## Usage Notes
 

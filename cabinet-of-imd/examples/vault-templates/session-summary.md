@@ -20,6 +20,10 @@ tags:
 
 
 
+## Chatter
+
+*See [[chatter/{date}]] for crew notes from this session.*
+
 ## Energy
 
 Temperature: , Momentum:

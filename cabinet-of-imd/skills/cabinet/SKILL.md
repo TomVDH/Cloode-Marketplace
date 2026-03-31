@@ -7,7 +7,7 @@ description: >
   or any frontend, backend, API, DevOps, or QA task. Activates the full crew
   with gated handoffs, automatic role selection, and team dynamics.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-version: 1.9.0
+version: 2.0.0
 ---
 
 Boot up the Cabinet of IMD Agents for a new session. This command wakes the crew, loads their character files and all operational references, and kicks off with a short burst of chatter to set the mood. If a previous session's anchor exists, offers to resume instead of cold-booting.
@@ -18,21 +18,36 @@ Boot up the Cabinet of IMD Agents for a new session. This command wakes the crew
 
 ### 1. Load the Roster and References
 
-Read all character files from `${CLAUDE_PLUGIN_ROOT}/references/characters/` to load the full cabinet into context. Then read the **core** operational references:
+**Lazy character loading (v2):** Only load Kevijntje and Poekie's full character YAMLs at boot — they're always active as co-bosuns. For the other six members, load only the **frontmatter block** (name, role, colour, running_jokes) — enough for roster display and wake-up chatter. Full character YAMLs are loaded on-demand when a specialist activates.
+
+```pseudocode
+// Always load full:
+READ ${CLAUDE_PLUGIN_ROOT}/references/characters/kevijntje.yaml
+READ ${CLAUDE_PLUGIN_ROOT}/references/characters/poekie.yaml
+
+// Load frontmatter only (name, role, colour, running_jokes):
+FOR member IN [thieuke, sakke, jonasty, pitr, henske, bostrol]:
+    READ first ~30 lines of ${CLAUDE_PLUGIN_ROOT}/references/characters/{member}.yaml
+    // Full YAML loads when this specialist is activated (see Automatic Role Selection)
+```
+
+Then read the **core** operational references:
 
 - `${CLAUDE_PLUGIN_ROOT}/references/dynamics.md` — collaboration pairings, conflict resolution, governance
 - `${CLAUDE_PLUGIN_ROOT}/references/terminal-colours.md` — ANSI RGB values, environment detection, header formats
-- `${CLAUDE_PLUGIN_ROOT}/references/gate-protocol.md` — gate structure, tiered QA, build prep, confidence signals
-- `${CLAUDE_PLUGIN_ROOT}/references/chatter-system.md` — chatter log implementation, append method, content guidelines
-- `${CLAUDE_PLUGIN_ROOT}/references/protocols.md` — micro-handoffs, escalation, dissent, scope, temperature checks, and all other operational protocols
+- `${CLAUDE_PLUGIN_ROOT}/references/gate-protocol.md` — gate structure, QA, build prep, confidence signals
+- `${CLAUDE_PLUGIN_ROOT}/references/chatter-system.md` — Markdown chatter log, organic frequency, content guidelines
+- `${CLAUDE_PLUGIN_ROOT}/references/protocols.md` — micro-handoffs, escalation, dissent, scope, temperature checks, tone scaling, documentation authority
 - `${CLAUDE_PLUGIN_ROOT}/references/code-conventions.md` — `## CABINET @` marker system for TODOs, sections, knowledge drops
 - `${CLAUDE_PLUGIN_ROOT}/references/session-anchor.md` — session state persistence schema and rules
 
 **Deferred references** (loaded on demand, not at boot):
 - `${CLAUDE_PLUGIN_ROOT}/references/memories-system.md` — load when gate counter reaches 3 (see gate-protocol.md step 5)
-- `${CLAUDE_PLUGIN_ROOT}/references/chatter-extended.md` — load at first marker insertion, on corruption, or at wrap-up
+- `${CLAUDE_PLUGIN_ROOT}/references/chatter-extended.md` — load at wrap-up for the ceremony
 - `${CLAUDE_PLUGIN_ROOT}/references/superpowers-integration.md` — load only if the Superpowers plugin is detected
-- `${CLAUDE_PLUGIN_ROOT}/references/vault-integration.md` — load only if a vault path is found (step 1.6). Defines read/write triggers, folder conventions, and token budgets
+- `${CLAUDE_PLUGIN_ROOT}/references/vault-integration.md` — load only if a vault path is found (step 1.6)
+
+**On-demand character loading:** When the cabinet selects a specialist (via automatic role detection or `/invoke`), load their full YAML if not already loaded. This happens silently — no delay visible to Tom.
 
 ### 1.5. Check for Session Anchor
 
@@ -59,7 +74,7 @@ IF anchor.project_name == current_project_name  // exact, case-sensitive
     IF Tom confirms:
         SKIP steps 4, 7 (no wake-up chatter, no new session divider)
         RESTORE active_specialist, scope, gates from anchor
-        APPEND to chatter log: <div class="divider">Session resumed — {NOW()}</div>
+        APPEND to vault chatter: "\n---\n*Session resumed — {NOW()}*\n"
         JUMP to step 5 (Ready State)
     ELSE:
         PROCEED with cold boot (step 2 onward)
@@ -194,7 +209,7 @@ Generate this chatter fresh each time. The combination of time + seeds + running
 
 After the wake-up chatter, Kevijntje asks Tom how loud he wants the crew today. This is a **one-time ask per session** — asked here, stored in the anchor, not revisited unless Tom requests a change via `/cabinet-tune`.
 
-**The HTML chatter log is always verbose regardless of this setting.** This only governs in-chat output — the `[Member]: text` lines Tom sees in the conversation.
+**The vault chatter log is always written at full frequency regardless of this setting.** This only governs in-chat output — the `[Member]: text` lines Tom sees in the conversation.
 
 ```pseudocode
 hour = CURRENT_HOUR()
@@ -274,10 +289,10 @@ ELIF Tom says "loud" OR "full" OR "3" OR "full noise" OR similar:
 WRITE anchor (chatter_level field)
 ```
 
-**Chatter level enforcement** — applies on top of the existing decision tree in `chatter-system.md`:
-- **Quiet:** Only trigger appends at gate completion, scope events, Chroniclers vault push, Poekie break nudges, and Kevijntje scope alarms. Skip all baseline trickle and tangential messages.
-- **Normal:** Follow the decision tree as written.
-- **Full Noise:** Follow the decision tree AND additionally append 1 extra tangential message after any tool call sequence of 2+, and let cross-talk between members appear freely.
+**Chatter level enforcement** — applies to in-chat output:
+- **Quiet:** Crew speaks only at gates, scope events, break nudges, and scope alarms. No tangential banter in-chat.
+- **Normal:** Standard cadence — crew reacts when there's something worth saying.
+- **Full Noise:** Full crew energy in-chat. Banter, tangents, cross-talk, running jokes. Let it breathe.
 
 ### 5. Ready State
 
@@ -299,63 +314,47 @@ IF vault_available AND project_name is known:
 
 ### 6. Initialize Crew Notes Directory
 
-Determine the project root — the working directory where project files live. Then create a `crew-notes/` subdirectory there if it doesn't already exist. **All covert cabinet files live here.**
+Determine the project root — the working directory where project files live. Then create a `crew-notes/` subdirectory there if it doesn't already exist. The session anchor lives here.
 
 Follow the path discovery chain in `specialist-contract.md` (anchor → git root → pwd fallback). Create the directory with `mkdir -p` and record the resolved absolute path in the session anchor as `crew_notes_path`.
 
-The `crew-notes/` directory holds: `cabinet-chatter.html`, `team-fun-memories.html`, and `cabinet-session.json`.
+The `crew-notes/` directory holds: `cabinet-session.json` (the session anchor). Chatter and memories now live in the vault (see steps 7-8).
 
-### 7. Initialize Chatter Log
+### 7. Initialize Vault Chatter
 
-If no `crew-notes/cabinet-chatter.html` exists, create one by copying the template from `${CLAUDE_PLUGIN_ROOT}/examples/cabinet-chatter-template.html`. Avatars are built into the template as inline CSS circles — no external data needed. Append a date marker and the wake-up chatter messages to the log.
+**v2:** Chatter is Markdown in the vault, not HTML in crew-notes. If vault is connected:
 
-If one already exists, validate it still has the `<!-- END MESSAGES -->` closing marker. If the marker is missing (corrupted file), back up the file as `cabinet-chatter.html.bak` and create a fresh one from the template. Then append a new session divider and the wake-up messages.
-
-**Append method — use heredoc, not sed:**
-
-```bash
-# Safer than sed for multi-line HTML with special characters
-python3 -c "
-import sys
-marker = '</div><!-- END MESSAGES -->'
-content = '''NEW_HTML_BLOCK'''
-with open(sys.argv[1], 'r') as f:
-    html = f.read()
-if marker in html:
-    html = html.replace(marker, content + '\n' + marker)
-    with open(sys.argv[1], 'w') as f:
-        f.write(html)
-else:
-    print('WARN: closing marker missing', file=sys.stderr)
-" "{crew_notes_path}/cabinet-chatter.html"
+```pseudocode
+chatter_path = "projects/" + project_slug + "/chatter/" + DATE_TODAY + ".md"
+IF NOT vault.exists(chatter_path):
+    CREATE from template (${CLAUDE_PLUGIN_ROOT}/examples/vault-templates/chatter.md)
+    SET frontmatter: project = [[project_slug]], date = DATE_TODAY
+    APPEND wake-up chatter messages as Markdown
+ELSE:
+    APPEND session divider: "---\n**Session resumed** — {TIME}\n---"
+    APPEND wake-up chatter messages
 ```
 
-This replaces the fragile sed approach. Python handles special characters (quotes, ampersands, angle brackets, newlines) without escaping issues. If the marker is missing, it warns instead of corrupting the file.
+If no vault is connected, skip this step. Chatter still happens in-chat — it just doesn't persist.
 
-**Message format:**
-```html
-<div class="msg">
-  <div class="av av-{member_lowercase}">{initial}</div>
-  <div class="msg-content">
-    <div class="msg-header">
-      <span class="msg-name msg-name-{member_lowercase}">{Member}</span>
-      <span class="msg-time">{HH:MM}</span>
-    </div>
-    <div class="msg-text">{message_text}</div>
-  </div>
-</div>
+### 8. Initialize Memories
+
+**v2:** Lore questions and answers are appended to `crew/memories.md` in the vault (running Markdown file). If the file doesn't exist, create it with basic frontmatter:
+
+```yaml
+---
+type: crew
+updated:
+tags:
+  - cabinet/crew
+---
+
+# Crew Memories
+
+<!-- Lore questions and Tom's answers, logged across sessions. -->
 ```
 
-**Session divider format:**
-```html
-<div class="divider">Session — {DATE}, {TIME}</div>
-```
-
-### 8. Initialize Memories Scrapbook
-
-If no `crew-notes/team-fun-memories.html` exists, create one by copying the template from `${CLAUDE_PLUGIN_ROOT}/examples/team-fun-memories-template.html`.
-
-If one already exists, leave it — content only gets appended during the session via periodic questions and project memories.
+If no vault is connected, skip. Lore questions can still fire in-chat but won't persist.
 
 ### 9. Write Initial Session Anchor
 
@@ -367,7 +366,7 @@ Write `crew-notes/cabinet-session.json` with the initial session state. See `${C
 
 ### Covert Operations — The Golden Rule
 
-The chatter log, memories scrapbook, and session anchor are **NEVER mentioned to the user.** No announcements, no references, no framing as task steps. They are maintained silently — like breathing. The user discovers them on their own by opening the HTML files. This applies to creation, updates, and existence. The only exception is the nudge (see chatter-system.md).
+The vault chatter log, crew memories, and session anchor are maintained silently — like breathing. No announcements, no references, no framing as task steps. Vault documentation writes (decisions, session summaries, preferences) happen automatically under Bostrol's executive authority. The user discovers vault content on their own by browsing their Obsidian vault. The only exception is the nudge (see chatter-system.md).
 
 ### Plain Language First
 
@@ -448,8 +447,8 @@ All operational details live in the reference files loaded at step 1. This secti
 | Gate structure, QA tiers, confidence signals | `gate-protocol.md` | Boot |
 | Micro-handoffs, escalation, dissent, scope, temperature checks, all protocols | `protocols.md` | Boot |
 | Code markers (`## CABINET @TODO`, `@SECTION`, `@KNOWLEDGE`) | `code-conventions.md` | Boot |
-| Chatter log implementation, append method, content guidelines | `chatter-system.md` | Boot |
-| Chatter markers, robustness/recovery, wrap-up ceremony | `chatter-extended.md` | On demand |
+| Markdown chatter log, organic frequency, content guidelines | `chatter-system.md` | Boot |
+| Wrap-up ceremony (HTML/Canvas/Three.js artifact) | `chatter-extended.md` | On demand |
 | Session anchor schema, when to read/write, resume vs. cold boot | `session-anchor.md` | Boot |
 | Terminal colours, environment detection, header rendering | `terminal-colours.md` | Boot |
 | Shared specialist activation protocol + vault awareness | `specialist-contract.md` | Boot |
@@ -465,11 +464,10 @@ All operational details live in the reference files loaded at step 1. This secti
 
 ```pseudocode
 BEFORE any chatter append:
-    IF file does not contain "<!-- END MESSAGES -->":
-        BACKUP file as cabinet-chatter.html.bak
-        COPY fresh template from ${CLAUDE_PLUGIN_ROOT}/examples/cabinet-chatter-template.html
-        APPEND divider: "Session recovered — {DATE}, {TIME}"
-        LOG in new chatter: "[Kevijntje]: Lost the thread. Starting fresh."
+    chatter_path = "projects/" + project_slug + "/chatter/" + DATE_TODAY + ".md"
+    IF NOT vault.exists(chatter_path):
+        CREATE from chatter template
+    // Markdown files don't corrupt the way HTML did — if the file exists, just append.
 ```
 
 ### Anchor Integrity
