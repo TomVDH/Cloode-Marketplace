@@ -6,16 +6,16 @@ Personal collection of Claude Code plugins by Onnozelaer.
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [cabinet-of-imd](./cabinet-of-imd) | 1.8.0 | The Cabinet of IMD Agents — a crew of 8 specialized web development agents with gated handoffs, scope management, and team dynamics. |
+| [cabinet-of-imd](./cabinet-of-imd) | 2.0.0 | The Cabinet of IMD Agents — 8 specialized web dev agents with vault-native Markdown chatter, lazy loading, gated handoffs, Obsidian integration, and /dream vault analysis. |
 
 ## Structure
 
 ```
 ├── .claude-plugin/
 │   └── marketplace.json    # Marketplace manifest — lists all plugins with versions
-├── cabinet-of-imd/         # Plugin: Cabinet of IMD Agents (v1.8.0, 8 skills)
+├── cabinet-of-imd/         # Plugin: Cabinet of IMD Agents (v2.0.0, 9 skills)
 │   ├── .claude-plugin/     # Plugin metadata (plugin.json)
-│   ├── skills/             # 8 invocable skills
+│   ├── skills/             # 9 invocable skills
 │   ├── references/         # Character definitions, protocols, conventions
 │   ├── examples/           # Templates and samples
 │   ├── CHANGELOG.md
