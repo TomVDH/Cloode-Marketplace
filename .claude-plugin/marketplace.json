@@ -11,6 +11,12 @@
       "version": "2.0.0",
       "source": "./cabinet-of-imd",
       "description": "The Cabinet of IMD Agents — a crew of 8 college classmates who serve as specialized web development agents. Vault-native Markdown chatter, lazy character loading, organic personality, gated handoffs, Obsidian integration, and a /dream command for deep vault analysis."
+    },
+    {
+      "name": "taste-claude",
+      "version": "0.1.0",
+      "source": "./taste-package",
+      "description": "Premium frontend design skills that override default AI biases — enforcing high-end typography, calibrated color, asymmetric layouts, motion choreography, and anti-generic UI standards across multiple aesthetic modes."
     }
   ]
 }
