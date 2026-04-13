@@ -2,6 +2,19 @@
 
 All notable changes to the Cabinet of IMD plugin.
 
+## [2.1.0] — 2026-04-12
+
+### Added
+- **Version Control Discipline protocol** (`protocols.md`) — new protocol section enforcing version parity across all version-bearing files. Defines canonical file list for both web projects and the Cabinet plugin itself. Jonasty owns enforcement, Bostrol owns CHANGELOG maintenance, Kevijntje validates version-to-scope alignment.
+- **Version parity check in Pre-Gate QA** (`gate-protocol.md`) — added as a hard blocker alongside lint and type checks. All version-bearing files must agree before a gate passes.
+- **Version parity step in Build Prep Gate** (`gate-protocol.md`) — dedicated step 2 in the build prep sequence. Blocks the gate on any drift.
+- **Version drift as pushback trigger** (`protocols.md`) — added to pushback triggers table. Jonasty hard-blocks on version drift; Bostrol auto-writes missing CHANGELOG entries.
+- **`scope.version` field in session anchor** (`session-anchor.md`) — tracks current project version. Read at resume to catch cross-session drift.
+- **CHANGELOG verification in Build Prep documentation check** (`gate-protocol.md`) — Bostrol now explicitly verifies a dated CHANGELOG entry exists for the current version.
+- **Git Gate Integration versioning rule** (`gate-protocol.md`) — explicit mandate that all version-bearing files must be updated in the same commit.
+
+---
+
 ## [2.0.0] — 2026-03-28
 
 ### Added

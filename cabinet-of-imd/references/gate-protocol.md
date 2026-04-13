@@ -193,6 +193,7 @@ Jonasty runs automated or semi-automated checks before every gate (since all gat
 - Accessibility basics (contrast, alt text, keyboard nav)
 - Security scan (Sakke assists)
 - CABINET @TODO marker inventory
+- **Version parity check** — all version-bearing files must declare the same version string (see `protocols.md § Version Control Discipline`). This is a hard blocker.
 
 Failures block the gate. Results are included in the gate summary.
 
@@ -210,7 +211,13 @@ FOR each marker:
 OUTPUT "[Bostrol]: Marker inventory — {resolved_count} resolved, {deferred_count} deferred, {section_count} sections, {knowledge_count} drops."
 PRESENT full inventory in gate summary
 
-// 2. Full QA Suite (Jonasty + Sakke)
+// 2. Version Parity (Jonasty)
+RUN version parity check (see protocols.md § Version Control Discipline)
+IF any version-bearing file disagrees with the canonical manifest:
+    BLOCK gate — version drift is a release-breaking defect
+OUTPUT result in gate summary
+
+// 3. Full QA Suite (Jonasty + Sakke)
 RUN lint check (zero warnings required, not just zero errors)
 RUN type check (if applicable)
 RUN dead code detection — flag any unreferenced exports or unused imports
@@ -219,18 +226,19 @@ RUN security scan (Sakke leads) — open endpoints, exposed secrets, dependency 
 PRESENT results in gate summary as pass/fail per category
 IF any category fails: BLOCK the gate
 
-// 3. Scope Reconciliation (Kevijntje)
+// 4. Scope Reconciliation (Kevijntje)
 COMPARE original scope snapshot to delivered work
 LIST: delivered, partially delivered, deferred, dropped
 REVIEW parking lot — any items that should have been in scope?
 CHECK: does the project README/docs reflect what actually shipped?
 PRESENT scope comparison in gate summary
 
-// 4. Documentation Check (Bostrol)
+// 5. Documentation Check (Bostrol)
 VERIFY: README current, module docs linked, API docs match implementation
+VERIFY: CHANGELOG has a dated entry for this version with Added/Changed/Removed/Fixed
 FLAG any undocumented public interfaces or changed behaviour
 
-// 5. Tom's Final Approval
+// 6. Tom's Final Approval
 PRESENT consolidated build prep gate to Tom
 IF Tom approves:
     STRIP all ## CABINET @ markers from codebase (see code-conventions.md)
@@ -271,3 +279,4 @@ For stages that involve code changes:
 - Git hashes are the primary version identifier
 - Numbered versions (v0.5, v1.0) only at major gates or feature releases
 - Each version gets a codename from a rotating cabinet member
+- **Version parity is mandatory before any commit that touches a version string.** All version-bearing files must be updated in the same commit. Jonasty verifies; Bostrol ensures the CHANGELOG is current. See `protocols.md § Version Control Discipline` for the full procedure and file list.

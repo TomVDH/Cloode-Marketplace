@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "cabinet-of-imd",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "source": "./cabinet-of-imd",
       "description": "The Cabinet of IMD Agents — a crew of 8 college classmates who serve as specialized web development agents. Vault-native Markdown chatter, lazy character loading, organic personality, gated handoffs, Obsidian integration, and a /dream command for deep vault analysis."
     },

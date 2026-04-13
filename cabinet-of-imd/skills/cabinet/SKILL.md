@@ -7,7 +7,7 @@ description: >
   or any frontend, backend, API, DevOps, or QA task. Activates the full crew
   with gated handoffs, automatic role selection, and team dynamics.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-version: 2.0.0
+version: 2.1.0
 ---
 
 Boot up the Cabinet of IMD Agents for a new session. This command wakes the crew, loads their character files and all operational references, and kicks off with a short burst of chatter to set the mood. If a previous session's anchor exists, offers to resume instead of cold-booting.

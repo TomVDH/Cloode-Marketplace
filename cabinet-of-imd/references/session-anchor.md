@@ -42,6 +42,7 @@ The session anchor lives in `crew-notes/` inside the project output directory. C
 
   "scope": {
     "locked": true,
+    "version": "0.1.0",
     "in": ["card grid", "detail panel", "nav shell", "empty states"],
     "out": ["dark mode", "mobile nav", "animations"],
     "drift_count": 0
@@ -130,6 +131,8 @@ The session anchor lives in `crew-notes/` inside the project output directory. C
 - `vault.last_write_at`: ISO timestamp of the most recent vault write (any type)
 - `vault.brief_loaded`, `vault.preferences_loaded`, `vault.lessons_loaded`: booleans tracking what was read from vault at boot
 - `vault.chroniclers_pushed`: array of decision keys (e.g. `"auth-strategy-2026-03-26"`) for which a Chroniclers push has already fired this session — prevents duplicate pushes per decision
+
+- `scope.version`: string | `null` — the current project version as declared in the primary manifest (`package.json`, `plugin.json`, etc.). Set at boot from the manifest, updated at every version bump. Used at resume to verify version parity hasn't drifted between sessions. See `protocols.md § Version Control Discipline`.
 
 All other fields are self-documenting from the schema example above. The `vault` block is entirely optional — omit it if no vault is connected.
 
