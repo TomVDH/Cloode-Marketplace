@@ -159,55 +159,16 @@ The cabinet writes notes that are **Obsidian-native** — wikilinks, YAML frontm
 
 Every note gets YAML frontmatter. This is the contract — Dataview queries and templates depend on these fields.
 
-**Project Brief** (`projects/{slug}/brief.md`):
-```yaml
----
-type: project
-slug: dashboard-v2
-aliases:
-  - dashboard-v2          # REQUIRED — makes [[dashboard-v2]] resolve to brief.md
-codename: Duvel
-status: active           # active | paused | completed | archived
-created: 2026-03-22
-updated: 2026-03-22
-tags:
-  - cabinet/project
----
-```
+**Canonical schemas for all file types are defined in `vault-standards.md`.** That file is the single source of truth for frontmatter fields, required vs optional status, value formats, and naming conventions. Templates in `examples/vault-templates/` mirror those definitions.
 
-> **Why aliases?** In v2, briefs live at `projects/{slug}/brief.md` — so `[[dashboard-v2]]` wouldn't resolve without an alias. The `aliases` field tells Obsidian to treat this file as the target for `[[dashboard-v2]]` wikilinks.
+Key rules (see `vault-standards.md` for full details):
+- Project references use piped wikilinks: `project: "[[projects/{slug}/brief|{slug}]]"`
+- Specialist names are always lowercase: `specialist: bostrol`
+- Structural tags use the `cabinet/` namespace: `cabinet/decision`, `cabinet/session`
+- Topic tags are bare: `architecture`, `email`, `cleanup`
+- Empty optional fields are omitted, not set to null
 
-**Decision** (`projects/{slug}/decisions/{date}-{slug}.md`):
-```yaml
----
-type: decision
-project: "[[dashboard-v2]]"
-gate: Layout Foundation
-specialist: thieuke
-status: active            # active | superseded | revisited
-date: 2026-03-22
-tags:
-  - cabinet/decision
-  - cabinet/frontend      # domain tag — matches specialist domain
----
-```
-
-**Session Summary** (`projects/{slug}/sessions/{date}.md`):
-```yaml
----
-type: session
-project: "[[dashboard-v2]]"
-date: 2026-03-22
-gates_completed: 2
-specialists:
-  - thieuke
-  - sakke
-tags:
-  - cabinet/session
----
-```
-
-**Preferences** and **Lessons Learned** — unchanged from v1, see frontmatter in crew/ files.
+> **Why aliases on briefs?** In v2, briefs live at `projects/{slug}/brief.md` — so `[[dashboard-v2]]` wouldn't resolve without an alias. The `aliases` field tells Obsidian to treat this file as the target for `[[dashboard-v2]]` wikilinks.
 
 ### Wikilink Rules
 

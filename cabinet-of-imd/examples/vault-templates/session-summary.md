@@ -1,8 +1,7 @@
 ---
 type: session
-project:
+project: "[[projects/{slug}/brief|{slug}]]"
 date:
-gates_completed:
 specialists: []
 tags:
   - cabinet/session

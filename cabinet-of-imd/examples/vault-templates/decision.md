@@ -1,7 +1,6 @@
 ---
 type: decision
-project:
-gate:
+project: "[[projects/{slug}/brief|{slug}]]"
 specialist:
 status: active
 date:
