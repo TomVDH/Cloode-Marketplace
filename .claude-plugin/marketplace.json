@@ -17,6 +17,12 @@
       "version": "0.1.0",
       "source": "./taste-package",
       "description": "Premium frontend design skills that override default AI biases — enforcing high-end typography, calibrated color, asymmetric layouts, motion choreography, and anti-generic UI standards across multiple aesthetic modes."
+    },
+    {
+      "name": "iteration-shelf",
+      "version": "0.1.0",
+      "source": "./iteration-shelf",
+      "description": "Terminal-aesthetic review boards for in-browser design iteration. Generates a curated shelf and a monster index from a JSON manifest — self-contained HTML, zero build step, on-demand iframe loading, sidebar outliner, and a warn-gate that keeps the browser from stalling on 100+ iterations. Explicit invocation only. Integrates with Superpowers and the Cabinet plugin."
     }
   ]
 }

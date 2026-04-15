@@ -1,0 +1,20 @@
+{
+  "name": "iteration-shelf",
+  "version": "0.1.0",
+  "description": "Terminal-aesthetic review boards for in-browser design iteration — curated shelves and monster indexes of HTML artefacts. Explicit invocation only. Pairs with the Superpowers and Cabinet plugins.",
+  "author": {
+    "name": "Onnozelaer"
+  },
+  "keywords": [
+    "iteration",
+    "design-review",
+    "shelf",
+    "monster-index",
+    "terminal-ui",
+    "review-board",
+    "html",
+    "design",
+    "reviewer-console",
+    "iframe"
+  ]
+}

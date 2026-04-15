@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iteration Index — {{PROJECT_TITLE}}</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #aaa;
+    font: 13px/1.5 'SF Mono', 'Cascadia Mono', 'Consolas', monospace;
+    padding: 1.5rem;
+  }
+
+  header { margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 1rem; }
+  h1 { font: 600 15px/1.4 inherit; color: #ccc; }
+  .meta { font-size: 11px; color: #555; }
+  .meta a { color: #7ab; text-decoration: none; }
+  .meta a:hover { color: #adf; }
+
+  .portal-h {
+    margin: 2.4rem 0 0.8rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .portal-h__title { font: 600 12px/1.4 inherit; color: #e6c34a; letter-spacing: 0.14em; text-transform: uppercase; }
+  .portal-h__count { font-size: 10px; color: #555; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.2rem;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .iter {
+    background: #141414;
+    border: 1px solid #222;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  .iter__head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid #222;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    gap: 0.5rem;
+  }
+  .iter__id { color: #ccc; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .iter__tag { font-weight: 500; letter-spacing: 0.12em; font-size: 10px; white-space: nowrap; text-transform: uppercase; }
+  .iter__tag.original    { color: #777; }
+  .iter__tag.draft       { color: #8bb6e8; }
+  .iter__tag.star        { color: #f2f0eb; font-weight: 700; letter-spacing: 0.16em; }
+  .iter__tag.locked      { color: #d4a017; font-weight: 700; letter-spacing: 0.16em; }
+  .iter__tag.quarantined { color: #a44; }
+  .iter__tag.quiet       { color: #999; }
+  .iter__tag.og-rich     { color: #c8a34a; }
+  .iter__tag.og-true     { color: #e6c34a; font-weight: 700; }
+  .iter__tag.reset       { color: #d4a017; font-style: italic; }
+
+  .iter.star   { border: 1px solid #4a4a4a; box-shadow: 0 0 0 1px #2a2a2a; }
+  .iter.star .iter__head { background: #1a1a1a; border-bottom-color: #4a4a4a; }
+  .iter.locked { border: 1px solid #4a3815; box-shadow: 0 0 0 1px #2a2010; }
+  .iter.locked .iter__head { background: #1a1612; border-bottom-color: #4a3815; }
+
+  .iter__quote { padding: 0.4rem 0.9rem 0.2rem; color: #888; font-size: 10.5px; font-style: italic; line-height: 1.45; }
+  .iter__note  { padding: 0 0.9rem 0.6rem; color: #555; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.45; }
+  .iter__frame { width: 100%; aspect-ratio: 16 / 10; border: 0; background: #000; display: block; }
+
+  .iter__actions {
+    display: flex; padding: 0.5rem 0.9rem;
+    border-top: 1px solid #222;
+    justify-content: space-between; align-items: center;
+    gap: 0.5rem;
+  }
+  .iter__actions a { color: #7ab; text-decoration: none; font-size: 10.5px; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iter__actions a:hover { color: #adf; }
+  .iter__actions button {
+    background: none; border: 1px solid #333; color: #888;
+    padding: 0.25rem 0.6rem; font: inherit; font-size: 10px;
+    letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+    flex-shrink: 0;
+  }
+  .iter__actions button:hover { border-color: #555; color: #ccc; }
+
+  .iter.expanded {
+    position: fixed; inset: 2rem; z-index: 100;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+  }
+  .iter.expanded .iter__frame { aspect-ratio: auto; flex: 1; height: auto; }
+  .iter.expanded .iter__actions .expand::before { content: '✕ '; }
+
+  .expand-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    z-index: 99; display: none;
+  }
+  .expand-backdrop.on { display: block; }
+
+  .note-banner {
+    margin: 0 0 1.25rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #3a2a10;
+    background: #120d05;
+    color: #e6c34a;
+    font: 500 12px/1.5 ui-monospace, monospace;
+    letter-spacing: 0.04em;
+  }
+  .note-banner.info    { border-color: #2a2a3a; background: #0a0d12; color: #adf; }
+  .note-banner.success { border-color: #2a3a1a; background: #0d120a; color: #9bd663; }
+  .note-banner.danger  { border-color: #3a1a1a; background: #120808; color: #e88; }
+  .note-banner strong {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    display: inline-block;
+    margin-right: 0.35em;
+  }
+
+  footer { margin-top: 3rem; color: #444; font-size: 11px; }
+  footer a { color: #7ab; text-decoration: none; }
+  footer a:hover { color: #adf; }
+  kbd { display: inline-block; padding: 0.05rem 0.35rem; border: 1px solid #333; border-radius: 3px; color: #888; font-size: 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Iteration Index — {{PROJECT_TITLE}} — {{DATE}}</h1>
+    <div class="meta" style="margin-top:0.3rem;">
+      Curated shortlist · eager-loaded iframes ·
+      <!-- ══════ BEGIN GLOBAL LINKS — replace with manifest.global_links ══════ -->
+      <a href="_monster-index.html">monster index (all iterations)</a>
+      <!-- ══════ END GLOBAL LINKS ══════ -->
+    </div>
+  </div>
+  <div class="meta">
+    <kbd>E</kbd> expand · <kbd>R</kbd> reload all · <kbd>Esc</kbd> collapse
+  </div>
+</header>
+
+<!-- ══════ BEGIN NOTES — optional; one per manifest.notes entry ══════ -->
+<!--
+<div class="note-banner warning">
+  <strong>Preview origin —</strong>
+  these files reference <code>../../public/images/…</code> and only resolve when the project root is the server root.
+</div>
+-->
+<!-- ══════ END NOTES ══════ -->
+
+<div class="expand-backdrop" id="expand-backdrop"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     BEGIN CURATED SECTIONS — replace everything between these markers
+     with sections built from manifest.segments. Each segment is a
+     .portal-h header + a .grid of .iter cards.
+     ══════════════════════════════════════════════════════════════════ -->
+
+<div class="portal-h">
+  <span class="portal-h__title">★ Example segment — replace me</span>
+  <span class="portal-h__count">3 iterations · sample payload</span>
+</div>
+
+<div class="grid">
+
+  <div class="iter locked">
+    <div class="iter__head">
+      <span class="iter__id">Sample · v2 — Locked</span>
+      <span class="iter__tag locked">◆ LOCKED-IN</span>
+    </div>
+    <div class="iter__quote">"a short italic line that sells this iteration."</div>
+    <div class="iter__note">Comma-separated · technical · clauses · rendered uppercase</div>
+    <iframe class="iter__frame" src="sample-v2.html" title="Sample v2" loading="lazy"></iframe>
+    <div class="iter__actions">
+      <a href="sample-v2.html">Open → sample-v2.html</a>
+      <button class="expand" title="Expand (E)">Expand</button>
+      <button data-src="sample-v2.html">Reload</button>
+    </div>
+  </div>
+
+  <div class="iter star">
+    <div class="iter__head">
+      <span class="iter__id">Sample · v3 — Star</span>
+      <span class="iter__tag star">★ STAR</span>
+    </div>
+    <div class="iter__quote">one italic line, lowercase, under 40 characters.</div>
+    <div class="iter__note">Optional · technical · summary · comma · separated</div>
+    <iframe class="iter__frame" src="sample-v3.html" title="Sample v3" loading="lazy"></iframe>
+    <div class="iter__actions">
+      <a href="sample-v3.html">Open → sample-v3.html</a>
+      <button class="expand" title="Expand (E)">Expand</button>
+      <button data-src="sample-v3.html">Reload</button>
+    </div>
+  </div>
+
+  <div class="iter">
+    <div class="iter__head">
+      <span class="iter__id">Sample · original</span>
+      <span class="iter__tag original">○ BASELINE</span>
+    </div>
+    <div class="iter__note">Untouched baseline · first version on disk</div>
+    <iframe class="iter__frame" src="sample.html" title="Sample original" loading="lazy"></iframe>
+    <div class="iter__actions">
+      <a href="sample.html">Open → sample.html</a>
+      <button class="expand" title="Expand (E)">Expand</button>
+      <button data-src="sample.html">Reload</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     END CURATED SECTIONS
+     ══════════════════════════════════════════════════════════════════ -->
+
+<footer>
+  <!-- ══════ BEGIN FOOTER LINKS — replace with manifest.global_links duplicated + cross-links ══════ -->
+  <a href="_monster-index.html">monster index (all iterations)</a> ·
+  <span>{{TOTAL_ITEMS}} items · curated shelf</span>
+  <!-- ══════ END FOOTER LINKS ══════ -->
+</footer>
+
+<script>
+  const backdrop = document.getElementById('expand-backdrop');
+
+  /* ───────────────────────────────────────────────────────────────
+     RELOAD BUTTONS — per-card cache-busted reload
+     ─────────────────────────────────────────────────────────────── */
+  document.querySelectorAll('.iter__actions button[data-src]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const src = btn.dataset.src;
+      const iframe = btn.closest('.iter').querySelector('iframe');
+      iframe.src = src + '?r=' + Date.now();
+    });
+  });
+
+  /* ───────────────────────────────────────────────────────────────
+     EXPAND / COLLAPSE
+     ─────────────────────────────────────────────────────────────── */
+  function collapseAll() {
+    document.querySelectorAll('.iter.expanded').forEach(p => p.classList.remove('expanded'));
+    backdrop.classList.remove('on');
+    document.body.style.overflow = '';
+  }
+  document.querySelectorAll('.iter__actions button.expand').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const iter = btn.closest('.iter');
+      const wasExpanded = iter.classList.contains('expanded');
+      collapseAll();
+      if (!wasExpanded) {
+        iter.classList.add('expanded');
+        backdrop.classList.add('on');
+        document.body.style.overflow = 'hidden';
+      }
+    });
+  });
+  backdrop.addEventListener('click', collapseAll);
+
+  /* ───────────────────────────────────────────────────────────────
+     KEYBOARD — R reload all, E expand focused, Esc collapse
+     ─────────────────────────────────────────────────────────────── */
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (e.key === 'r' || e.key === 'R') {
+      document.querySelectorAll('.iter iframe').forEach(f => {
+        const src = f.src.split('?')[0].split('#')[0];
+        f.src = src + '?r=' + Date.now();
+      });
+    } else if (e.key === 'e' || e.key === 'E') {
+      // expand the card containing the currently focused element, or the first card
+      const focused = document.activeElement.closest('.iter');
+      const target = focused || document.querySelector('.iter');
+      if (target) {
+        const expandBtn = target.querySelector('.expand');
+        if (expandBtn) expandBtn.click();
+      }
+    } else if (e.key === 'Escape') {
+      collapseAll();
+    }
+  });
+</script>
+
+</body>
+</html>

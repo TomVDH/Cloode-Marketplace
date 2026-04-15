@@ -8,6 +8,7 @@ Personal collection of Claude Code plugins by Onnozelaer.
 |--------|---------|-------------|
 | [cabinet-of-imd](./cabinet-of-imd) | 2.1.0 | The Cabinet of IMD Agents — 8 specialized web dev agents with vault-native Markdown chatter, lazy loading, gated handoffs, Obsidian integration, and /dream vault analysis. |
 | [taste-claude](./taste-package) | 0.1.0 | Premium frontend design skills — high-end typography, calibrated color, asymmetric layouts, motion choreography, and anti-generic UI standards across multiple aesthetic modes. |
+| [iteration-shelf](./iteration-shelf) | 0.1.0 | Terminal-aesthetic review boards for in-browser design iteration — curated shelves and monster indexes with on-demand iframe loading, sidebar outliner, and browser-safety guards. Explicit invocation only. |
 
 ### Taste Claude — Skills & Suggested Commands
 
@@ -23,6 +24,14 @@ Personal collection of Claude Code plugins by Onnozelaer.
 | `find-skills` | Discovering new skills | Searches the open skills ecosystem via Skills CLI (`npx skills`). |
 
 **Layering**: `design-taste-frontend` provides the engineering foundation. Layer an aesthetic skill on top (`high-end-visual-design`, `minimalist-ui`, or `industrial-brutalist-ui`) for a specific visual direction. Use `full-output-enforcement` with any of them to prevent truncation.
+
+### Iteration Shelf — Skill & Suggested Command
+
+| Skill | Trigger | What it does |
+|-------|---------|-------------|
+| `iteration-shelf` | `/iteration-shelf` (explicit only) | Generates two review boards — a curated shelf and a monster index — from a JSON manifest. Terminal aesthetic, zero dependencies, on-demand iframe loading, warn-gate at 20+ loaded, sticky outliner sidebar with scrollspy. Pairs with `full-output-enforcement` for complete emission and with the Cabinet plugin when active (Bostrol owns shelf ops). |
+
+**Layering**: the shelf chrome has its own hard-coded aesthetic and deliberately overrides `design-taste-frontend` / `high-end-visual-design` defaults. The iterations it indexes are unconstrained — use aesthetic skills freely on those.
 
 ## Structure
 
@@ -46,6 +55,14 @@ Personal collection of Claude Code plugins by Onnozelaer.
 │   ├── stitch-design-taste/
 │   ├── full-output-enforcement/
 │   ├── find-skills/
+│   └── README.md
+├── iteration-shelf/        # Plugin: Iteration Shelf (v0.1.0, 1 skill)
+│   ├── .claude-plugin/     # Plugin metadata (plugin.json)
+│   ├── skills/iteration-shelf/SKILL.md
+│   ├── references/         # Design tokens, schemas, interaction spec
+│   ├── templates/          # curated-shelf.html, monster-index.html
+│   ├── examples/           # Sample iteration-shelf.json
+│   ├── CHANGELOG.md
 │   └── README.md
 └── README.md               # This file
 ```

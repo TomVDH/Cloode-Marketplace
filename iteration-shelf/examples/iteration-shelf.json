@@ -1,0 +1,78 @@
+{
+  "project": "sample-project",
+  "title": "Sample Iteration Shelf",
+  "date": "2026-04-14",
+  "target_folder": "iterations",
+  "output": {
+    "curated": "_iterations.html",
+    "monster": "_monster-index.html"
+  },
+  "layout": "family",
+  "global_links": [
+    { "label": "full directions index", "href": "index.html" }
+  ],
+  "notes": [
+    {
+      "tone": "warning",
+      "title": "Preview origin",
+      "body": "These files reference <code>../../public/images/…</code> and only resolve when the project root is the server root."
+    }
+  ],
+  "segments": [
+    {
+      "id": "star",
+      "title": "★ Star picks",
+      "description": "Shortlisted iterations — start here",
+      "items": [
+        {
+          "id": "FC · v2 (locked)",
+          "file": "fc-three-doors-v2.html",
+          "tag": "locked",
+          "quote": "three doors · locked plate champion.",
+          "note": "Geometric triptych · paper + cobalt · hover invert"
+        },
+        {
+          "id": "HI · v3 (OG-rich)",
+          "file": "hi-type-cascade-v3.html",
+          "star": true,
+          "tag": "og-rich",
+          "quote": "density-restored · poster feel.",
+          "note": "Six vertical rivers · rAF-driven · ember/sage/slate"
+        }
+      ]
+    },
+    {
+      "id": "fc",
+      "title": "FC — Three Doors",
+      "description": "4 iterations · plate champion locked at v2",
+      "items": [
+        { "id": "FC · original", "file": "fc-three-doors.html",    "tag": "original", "note": "Source iteration · vertical strips · hover-expand" },
+        { "id": "FC · v2",       "file": "fc-three-doors-v2.html", "tag": "locked",   "note": "Warm espresso · Fraunces italic · double-bezel" },
+        { "id": "FC · v3",       "file": "fc-three-doors-v3.html", "tag": "draft",    "note": "Stripped chrome · image-forward · one italic mark" },
+        { "id": "FC · v4",       "file": "fc-three-doors-v4.html", "tag": "draft",    "note": "Cream paper · brick/plum/cobalt · brass plaque" }
+      ]
+    },
+    {
+      "id": "hi",
+      "title": "HI — Type Cascade",
+      "description": "4 iterations · three reset poles after v1",
+      "items": [
+        { "id": "HI · original", "file": "hi-type-cascade.html",    "tag": "original" },
+        { "id": "HI · v2",       "file": "hi-type-cascade-v2.html", "tag": "draft", "note": "Density pole · six vertical rivers" },
+        { "id": "HI · v3",       "file": "hi-type-cascade-v3.html", "tag": "draft", "note": "Restraint pole · full-bleed ken-burns" },
+        { "id": "HI · v4",       "file": "hi-type-cascade-v4.html", "tag": "draft", "note": "Image-forward pole · plate parade" }
+      ]
+    },
+    {
+      "id": "fy",
+      "title": "FY — Aperture Iris",
+      "description": "2 live + 2 quarantined",
+      "items": [
+        { "id": "FY · original",      "file": "fy-aperture-iris.html",    "tag": "original" },
+        { "id": "FY · v2",            "file": "fy-aperture-iris-v2.html", "tag": "draft", "note": "Focal plane · cinematic flicker" },
+        { "id": "FY · v3 (quar.)",    "file": "fy-aperture-iris-v3.html", "tag": "quarantined", "note": "Over-composed · parked on disk" },
+        { "id": "FY · v4 (quar.)",    "file": "fy-aperture-iris-v4.html", "tag": "quarantined", "note": "Lost the spatial anchor" }
+      ]
+    }
+  ]
+}
