@@ -1,0 +1,5 @@
+{
+  "name": "bash-tui-toolkit",
+  "version": "0.1.0",
+  "description": "Build polished, interactive bash CLI tools with rich terminal UI — menus, tables, loading bars, spinners, splash screens, transitions, and animated effects. Makes shell scripts look crafted, not cobbled."
+}
