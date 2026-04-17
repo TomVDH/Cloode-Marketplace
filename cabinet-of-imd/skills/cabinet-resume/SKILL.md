@@ -1,12 +1,6 @@
 ---
 name: cabinet-resume
-description: >
-  Resume a previous Cabinet of IMD session — pick up where the crew left off
-  on a project from an earlier day. Reads the session anchor and vault history
-  to restore context without a full cold boot. Use when Tom says "resume",
-  "pick up where we left off", "continue the project", "back to work on X",
-  or invokes /cabinet on a project the anchor already knows about from a
-  previous day.
+description: Resume a prior Cabinet of IMD session — pick up where the crew left off. Reads the vault-resident anchor. Use when Tom says "resume", "pick up where we left off", "continue".
 version: 2.0.0
 ---
 
@@ -41,10 +35,10 @@ ${CLAUDE_PLUGIN_ROOT}/references/terminal-colours.md
 
 ### 2. Read the Session Anchor
 
-Look for `crew-notes/cabinet-session.json` in the project directory.
+Look for `{vault}/projects/{project_slug}/.anchor.json` in the vault.
 
 ```pseudocode
-anchor = READ("crew-notes/cabinet-session.json")
+anchor = READ("{vault}/projects/{project_slug}/.anchor.json")
 
 IF anchor does not exist OR fails parse:
     OUTPUT "[Kevijntje]: No anchor on file — can't resume what we don't have.
@@ -229,7 +223,6 @@ WRITE anchor
 ### 9. Initialize Crew Notes
 
 Same as `/cabinet` step 6-8:
-- Ensure `crew-notes/` exists
 - Append a resume divider to the vault chatter: `"\n---\n*Session resumed — {NOW()}*\n"`
 - Do NOT overwrite existing chatter — append to it
 

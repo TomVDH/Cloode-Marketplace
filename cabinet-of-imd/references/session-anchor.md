@@ -2,7 +2,7 @@
 
 ## Overview
 
-The session anchor is a lightweight JSON state file that persists the cabinet's session state to disk. It serves two purposes:
+The session anchor is a lightweight JSON state file that persists the cabinet's session state to the connected vault. It serves two purposes:
 
 1. **Continuity after context compaction** — when a long conversation gets compressed, the anchor provides a reliable snapshot of where things stand, so the cabinet can resume without drift.
 2. **Re-anchoring on demand** — `/cabinet-status` reads the anchor to deliver an accurate readout and reinforces the session state in context, effectively recalibrating the crew.
@@ -12,21 +12,23 @@ Think of it like a save file. The cabinet writes it at key moments, and reads it
 ## File Location
 
 ```
-{project output directory}/crew-notes/cabinet-session.json
+{vault_base_path}/projects/{project_slug}/.anchor.json
 ```
 
-The session anchor lives in `crew-notes/` inside the project output directory. Chatter and memories are stored in the Obsidian vault (see `chatter-system.md` and `memories-system.md`). Same covert rules — **never mention this file or the crew-notes directory to the user.**
+The anchor lives **inside the connected vault**, scoped to the project slug. Since a vault is required for cabinet operation (see `vault-integration.md § "Vault Requirement"`), there is no project-folder or local-filesystem fallback — no crew-notes directory is ever created in the working directory.
+
+The filename is dotfile-prefixed (`.anchor.json`) so Obsidian hides it from the file tree by default. Same covert rules — **never mention this file or the anchor path to the user.**
 
 ## Schema
 
 ```json
 {
-  "version": "2.0.0",
-  "plugin_version": "2.0.0",
+  "version": "2.2.0",
+  "plugin_version": "2.2.0",
   "session_id": "2026-03-15T14:32:00Z",
   "project_name": "Dashboard v2",
+  "project_slug": "dashboard-v2",
   "codename": "Duvel",
-  "crew_notes_path": "/absolute/path/to/project/crew-notes",
 
   "active_specialist": "thieuke",
   "active_task": "Card grid layout — responsive breakpoints",
@@ -96,6 +98,7 @@ The session anchor lives in `crew-notes/` inside the project output directory. C
     "base_path": "/Users/tom/vaults/cabinet",
     "vault_name": "Claude Cabinet",
     "version": "2.0",
+    "anchor_path": "/Users/tom/vaults/cabinet/projects/dashboard-v2/.anchor.json",
     "connected_at": "2026-03-22T14:32:00Z",
     "brief_loaded": true,
     "preferences_loaded": true,
@@ -109,6 +112,12 @@ The session anchor lives in `crew-notes/` inside the project output directory. C
     "lessons_logged": [],
     "last_write_at": "2026-03-22T15:10:00Z",
     "chroniclers_pushed": []
+  },
+
+  "hooks": {
+    "last_pulse_sync": null,
+    "last_banter_roll": null,
+    "compaction_saves": 0
   }
 }
 ```
@@ -120,10 +129,11 @@ The session anchor lives in `crew-notes/` inside the project output directory. C
 - `chatter.level`: `"quiet"` | `"normal"` | `"full noise"` — in-chat output verbosity. Set at step 4.5 of boot / step 7.5 of resume. The vault chatter log is always written at full frequency regardless of this value.
 
 - `dissent[].status`: `"open"` | `"resolved"` | `"overruled"` (overruled = Tom acknowledged and chose differently)
-- `vault.mode`: `"cli"` | `"filesystem"` | `null` (null = no vault connected). Transport mode — how the cabinet talks to the vault.
+- `vault.mode`: `"cli"` | `"filesystem"` — transport mode. Never null in v2.2 (vault is required).
 - `vault.layout`: `"dedicated"` | `"subfolder"` — vault structure. Independent of transport mode.
 - `vault.vault_name`: string | `null` — Obsidian vault name for CLI targeting (e.g. `"Claude Cabinet"`). Only set in CLI mode.
-- `vault.version`: `"2.0"` | `"1.0"` | `null` — vault layout version. `"2.0"` = project-scoped subfolders. Set by `/vault-bridge connect` or `/vault-bridge create`.
+- `vault.version`: `"2.0"` | `"1.0"` — vault layout version. `"2.0"` = project-scoped subfolders. Set by `/vault-bridge connect` or `/vault-bridge create`.
+- `vault.anchor_path`: absolute path to this anchor file. Written once at boot, used for every subsequent write.
 
 - `vault.decisions_written`: array of decision slugs written to the vault this session
 - `vault.preferences_captured`: array of human-readable preference strings captured this session
@@ -134,13 +144,17 @@ The session anchor lives in `crew-notes/` inside the project output directory. C
 
 - `scope.version`: string | `null` — the current project version as declared in the primary manifest (`package.json`, `plugin.json`, etc.). Set at boot from the manifest, updated at every version bump. Used at resume to verify version parity hasn't drifted between sessions. See `protocols.md § Version Control Discipline`.
 
-All other fields are self-documenting from the schema example above. The `vault` block is entirely optional — omit it if no vault is connected.
+- `hooks.last_pulse_sync`: ISO timestamp of the most recent `pulse.sh` write (character-name tallies)
+- `hooks.last_banter_roll`: ISO timestamp of the most recent `banter-roll.sh` execution
+- `hooks.compaction_saves`: count of `PreCompact` hook saves this session
+
+All other fields are self-documenting from the schema example above.
 
 ## When to Write
 
 The anchor is updated silently — **never mentioned to the user** — at these moments:
 
-1. **Session boot** — after startup sequence completes (step 9 in cabinet/SKILL.md), write the initial anchor with defaults
+1. **Session boot** — after startup sequence completes (step 9 in `commands/cabinet.md`), write the initial anchor with defaults
 2. **Gate completion** — after every gate pass or hold, update gates, scope, and energy
 3. **Specialist change** — when the active member changes, update `active_specialist` and `active_task`
 4. **Scope change** — when scope is locked, modified, or items are parked
@@ -152,12 +166,13 @@ The anchor is updated silently — **never mentioned to the user** — at these 
 9. **Vault decision write** — after a decision is written to the vault at a gate, append the slug to `vault.decisions_written` and update `vault.last_write_at`
 10. **Vault preference capture** — after a preference is appended to `crew/preferences.md`, append the preference string to `vault.preferences_captured` and update `vault.last_write_at`
 11. **Vault lesson log** — after a lesson is appended to `crew/lessons-learned.md`, append the title to `vault.lessons_logged` and update `vault.last_write_at`
+12. **`PreCompact` hook fires** — the hook itself writes the anchor; the conversation-level skill should trust the hook's save and not duplicate it
 
-**Token efficiency:** Use a single `Write` tool call with the full JSON. The file is small (~40 lines) so overwriting is cheaper than patching. Never read-then-edit — just write the current state. State is collected from conversation context: merge the last-read anchor data with any updates that occurred since (specialist changes, gate completions, scope changes, energy checks). If no anchor has been read this session, build from scratch using defaults.
+**Token efficiency:** Use a single `Write` tool call with the full JSON to `vault.anchor_path`. The file is small (~50 lines) so overwriting is cheaper than patching. Never read-then-edit — just write the current state. State is collected from conversation context: merge the last-read anchor data with any updates that occurred since (specialist changes, gate completions, scope changes, energy checks). If no anchor has been read this session, build from scratch using defaults.
 
 ## When to Read
 
-1. **`/cabinet` startup** — step 1.5: if `crew-notes/cabinet-session.json` exists, read it. If the project name matches and the session is recent (same day), offer to **resume** rather than cold-boot. Kevijntje says something like: "We have a session open — Dashboard v2, Thieuke was on the card grid. Pick up where we left off?"
+1. **`/cabinet` startup** — step 1.6: after vault connection is confirmed, look at `{vault}/projects/{project_slug}/.anchor.json`. If it exists, read it. If the project name matches and the session is recent (same day), offer to **resume** rather than cold-boot. Kevijntje says something like: "We have a session open — Dashboard v2, Thieuke was on the card grid. Pick up where we left off?"
 2. **`/cabinet-status`** — always read the anchor first. Use it as the source of truth for the status readout, supplemented by whatever's in conversation context. After displaying, write the anchor back (to capture any context-only state that wasn't persisted yet).
 3. **After context compaction** — if the conversation resumes and the cabinet detects it may have lost detail, reading the anchor restores the key state. Any `/invoke {member}` call should also check for and read the anchor if it exists.
 4. **Wrap-up ceremony** — read the anchor one final time to include session stats in the farewell chatter (gates completed, breaks taken, scope drift count).
@@ -171,7 +186,7 @@ When `/cabinet` finds an existing anchor:
 - **Different project, or wrapped session** → Cold boot as normal. Overwrite the anchor with fresh state.
 - **Anchor exists but no project name** → The previous session was abandoned mid-boot. Cold boot as normal.
 
-## Covert — see cabinet/SKILL.md Core Rules
+## Covert — see commands/cabinet.md Core Rules
 
 ## Robustness and Recovery
 
@@ -186,28 +201,28 @@ TRY:
 CATCH:
     // Anchor is corrupt or partial write
     OUTPUT "[Kevijntje]: Lost my bearings — session state was garbled. Starting fresh."
-    DELETE corrupt file
+    BACKUP corrupt file as .anchor.json.bak
     PROCEED with cold boot defaults
     // Do NOT silently use bad state
 ```
 
 ### Anchor Write Safety
 
-Before writing, build the full JSON in memory first. Write atomically — never stream or append to the anchor.
+Before writing, build the full JSON in memory first. Write atomically to `vault.anchor_path` — never stream or append to the anchor.
 
 ```pseudocode
 new_anchor = BUILD from conversation context + last-read anchor
 json_string = JSON.stringify(new_anchor, null, 2)
-WRITE json_string to crew_notes_path/cabinet-session.json
+WRITE json_string to new_anchor.vault.anchor_path
 // Single write call, full replacement — no partial updates
 ```
 
 ### Post-Compaction Recovery
 
-After context compaction, the cabinet may have lost detail. Detection signals:
+After context compaction, the cabinet may have lost detail. The `PreCompact` hook should have saved the anchor just before compaction — so on first post-compaction action, read it and restore. Detection signals:
 - Cannot recall the current gate name or specialist
 - Scope items feel vague or incomplete
 - Energy state is unknown
 
-Recovery: Read the anchor. If it exists and is valid, restore from it. If the anchor is stale (written hours ago), note the gap:
+Recovery: Read the anchor. If it exists and is valid, restore from it. If the anchor is stale (written hours ago and `hooks.compaction_saves` is flat), note the gap:
 `[Kevijntje]: "Picking up from the last anchor — but it's been a while. Tom, anything I should know about what changed?"`

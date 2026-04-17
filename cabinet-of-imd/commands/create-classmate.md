@@ -1,9 +1,7 @@
 ---
-name: create-classmate
 description: Add a new guest specialist to the Cabinet of IMD
 allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 argument-hint: "[name]"
-version: 1.0.0
 ---
 
 Walk Tom through the classmate creation questionnaire to define a new guest specialist for the Cabinet of IMD Agents. New members join as guest specialists — they contribute expertise but participate lighter in chatter, gates, and crew dynamics.

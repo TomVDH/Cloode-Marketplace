@@ -1,6 +1,18 @@
 # Vault Integration
 
-Loaded on demand, not at boot. The cabinet detects vault availability during startup (step 1.6) and loads this reference only if a vault path is found. If no vault is available, the cabinet operates normally — this entire file is skipped.
+Loaded at boot. The cabinet detects vault availability during startup (step 1.6). As of v2.2 a connected vault is required — see the Vault Requirement section below.
+
+---
+
+## Vault Requirement (v2.2)
+
+The Cabinet of IMD requires a connected vault to operate. This is a hard requirement — there is no local-filesystem fallback for session state, chatter, or memories. Without a vault:
+
+- `/cabinet` aborts boot and points the user at `/vault-bridge`
+- Specialist skills invoked via `/invoke` operate ephemerally for the duration of the call and do not attempt anchor I/O
+- Chatter, decisions, preferences, and lessons are not captured
+
+Rationale: the plugin's value proposition is cross-session persistence. A vault-less "degraded mode" created confusing expectations and ghost session state. v2.2 removes the fallback entirely.
 
 ---
 
@@ -329,7 +341,7 @@ FUNCTION detect_vault_name():
 
 Vault mode and base path stored in anchor at `vault.mode` and `vault.base_path`. All subsequent operations use stored values — no re-scanning. If vault becomes unavailable mid-session, `vault_available = false` for the rest of the session.
 
-**Critical: no vault is not an error.** In terminal/Code mode, the cabinet never asks about it — CLI detection is sufficient. In Cowork mode, a one-time directory picker is offered (see step 4 of the discovery chain) but skipping is always an option. After discovery completes, the cabinet never revisits it mid-session.
+**Critical (v2.2): no vault is a hard stop for `/cabinet`.** If the discovery chain ends without an available vault, `/cabinet` aborts boot and points the user at `/vault-bridge`. In Cowork mode, the directory picker is the primary recovery path; in terminal/Code mode, the crew directs Tom to run `/vault-bridge create` or `/vault-bridge connect`. After discovery completes successfully, the cabinet never revisits vault state mid-session.
 
 ---
 

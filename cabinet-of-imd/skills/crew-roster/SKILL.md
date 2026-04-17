@@ -1,10 +1,6 @@
 ---
 name: crew-roster
-description: >
-  Display the Cabinet of IMD Agents roster — shows all crew members with their
-  roles, colour accents, and a dynamic quip from each. Use when the user asks
-  to "show the roster", "who's on the crew", "list the agents", or similar.
-  This skill does NOT initiate project work — use /cabinet for that.
+description: Display the Cabinet of IMD crew roster with colour accents and dynamic quips. Use when the user asks "show the roster", "who's on the crew", or "list the agents". Does not start project work.
 version: 1.0.0
 ---
 
