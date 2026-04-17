@@ -2,6 +2,29 @@
 
 All notable changes to the Cabinet of IMD plugin.
 
+## v2.2.0 — Vault-First + Hooks
+
+- **Vault is now required.** `/cabinet` refuses to boot without a connected vault. No local-filesystem fallback. Rationale: ghost-state bugs and confusing "degraded mode." See `references/vault-integration.md § Vault Requirement`.
+- **Session anchor moved into the vault.** Path: `{vault}/projects/{slug}/.anchor.json`. The `crew-notes/` directory is no longer created in project folders. Schema gained `vault.anchor_path` + a `hooks` block for hook-driven state. See `references/session-anchor.md`.
+- **Four skills promoted to slash-commands** for context efficiency and cleaner trigger semantics:
+  - `/cabinet` (was `skills/cabinet`)
+  - `/invoke` (was `skills/invoke`)
+  - `/dream` (was `skills/dream`)
+  - `/create-classmate` (was `skills/create-classmate`)
+- **Tightened skill descriptions** across the remaining skills (`cabinet-resume`, `cabinet-status`, `cabinet-tune`, `crew-roster`, `vault-bridge`) — ~⅓ the tokens in the auto-trigger scan, same triggering power.
+- **New hooks layer** (`hooks/hooks.json`):
+  - `SessionStart` — historical question, anniversary callback, per-project stats
+  - `PreCompact` — saves anchor before context compaction clobbers it
+  - `UserPromptSubmit` — silent character/running-joke pulse tracking
+  - `Stop` — 1-in-5 banter-roll: promotes memorable lines to `crew/best-lines.md`
+  - `SessionEnd` — marks interrupted sessions, emits farewell
+  - `Notification` — rewrites generic "Claude needs input" in crew voice
+- **New vault files:** `crew/scrapbook/questions.md`, `crew/best-lines.md`, `crew/pulse.json`.
+- **`LICENSE`** (MIT) added.
+- **`plugin.json`** gained `homepage`, `repository`, `license`, plus `obsidian` and `vault` keywords.
+
+---
+
 ## [2.1.0] — 2026-04-12
 
 ### Added

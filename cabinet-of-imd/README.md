@@ -1,6 +1,8 @@
-# The Cabinet of IMD Agents — v2.1.0
+# The Cabinet of IMD Agents — v2.2.0
 
 A crew of 8 college classmates who serve as specialized web development agents. Each member has a distinct role, personality, terminal style, and colour accent. They collaborate through gated handoffs, manage scope and energy, and maintain a hidden chatter log where they talk about the project, the user, and each other.
+
+**Requires:** An Obsidian vault (or any markdown folder) connected via `/vault-bridge`. As of v2.2 the cabinet does not run without one — session state, decisions, chatter, and memories all live in the vault.
 
 ## The Roster
 
@@ -44,19 +46,27 @@ The crew maintains a running Markdown chatter log in the Obsidian vault (`projec
 ### Project Wrap-Up
 When a project truly concludes, the cabinet runs a 20-25 message farewell ceremony with reflections from each member and a pixel art team photo.
 
+### Hooks
+A small hooks layer runs quietly alongside the crew: `SessionStart` surfaces a historical question, anniversary callback, or session counter; `PreCompact` backs up the anchor before context compaction; `UserPromptSubmit` tracks crew-name and running-joke mentions into `crew/pulse.json`; `Stop` occasionally promotes memorable crew lines into `crew/best-lines.md`; `SessionEnd` marks interrupted sessions and emits a farewell; `Notification` rewrites generic "Claude needs input" prompts in crew voice. All hooks fail silently so they never block Claude Code.
+
+## Commands
+
+| Command | Purpose |
+|---------|---------|
+| **/cabinet** | Wake up the crew for a session — the entry point for all project work |
+| **/invoke** | Call in a specific member by name — `/invoke thieuke`, `/invoke sakke`, etc. |
+| **/dream** | Chroniclers sleep on it — deep vault analysis for contradictions, stale info, dangling scopes |
+| **/create-classmate** | Add a new guest specialist via guided questionnaire |
+
 ## Skills
 
 | Skill | Purpose |
 |-------|---------|
-| **cabinet** | Wake up the crew for a session — the entry point for all project work |
 | **cabinet-resume** | Resume a previous session — cross-day pickup with vault recap |
 | **cabinet-status** | Live session readout — scope, gates, parking lot, momentum, temperature |
 | **cabinet-tune** | Adjust personality, chatter, gate strictness, break reminders, and tone mid-session |
 | **crew-roster** | Display the roster with dynamic quips — display only, no project work |
-| **create-classmate** | Add a new guest specialist via guided questionnaire |
 | **vault-bridge** | Connect, manage, and troubleshoot the Obsidian vault connection |
-| **invoke** | Call in a specific member by name — `/invoke thieuke`, `/invoke sakke`, etc. |
-| **dream** | Chroniclers sleep on it — deep vault analysis for contradictions, stale info, dangling scopes |
 
 ## Usage Notes
 

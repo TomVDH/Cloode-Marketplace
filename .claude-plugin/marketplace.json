@@ -8,9 +8,9 @@
   "plugins": [
     {
       "name": "cabinet-of-imd",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "source": "./cabinet-of-imd",
-      "description": "The Cabinet of IMD Agents — a crew of 8 college classmates who serve as specialized web development agents. Vault-native Markdown chatter, lazy character loading, organic personality, gated handoffs, Obsidian integration, and a /dream command for deep vault analysis."
+      "description": "The Cabinet of IMD Agents — a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support, hook-enriched UI flair, and /dream-driven vault analysis."
     },
     {
       "name": "taste-claude",

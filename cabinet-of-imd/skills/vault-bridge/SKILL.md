@@ -1,10 +1,6 @@
 ---
 name: vault-bridge
-description: >
-  Connect the Cabinet to an Obsidian vault or external folder for persistent
-  cross-session memory — project briefs, decision logs, preferences, and
-  session summaries. Use when setting up, checking, or manually syncing the
-  vault connection.
+description: Connect, check, or sync the Cabinet's Obsidian vault. Use for setting up a new vault, verifying connection, or manual sync.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 version: 3.0.0
 ---
@@ -236,7 +232,7 @@ WRITE Home.md:
 
 ## Storage Tiers
 
-**Tier 1 — Session state:** `{project_root}/crew-notes/` — the session anchor (`cabinet-session.json`). Tied to project directory. Ephemeral.
+**Tier 1 — Session anchor:** `{vault}/projects/{project_slug}/.anchor.json` — vault-resident session state. Hidden in Obsidian by the dotfile prefix. Required (no local fallback in v2.2).
 
 **Tier 2 — Persistent knowledge:** The vault. Everything that matters: project briefs, decisions, sessions, chatter, tasks, references, crew preferences, lessons, memories. Always optional — without it, the cabinet works but nothing persists.
 

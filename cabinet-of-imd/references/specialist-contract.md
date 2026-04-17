@@ -11,22 +11,23 @@ Shared activation and behaviour protocol for all individual cabinet member invoc
 3. **Load protocols:** Read `${CLAUDE_PLUGIN_ROOT}/references/protocols.md` and `${CLAUDE_PLUGIN_ROOT}/references/code-conventions.md`
 4. **Display header:** Use the member's colour for the ANSI header (terminal) or markdown header (Cowork). See terminal-colours.md for both formats and environment detection.
 5. **Acknowledge the task** in character — brief, no ceremony, in the member's voice
-6. **Restore session state:** Look for `crew-notes/cabinet-session.json` in the project directory. If found, read it to restore session context (active gate, scope, energy state, project name, `crew_notes_path`). Use `crew_notes_path` from the anchor for all subsequent file operations. Update `active_specialist` to this member's lowercase name. If no anchor exists, note that no prior session state is available.
+6. **Restore session state:** Read the vault-resident anchor at `{vault}/projects/{project_slug}/.anchor.json` (path also stored in `anchor.vault.anchor_path`). If found, restore session context (active gate, scope, energy state, project name). Update `active_specialist` to this member's lowercase name. If no anchor exists, note that no prior session state is available and the specialist is being invoked outside a cabinet session — a `/cabinet` boot is still the recommended entry point.
 
-### Project Directory Discovery
+### Anchor Path Resolution
 
-Find the project root using this fallback chain:
+The anchor always lives in the connected vault. The path is:
 
 ```pseudocode
-IF anchor exists AND anchor.crew_notes_path is set:
-    path = anchor.crew_notes_path
-ELSE IF git rev-parse --show-toplevel succeeds:
-    path = $(git rev-parse --show-toplevel) + "/crew-notes"
+IF anchor already loaded this session:
+    path = anchor.vault.anchor_path  // authoritative
 ELSE:
-    path = $(pwd) + "/crew-notes"
+    // Resolve from vault config + current project slug
+    vault_base = vault.base_path    // from vault discovery (see vault-integration.md)
+    slug       = slugify(current_project_name)
+    path       = vault_base + "/projects/" + slug + "/.anchor.json"
 ```
 
-This is the same logic used by `/cabinet` (step 6). Specialist skills must use it too — don't assume "the project directory" is known.
+There is **no** project-folder or working-directory fallback — the cabinet requires a connected vault (see `vault-integration.md § "Vault Requirement"`). If no vault is available, specialists should not attempt to read or write an anchor; they operate ephemerally for the duration of the invocation.
 
 ---
 
@@ -56,18 +57,19 @@ Every specialist has baseline vault awareness. The vault is the cabinet's persis
 ### Detecting the Vault
 
 ```pseudocode
-// After reading the anchor (step 6), check for vault availability:
+// After reading the anchor (step 6), confirm vault availability:
 IF anchor exists AND anchor.vault AND anchor.vault.base_path:
     vault_available = true
     vault_mode = anchor.vault.mode       // "cli" or "filesystem"
     vault_layout = anchor.vault.layout   // "dedicated" or "subfolder"
     // No need to store base_path locally — vault.* calls resolve paths internally
 ELSE:
+    // Specialist invoked outside a cabinet session — no anchor, no vault context.
     vault_available = false
-    // No vault — proceed normally. Never mention or prompt.
+    // Operate ephemerally for this invocation. Recommend /cabinet on next natural handoff.
 ```
 
-The vault connection is **always resolved from the anchor**. Do not re-run vault discovery — that's the cabinet boot's job (step 1.6). If no anchor exists, no vault is available to the specialist.
+The vault connection is **always resolved from the anchor**. Do not re-run vault discovery — that's the cabinet boot's job (see `commands/cabinet.md` step 1.5). Since v2.2 the cabinet requires a vault to boot, so during a real cabinet session the vault is guaranteed connected.
 
 ### Reading from the Vault (All Specialists)
 
@@ -132,4 +134,4 @@ See `terminal-colours.md` for the full detection logic and concrete signals. Def
 
 ## Anchor Writes
 
-After any state-changing action (specialist change, gate completion, scope change, energy check, vault write), silently update `crew-notes/cabinet-session.json`. Follow the write protocol and validation rules in `${CLAUDE_PLUGIN_ROOT}/references/session-anchor.md`.
+After any state-changing action (specialist change, gate completion, scope change, energy check, vault write), silently update the anchor at `anchor.vault.anchor_path`. Follow the write protocol and validation rules in `${CLAUDE_PLUGIN_ROOT}/references/session-anchor.md`.

@@ -1,10 +1,6 @@
 ---
 name: cabinet-tune
-description: >
-  Adjust the Cabinet of IMD Agents' behaviour — personality intensity, chatter
-  frequency, gate strictness, break reminders, and tone. Use when Tom wants to
-  "dial it down", "turn up the personality", "less chatter", "skip the break
-  reminders", "be more strict with gates", or any session behaviour adjustment.
+description: Adjust the Cabinet's behaviour mid-session — personality intensity, chatter frequency, gate strictness, break reminders. Use for "dial it down", "less chatter", "be stricter on gates".
 version: 2.0.0
 ---
 

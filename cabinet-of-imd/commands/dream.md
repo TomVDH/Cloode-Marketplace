@@ -1,12 +1,6 @@
 ---
-name: dream
-description: >
-  The Chroniclers sleep on it — a deep analysis crawl of existing vault data
-  for a project. Surfaces contradictions, stale info, dangling scopes,
-  unacted decisions, and documentation gaps. The output is a working report
-  used to clean up, then discarded. Suggested by the cabinet, approved by Tom.
+description: Deep analytical crawl of vault data — surfaces contradictions, stale info, dangling scopes, unacted decisions, documentation gaps.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-version: 1.0.0
 ---
 
 The Chroniclers (Bostrol, Kevijntje, Jonasty) slept on the project and have thoughts. `/dream` performs a deep analysis of the vault data for the current project, surfacing issues that accumulate silently across sessions.

@@ -1,12 +1,6 @@
 ---
 name: cabinet-status
-description: >
-  Live session status readout from the Cabinet of IMD Agents. Shows current
-  scope snapshot, active specialist, gate progress, parking lot, momentum,
-  and session temperature. Reads from the session anchor for accuracy and
-  writes it back to re-anchor state. Use when Tom asks "where are we",
-  "status", "what's the state", or similar mid-session check-ins.
-  Also serves as a recalibration tool after context compaction.
+description: Live session readout — scope, active specialist, gate progress. Reads and re-writes the session anchor. Use for "where are we", "status", or after context compaction.
 version: 2.0.0
 ---
 
@@ -20,7 +14,7 @@ This makes `/cabinet-status` the crew's recalibration tool — if things drift a
 
 ### 1. Read the Session Anchor
 
-Look for `crew-notes/cabinet-session.json` in the project output directory.
+Look for `{vault}/projects/{project_slug}/.anchor.json` in the vault.
 
 - **Found** → Read it. Use its contents as the primary source for the status readout. Supplement with any additional context from the conversation (e.g., if the specialist changed since the last anchor write).
 - **Not found** → The session was never anchored (pre-v0.6.1 session or cold boot in progress). Fall back to conversation context only. Kevijntje notes: "No anchor on file — reading from memory. Might be fuzzy around the edges."
@@ -89,7 +83,7 @@ Vault: CLI — dedicated "Claude Cabinet"
 
 ### 5. Write the Anchor Back
 
-After displaying the status, write `crew-notes/cabinet-session.json` back to disk with the current state. This captures any updates that were only in conversation context (e.g., a specialist changed but the anchor wasn't updated yet). This is the re-anchoring step — it ensures the anchor is always current after a status check.
+After displaying the status, write `{vault}/projects/{project_slug}/.anchor.json` back to disk with the current state. This captures any updates that were only in conversation context (e.g., a specialist changed but the anchor wasn't updated yet). This is the re-anchoring step — it ensures the anchor is always current after a status check.
 
 **This write is silent.** Never mention it to the user.
 

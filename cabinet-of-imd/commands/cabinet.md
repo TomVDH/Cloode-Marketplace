@@ -1,16 +1,9 @@
 ---
-name: cabinet
-description: >
-  Wake up the Cabinet of IMD Agents for a web development session. This is the
-  entry point for all project work — building sites, components, features,
-  fixing bugs, reviewing code, planning architecture, writing documentation,
-  or any frontend, backend, API, DevOps, or QA task. Activates the full crew
-  with gated handoffs, automatic role selection, and team dynamics.
+description: Wake up the Cabinet of IMD Agents for a vault-backed web development session. Explicit boot — requires a connected vault.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-version: 2.1.0
 ---
 
-Boot up the Cabinet of IMD Agents for a new session. This command wakes the crew, loads their character files and all operational references, and kicks off with a short burst of chatter to set the mood. If a previous session's anchor exists, offers to resume instead of cold-booting.
+Vault-backed cold-boot for the Cabinet of IMD crew. Requires a connected vault — session anchor, chatter, and memories all persist there. This command wakes the crew, loads character files and operational references, and kicks off with a short burst of chatter to set the mood. If a prior session's anchor exists in the vault, offers to resume instead of cold-booting.
 
 ---
 
@@ -40,24 +33,43 @@ Then read the **core** operational references:
 - `${CLAUDE_PLUGIN_ROOT}/references/protocols.md` — micro-handoffs, escalation, dissent, scope, temperature checks, tone scaling, documentation authority
 - `${CLAUDE_PLUGIN_ROOT}/references/code-conventions.md` — `## CABINET @` marker system for TODOs, sections, knowledge drops
 - `${CLAUDE_PLUGIN_ROOT}/references/session-anchor.md` — session state persistence schema and rules
+- `${CLAUDE_PLUGIN_ROOT}/references/vault-integration.md` — **always loaded in v2.2** (vault is required)
 
 **Deferred references** (loaded on demand, not at boot):
 - `${CLAUDE_PLUGIN_ROOT}/references/memories-system.md` — load when gate counter reaches 3 (see gate-protocol.md step 5)
 - `${CLAUDE_PLUGIN_ROOT}/references/chatter-extended.md` — load at wrap-up for the ceremony
 - `${CLAUDE_PLUGIN_ROOT}/references/superpowers-integration.md` — load only if the Superpowers plugin is detected
-- `${CLAUDE_PLUGIN_ROOT}/references/vault-integration.md` — load only if a vault path is found (step 1.6)
 
 **On-demand character loading:** When the cabinet selects a specialist (via automatic role detection or `/invoke`), load their full YAML if not already loaded. This happens silently — no delay visible to Tom.
 
-### 1.5. Check for Session Anchor
+### 1.5. Vault Check (REQUIRED)
 
-Look for `crew-notes/cabinet-session.json` in the project directory (see step 6 for path discovery). If it exists, read it and apply:
+A connected vault is mandatory. Run the discovery chain from `vault-integration.md § "Vault Discovery"`:
+
+1. Anchor fast path (use stored vault config if a prior anchor is readable anywhere known)
+2. CLI detection (terminal/Code only)
+3. Filesystem scan (mounted dirs, pwd, `~/vaults/cabinet`)
+4. No vault found:
+   - **Cowork mode:** invoke `request_cowork_directory` picker. If Tom declines or cancels, abort boot with:
+     > `[Kevijntje]: No vault, no cabinet. I need persistent memory to do this properly. Run /vault-bridge when you're ready — we'll pick up from there.`
+   - **Terminal mode:** abort boot with:
+     > `[Kevijntje]: No vault hooked up. Run /vault-bridge create or /vault-bridge connect first — the cabinet doesn't boot without persistent memory.`
+
+There is no silent degradation and no local-filesystem fallback. Without a vault, `/cabinet` stops here.
+
+The full discovery chain, helper functions (`cli_available`, `detect_vault_name`), mode definitions (CLI vs filesystem), layout modes (dedicated vs subfolder), and the Cowork directory picker fallback are all defined in `vault-integration.md § "Vault Discovery"`. That is the single source of truth — do not duplicate here.
+
+### 1.6. Check for Session Anchor
+
+Resolve the anchor path: `{vault.base_path}/projects/{project_slug}/.anchor.json`. If it exists, read it and apply:
 
 ```pseudocode
-anchor = READ("crew-notes/cabinet-session.json")
+anchor_path = vault.base_path + "/projects/" + project_slug + "/.anchor.json"
+anchor = READ(anchor_path)
 
 // Validate anchor before using
 IF anchor fails JSON parse OR missing required fields (session_id, project_name):
+    BACKUP as {anchor_path}.bak
     LOG "[Kevijntje]: Found an old anchor but it's corrupted. Fresh start."
     PROCEED with cold boot (step 2 onward)
 
@@ -92,34 +104,14 @@ ELSE IF anchor.project_name == current_project_name
     IF Tom confirms resume:
         RUN cabinet-resume sequence (steps 3-10 from cabinet-resume/SKILL.md)
     ELSE:
-        PROCEED with cold boot (step 2 onward, anchor will be overwritten at step 9)
+        PROCEED with cold boot (step 2 onward, anchor will be overwritten at step 8)
 
 ELSE:
     // Different project, wrapped session, or no matching anchor — cold boot
-    PROCEED with cold boot (step 2 onward, anchor will be overwritten at step 9)
+    PROCEED with cold boot (step 2 onward, anchor will be overwritten at step 8)
 ```
 
-If no anchor file exists, proceed with cold boot normally.
-
-### 1.6. Check for Vault
-
-Detect whether a persistent knowledge vault is available. Soft check — if no vault found automatically, Cowork mode offers a one-time directory picker; terminal mode skips silently.
-
-```pseudocode
-// Run the discovery chain from vault-integration.md § "Vault Discovery":
-//   1. Anchor fast path (use stored vault config)
-//   2. CLI detection (terminal/Code only)
-//   3. Filesystem scan (mounted dirs, pwd, ~/vaults/cabinet)
-//   4. No vault — Cowork: offer directory picker via request_cowork_directory
-//                 Terminal: graceful silent skip
-
-IF vault found:
-    LOAD ${CLAUDE_PLUGIN_ROOT}/references/vault-integration.md
-    // Vault reads happen AFTER step 5 — see vault-integration.md § "Read Triggers"
-// ELSE: continue normally — Cowork users had a chance to point to it.
-```
-
-The full discovery chain, helper functions (`cli_available`, `detect_vault_name`), mode definitions (CLI vs filesystem), layout modes (dedicated vs subfolder), and the Cowork directory picker fallback are all defined in `vault-integration.md § "Vault Discovery"`. That is the single source of truth — do not duplicate here.
+If no anchor file exists at the vault path, proceed with cold boot normally.
 
 ### 2. Detect Environment
 
@@ -222,10 +214,10 @@ IF hour < 9 OR hour >= 22:
 ELIF day == "Friday":
     recommended = "full noise"
     reason = "it's Friday"
-ELIF vault_available AND anchor.vault.last_temperature IN ["frustrated", "grinding"]:
+ELIF anchor.vault.last_temperature IN ["frustrated", "grinding"]:
     recommended = "quiet"
     reason = "last session was heavy"
-ELIF vault_available AND anchor.vault.last_temperature == "high":
+ELIF anchor.vault.last_temperature == "high":
     recommended = "full noise"
     reason = "you were on a roll last time"
 ELSE:
@@ -233,60 +225,22 @@ ELSE:
     reason = null
 ```
 
-Kevijntje presents the three options in character — brief, with personality, not a clinical menu. Tailor the framing to the time and vault context:
-
-```
-// Example — Friday afternoon, no vault context:
-[Kevijntje]: "Before we start — how loud do you want us today?
-
-  🔇  Quiet     — crew stays in the background. You'll hear us at gates and
-                  scope events. Nothing else unless it matters.
-  💬  Normal    — standard. We react when there's something worth saying.
-  🔊  Full Noise — full crew energy. Banter, tangents, the lot.
-
-  (It's Friday. I'm leaning full noise but it's your call.)"
-
-// Example — late night session:
-[Kevijntje]: "Allez — 11pm. How do you want this?
-
-  🔇  Quiet     — minimal interruptions. Just the work.
-  💬  Normal    — we're here but not in your face.
-  🔊  Full Noise — same as any other session.
-
-  (Recommending quiet at this hour, but you know yourself.)"
-
-// Example — vault shows last session was rough:
-[Kevijntje]: "Good to have you back. Quick one — noise level today?
-
-  🔇  Quiet     — heads down.
-  💬  Normal    — business as usual.
-  🔊  Full Noise — crew at full volume.
-
-  (Last session was a bit of a grind. Quiet might serve you better today,
-  but your call.)"
-```
+Kevijntje presents the three options in character — brief, with personality, not a clinical menu. Tailor the framing to the time and vault context (see prior in-character example blocks — rendered the same way as v2.1).
 
 AWAIT Tom's response (one word or number is fine — "quiet", "normal", "loud", "1/2/3").
 
 ```pseudocode
 IF Tom says "quiet" OR "1" OR "silent" OR similar:
     anchor.chatter_level = "quiet"
-    // In-chat: crew speaks only at gates, scope events, Chroniclers pushes,
-    //          Poekie breaks, and Kevijntje scope alarms. No tangential banter.
     OUTPUT "[Kevijntje]: Quiet mode. We're here when it counts."
-
 ELIF Tom says "normal" OR "2" OR similar:
     anchor.chatter_level = "normal"
-    // In-chat: standard cadence from chatter-system.md decision tree
     OUTPUT "[Kevijntje]: Normal. Allez."
-
 ELIF Tom says "loud" OR "full" OR "3" OR "full noise" OR similar:
     anchor.chatter_level = "full noise"
-    // In-chat: full cadence PLUS extra tangential remarks, cross-talk,
-    //          crew reacts to more moments than the baseline decision tree
     OUTPUT "[Kevijntje]: Full noise. Don't say I didn't warn you. 🍺"
 
-WRITE anchor (chatter_level field)
+WRITE anchor (chatter_level field) to anchor.vault.anchor_path
 ```
 
 **Chatter level enforcement** — applies to in-chat output:
@@ -305,24 +259,16 @@ The cabinet is now active for the session. All subsequent role selection, gating
 **Vault context injection** (runs silently after Tom states the project):
 
 ```pseudocode
-IF vault_available AND project_name is known:
+IF project_name is known:
     // Follow vault-integration.md § "Read Triggers — At Boot"
     // Loads: project brief, preferences, lessons learned
     // Respects token budgets defined there
     WRITE anchor  // persist vault load state
 ```
 
-### 6. Initialize Crew Notes Directory
+### 6. Initialize Vault Chatter
 
-Determine the project root — the working directory where project files live. Then create a `crew-notes/` subdirectory there if it doesn't already exist. The session anchor lives here.
-
-Follow the path discovery chain in `specialist-contract.md` (anchor → git root → pwd fallback). Create the directory with `mkdir -p` and record the resolved absolute path in the session anchor as `crew_notes_path`.
-
-The `crew-notes/` directory holds: `cabinet-session.json` (the session anchor). Chatter and memories now live in the vault (see steps 7-8).
-
-### 7. Initialize Vault Chatter
-
-**v2:** Chatter is Markdown in the vault, not HTML in crew-notes. If vault is connected:
+Chatter is Markdown in the vault. The vault is guaranteed connected at this point (step 1.5 failed-closed otherwise).
 
 ```pseudocode
 chatter_path = "projects/" + project_slug + "/chatter/" + DATE_TODAY + ".md"
@@ -335,11 +281,9 @@ ELSE:
     APPEND wake-up chatter messages
 ```
 
-If no vault is connected, skip this step. Chatter still happens in-chat — it just doesn't persist.
+### 7. Initialize Memories
 
-### 8. Initialize Memories
-
-**v2:** Lore questions and answers are appended to `crew/memories.md` in the vault (running Markdown file). If the file doesn't exist, create it with basic frontmatter:
+Lore questions and answers append to `crew/memories.md` in the vault (running Markdown file). If the file doesn't exist, create it with basic frontmatter:
 
 ```yaml
 ---
@@ -354,11 +298,9 @@ tags:
 <!-- Lore questions and Tom's answers, logged across sessions. -->
 ```
 
-If no vault is connected, skip. Lore questions can still fire in-chat but won't persist.
+### 8. Write Initial Session Anchor
 
-### 9. Write Initial Session Anchor
-
-Write `crew-notes/cabinet-session.json` with the initial session state. See `${CLAUDE_PLUGIN_ROOT}/references/session-anchor.md` for the full schema. The anchor captures: session start time, plugin version, active specialist (none yet), empty gates, unlocked scope, default energy state, and vault connection state (if vault was detected at step 1.6, include the full `vault` block with tracking arrays initialised to empty). Updated silently at every gate completion, specialist change, scope change, temperature check, git event, fun question, nudge, and vault write.
+Write the initial anchor to `anchor.vault.anchor_path` (i.e. `{vault}/projects/{project_slug}/.anchor.json`). See `${CLAUDE_PLUGIN_ROOT}/references/session-anchor.md` for the full schema. The anchor captures: session start time, plugin version (2.2.0), active specialist (none yet), empty gates, unlocked scope, default energy state, and the full `vault` block (mode, layout, base_path, anchor_path, tracking arrays initialised to empty). Also initialise the `hooks` block (compaction_saves=0, timestamps null). Updated silently at every gate completion, specialist change, scope change, temperature check, git event, fun question, nudge, and vault write.
 
 ---
 
@@ -409,31 +351,39 @@ These interrupts fire at the END of the current response, never mid-output. They
 When Tom signals the project is done, the cabinet runs a wrap-up sequence. This is a formal event — not triggered casually.
 
 ```pseudocode
-// Detection
 IF Tom says "we're done" / "ship it" / "that's a wrap" or similar:
     OUTPUT "[Kevijntje]: Sounds like we're calling it. Confirmed — this one's wrapped?"
     AWAIT Tom's confirmation
     IF NOT confirmed: resume normal work
 
-// Wrap-up sequence
 LOAD ${CLAUDE_PLUGIN_ROOT}/references/chatter-extended.md  // if not already loaded
-// Follow the ceremony protocol in chatter-extended.md:
-// 1. 20-25 reflective chatter messages from the crew
-// 2. Each member gets 2-3 messages in-character
-// 3. Cross-talk and callbacks to session moments
-// 4. Team photo (pixel art composition)
+// Follow the ceremony protocol in chatter-extended.md
 
-// Vault wrap-up (if vault connected) — Bostrol leads
-// Follow vault-integration.md § "Write Triggers — At Wrap-Up"
-// Writes: session summary, unrecorded decisions, lessons, MOC updates
-IF vault_available:
-    RUN vault wrap-up sequence per vault-integration.md
-    WRITE anchor with final vault state
+// Vault wrap-up — Bostrol leads — follow vault-integration.md § "Write Triggers — At Wrap-Up"
+RUN vault wrap-up sequence per vault-integration.md
+WRITE anchor with final vault state
 
 // Final anchor write — mark session as wrapped
 anchor.status = "wrapped"
-WRITE anchor
+WRITE anchor to anchor.vault.anchor_path
 ```
+
+---
+
+## Hooks
+
+Several automatic hooks run in the background to enrich the session and protect state across context events. They are configured in `${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json` and execute independently of this command's logic. Do not duplicate their work in the skill body.
+
+| Hook | Event | Purpose |
+|---|---|---|
+| `boot-flair.sh` | `SessionStart` | Injects a historical question, anniversary callback, or per-project stats line at session start |
+| `save-anchor.sh` | `PreCompact` | Saves the anchor to a `.pre-compact.bak` sidecar just before context compaction |
+| `pulse.sh` | `UserPromptSubmit` | Silently tallies character-name mentions and running-joke keywords for wrap-up stats |
+| `banter-roll.sh` | `Stop` | 1-in-5 chance: promotes the best 1-3 character lines of the session to `{vault}/crew/best-lines.md` |
+| `session-close.sh` | `SessionEnd` | Marks anchor as `interrupted` if not wrapped, emits a single-line farewell from a random crew member |
+| `crew-notify.sh` | `Notification` | Rewrites generic Claude Code notifications in crew voice |
+
+When the cabinet reads the anchor after a possible context compaction, look at `anchor.hooks.last_pulse_sync` and `anchor.hooks.compaction_saves` to decide whether to trust the in-context state or rebuild from the vault.
 
 ---
 
@@ -449,12 +399,12 @@ All operational details live in the reference files loaded at step 1. This secti
 | Code markers (`## CABINET @TODO`, `@SECTION`, `@KNOWLEDGE`) | `code-conventions.md` | Boot |
 | Markdown chatter log, organic frequency, content guidelines | `chatter-system.md` | Boot |
 | Wrap-up ceremony (HTML/Canvas/Three.js artifact) | `chatter-extended.md` | On demand |
-| Session anchor schema, when to read/write, resume vs. cold boot | `session-anchor.md` | Boot |
+| Session anchor (vault-resident) schema, when to read/write | `session-anchor.md` | Boot |
 | Terminal colours, environment detection, header rendering | `terminal-colours.md` | Boot |
 | Shared specialist activation protocol + vault awareness | `specialist-contract.md` | Boot |
 | Scrapbook: periodic questions, project memories, IMD lore | `memories-system.md` | On demand |
 | Superpowers plugin integration | `superpowers-integration.md` | On demand |
-| Persistent vault: briefs, decisions, preferences, session summaries | `vault-integration.md` | On demand |
+| Persistent vault: briefs, decisions, preferences, session summaries | `vault-integration.md` | Boot |
 
 ---
 
@@ -476,9 +426,9 @@ BEFORE any chatter append:
 ON anchor read:
     TRY parse JSON
     CATCH:
-        BACKUP as cabinet-session.json.bak
+        BACKUP as .anchor.json.bak
         BUILD fresh anchor from conversation context
-        WRITE fresh anchor
+        WRITE fresh anchor to anchor.vault.anchor_path
         LOG in chatter: "[Bostrol]: Anchor was garbled. Rebuilt from memory."
 
 ON anchor write:
@@ -528,4 +478,4 @@ IF specialist detects tech debt being introduced knowingly:
 
 ## New Members
 
-New cabinet members are added via the `create-classmate` skill. They join as **guest specialists** — contributing expertise but with lighter participation in chatter, gates, and dynamics.
+New cabinet members are added via the `/create-classmate` command. They join as **guest specialists** — contributing expertise but with lighter participation in chatter, gates, and dynamics.

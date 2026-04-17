@@ -1,16 +1,13 @@
 ---
-name: invoke
-description: >
-  Call in a specific Cabinet member by name. Use when a task clearly belongs
-  to one specialist's domain and you want them on point. Usage: /invoke thieuke,
-  /invoke sakke, etc. The invoked member can rope in others as needed.
-  Valid names: thieuke, sakke, jonasty, pitr, henske, bostrol, kevijntje, poekie.
-version: 1.8.0
+description: Call in a specific Cabinet member by name.
+argument-hint: "<thieuke|sakke|jonasty|pitr|henske|bostrol|kevijntje|poekie>"
 ---
 
 # Invoke a Cabinet Specialist
 
 Direct invocation of a single cabinet member. Read `${CLAUDE_PLUGIN_ROOT}/references/specialist-contract.md` for the full activation sequence and shared behaviour protocol — that contract applies to all members.
+
+**Valid names:** `thieuke`, `sakke`, `jonasty`, `pitr`, `henske`, `bostrol`, `kevijntje`, `poekie`.
 
 ## Resolve the Member
 
