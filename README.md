@@ -91,6 +91,7 @@ Personal collection of Claude Code plugins by Onnozelaer.
 │   ├── .claude-plugin/     # Plugin metadata (plugin.json)
 │   ├── skills/gemin-eye/SKILL.md
 │   ├── references/         # invocation-patterns.md (prompt scaffolds, CLI usage)
+│   ├── CHANGELOG.md
 │   └── README.md
 └── README.md               # This file
 ```

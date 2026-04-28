@@ -1,5 +1,25 @@
 {
   "name": "gemin-eye",
   "version": "0.1.0",
-  "description": "Invoke Gemini as a review and coding partner from inside Claude Code. Vault-aware (pairs with vault-bridge). Sources primarily from Claude-provided context, generated Markdown, and existing docs — does not scaffold new project files unless explicitly authorised. Gemini-specific artefacts live under `gemin-eye/` subfolders in the vault or in `docs/`, never scattered across the codebase."
+  "description": "Invoke Gemini as a review and coding partner from inside Claude Code. Vault-aware (pairs with vault-bridge). Sources primarily from Claude-provided context, generated Markdown, and existing docs — does not scaffold new project files unless explicitly authorised. Gemini-specific artefacts live under `gemin-eye/` subfolders in the vault or in `docs/`, never scattered across the codebase.",
+  "author": {
+    "name": "Onnozelaer"
+  },
+  "homepage": "https://github.com/TomVDH/onnozelaer-claude-marketplace/tree/main/gemin-eye",
+  "repository": "https://github.com/TomVDH/onnozelaer-claude-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "gemini",
+    "google-gemini",
+    "review",
+    "code-review",
+    "doc-review",
+    "second-opinion",
+    "ai-pair",
+    "multi-model",
+    "vault",
+    "obsidian",
+    "context-discipline",
+    "review-partner"
+  ]
 }
