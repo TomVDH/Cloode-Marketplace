@@ -13,12 +13,6 @@
       "description": "The Cabinet of IMD Agents — a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support, hook-enriched UI flair, and /dream-driven vault analysis."
     },
     {
-      "name": "taste-claude",
-      "version": "0.1.0",
-      "source": "./taste-package",
-      "description": "Premium frontend design skills that override default AI biases — enforcing high-end typography, calibrated color, asymmetric layouts, motion choreography, and anti-generic UI standards across multiple aesthetic modes."
-    },
-    {
       "name": "iteration-shelf",
       "version": "0.1.0",
       "source": "./iteration-shelf",
