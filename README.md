@@ -9,6 +9,7 @@ Personal collection of Claude Code plugins by Onnozelaer.
 | [cabinet-of-imd](./cabinet-of-imd) | 2.1.0 | The Cabinet of IMD Agents — 8 specialized web dev agents with vault-native Markdown chatter, lazy loading, gated handoffs, Obsidian integration, and /dream vault analysis. |
 | [taste-claude](./taste-package) | 0.1.0 | Premium frontend design skills — high-end typography, calibrated color, asymmetric layouts, motion choreography, and anti-generic UI standards across multiple aesthetic modes. |
 | [iteration-shelf](./iteration-shelf) | 0.1.0 | Terminal-aesthetic review boards for in-browser design iteration — curated shelves and monster indexes with on-demand iframe loading, sidebar outliner, and browser-safety guards. Explicit invocation only. |
+| [bash-tui-toolkit](./bash-tui-toolkit) | 0.1.0 | Build polished, interactive bash CLI tools with rich terminal UI — menus, tables, loading bars, spinners, splash screens, transitions, and animated effects. Makes shell scripts look crafted, not cobbled. |
 
 ### Taste Claude — Skills & Suggested Commands
 
@@ -32,6 +33,12 @@ Personal collection of Claude Code plugins by Onnozelaer.
 | `iteration-shelf` | `/iteration-shelf` (explicit only) | Generates two review boards — a curated shelf and a monster index — from a JSON manifest. Terminal aesthetic, zero dependencies, on-demand iframe loading, warn-gate at 20+ loaded, sticky outliner sidebar with scrollspy. Pairs with `full-output-enforcement` for complete emission and with the Cabinet plugin when active (Bostrol owns shelf ops). |
 
 **Layering**: the shelf chrome has its own hard-coded aesthetic and deliberately overrides `design-taste-frontend` / `high-end-visual-design` defaults. The iterations it indexes are unconstrained — use aesthetic skills freely on those.
+
+### Bash TUI Toolkit — Skill
+
+| Skill | Trigger | What it does |
+|-------|---------|-------------|
+| `bash-tui-toolkit` | Building bash scripts, shell tools, CLI launchers, terminal utilities; mentions of "TUI", "CLI menu", "progress bar", "spinner", "splash screen", or polishing shell-script aesthetics | Pattern library for crafted-looking bash CLIs. Mandatory checklist (strict mode, cleanup, consistent palette/spacing/motion), copy-paste component implementations (menus, tables, loaders, spinners, splash screens, transitions), and architecture guidance for multi-file projects. |
 
 ## Structure
 
@@ -64,6 +71,11 @@ Personal collection of Claude Code plugins by Onnozelaer.
 │   ├── examples/           # Sample iteration-shelf.json
 │   ├── CHANGELOG.md
 │   └── README.md
+├── bash-tui-toolkit/       # Plugin: Bash TUI Toolkit (v0.1.0, 1 skill)
+│   ├── .claude-plugin/     # Plugin metadata (plugin.json)
+│   ├── SKILL.md            # NOTE: lives at plugin root, not skills/<name>/SKILL.md
+│   ├── references/         # components.md, palette.md, architecture.md
+│   └── evals/              # Skill evaluation cases
 └── README.md               # This file
 ```
 
