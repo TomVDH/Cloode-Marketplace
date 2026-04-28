@@ -1,0 +1,5 @@
+{
+  "name": "gemin-eye",
+  "version": "0.1.0",
+  "description": "Invoke Gemini as a review and coding partner from inside Claude Code. Vault-aware (pairs with vault-bridge). Sources primarily from Claude-provided context, generated Markdown, and existing docs — does not scaffold new project files unless explicitly authorised. Gemini-specific artefacts live under `gemin-eye/` subfolders in the vault or in `docs/`, never scattered across the codebase."
+}

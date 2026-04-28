@@ -22,11 +22,13 @@ consistent spacing, consistent motion.
 
 1. Read this SKILL.md first — it contains the mandatory checklist and all
    the patterns you need for most scripts.
-2. Read `references/components.md` — it has the **complete, copy-paste ready**
-   implementations of every UI component. Do not improvise your own versions;
-   use the reference implementations.
-3. Read `references/palette.md` if you need the full extended color palette.
-4. Read `references/architecture.md` if scaffolding a multi-file project.
+2. Read `${CLAUDE_PLUGIN_ROOT}/references/components.md` — it has the
+   **complete, copy-paste ready** implementations of every UI component.
+   Do not improvise your own versions; use the reference implementations.
+3. Read `${CLAUDE_PLUGIN_ROOT}/references/palette.md` if you need the full
+   extended color palette.
+4. Read `${CLAUDE_PLUGIN_ROOT}/references/architecture.md` if scaffolding a
+   multi-file project.
 
 ---
 
@@ -196,7 +198,7 @@ printf "\n  ${COLOR_MUTED}Goodbye.${RESET}\n\n"
 ```
 
 Also available: **boolean toggle** (`›› ●` / `› ○`) and **multi select**
-(`›› [x]` / `› [ ]`). See `references/components.md` for those.
+(`›› [x]` / `› [ ]`). See `${CLAUDE_PLUGIN_ROOT}/references/components.md` for those.
 
 ### Tables: Fixed-width columns with dim pipe separators
 
@@ -209,7 +211,7 @@ W_NAME=16; W_EMAIL=26; W_STATUS=10
 printf "  ${BOLD}%-${W_NAME}s${RESET} ${DIM}│${RESET} ${BOLD}%-${W_EMAIL}s${RESET} ${DIM}│${RESET} ${BOLD}%-${W_STATUS}s${RESET}\n" \
   "Name" "Email" "Status"
 
-# Separator (use the hr() helper from references/components.md)
+# Separator (use the hr() helper from ${CLAUDE_PLUGIN_ROOT}/references/components.md)
 hr "${DIM}" "─" "┼" $W_NAME $W_EMAIL $W_STATUS
 
 # Data row
@@ -340,7 +342,7 @@ $DRY_RUN && printf "  ${COLOR_WARN}${BOLD}DRY RUN${RESET}${COLOR_MUTED} — no d
 
 ### Comet Tail (default loading animation)
 
-The full implementation is in `references/components.md`. Use it for:
+The full implementation is in `${CLAUDE_PLUGIN_ROOT}/references/components.md`. Use it for:
 - Table row ingest (animate before each row appears)
 - File processing progress
 - Any linear progress indicator
@@ -348,12 +350,12 @@ The full implementation is in `references/components.md`. Use it for:
 ### Screen Transitions
 
 Use the **Pixel Scatter** transition between major UI sections. Full
-implementation in `references/components.md`.
+implementation in `${CLAUDE_PLUGIN_ROOT}/references/components.md`.
 
 ### Animated Splash
 
 For tools that want maximum polish: Ocean Wave sweep → bright-white flicker
-→ Sunrise gradient. Full implementation in `references/components.md`.
+→ Sunrise gradient. Full implementation in `${CLAUDE_PLUGIN_ROOT}/references/components.md`.
 Splash always requires a human keypress before proceeding.
 
 ---
@@ -376,7 +378,7 @@ organize:
 ```
 
 **Multi-file** (for bigger projects): split into `_lib.sh` + `_helpers.sh` +
-tool scripts. See `references/architecture.md` for the full pattern.
+tool scripts. See `${CLAUDE_PLUGIN_ROOT}/references/architecture.md` for the full pattern.
 
 ---
 

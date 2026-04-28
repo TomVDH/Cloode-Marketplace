@@ -6,10 +6,11 @@ Personal collection of Claude Code plugins by Onnozelaer.
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [cabinet-of-imd](./cabinet-of-imd) | 2.1.0 | The Cabinet of IMD Agents — 8 specialized web dev agents with vault-native Markdown chatter, lazy loading, gated handoffs, Obsidian integration, and /dream vault analysis. |
+| [cabinet-of-imd](./cabinet-of-imd) | 2.2.0 | The Cabinet of IMD Agents — an 8-classmate crew of specialized web dev agents. Vault-required (Obsidian or any markdown folder) for chatter, decisions, sessions, and memories. Gated handoffs, lazy character loading, hooks-driven UI flair, and `/dream` vault analysis. |
 | [taste-claude](./taste-package) | 0.1.0 | Premium frontend design skills — high-end typography, calibrated color, asymmetric layouts, motion choreography, and anti-generic UI standards across multiple aesthetic modes. |
 | [iteration-shelf](./iteration-shelf) | 0.1.0 | Terminal-aesthetic review boards for in-browser design iteration — curated shelves and monster indexes with on-demand iframe loading, sidebar outliner, and browser-safety guards. Explicit invocation only. |
 | [bash-tui-toolkit](./bash-tui-toolkit) | 0.1.0 | Build polished, interactive bash CLI tools with rich terminal UI — menus, tables, loading bars, spinners, splash screens, transitions, and animated effects. Makes shell scripts look crafted, not cobbled. |
+| [gemin-eye](./gemin-eye) | 0.1.0 | Invoke Gemini as a review and coding partner from inside Claude Code. Vault-aware, context-disciplined, contained outputs — Gemini reviews land under `gemin-eye/` subfolders, never scattered across the codebase. |
 
 ### Taste Claude — Skills & Suggested Commands
 
@@ -40,15 +41,25 @@ Personal collection of Claude Code plugins by Onnozelaer.
 |-------|---------|-------------|
 | `bash-tui-toolkit` | Building bash scripts, shell tools, CLI launchers, terminal utilities; mentions of "TUI", "CLI menu", "progress bar", "spinner", "splash screen", or polishing shell-script aesthetics | Pattern library for crafted-looking bash CLIs. Mandatory checklist (strict mode, cleanup, consistent palette/spacing/motion), copy-paste component implementations (menus, tables, loaders, spinners, splash screens, transitions), and architecture guidance for multi-file projects. |
 
+### GeminEye — Skill
+
+| Skill | Trigger | What it does |
+|-------|---------|-------------|
+| `gemin-eye` | `/gemin-eye`, "ask Gemini", "second opinion", "Gemini review", "Gemini's take" | Calls the `gemini` CLI with a deliberately bundled context (Claude-prepared, project Markdown, vault context when `vault-bridge` is active). Default mode is in-line; persistence routes Gemini outputs to `gemin-eye/` subfolders only — never into source. Override clauses unlock scaffolding, full-repo reviews, or direct file writes when Tom explicitly asks. |
+
+**Layering**: GeminEye is a partner, not a successor — Claude remains the architect. Pairs with `vault-bridge` to auto-load project context and route outputs into the project's vault folder; pairs with `cabinet-of-imd` so Bostrol indexes Gemini reviews as documentation artefacts.
+
 ## Structure
 
 ```
 ├── .claude-plugin/
 │   └── marketplace.json    # Marketplace manifest — lists all plugins with versions
-├── cabinet-of-imd/         # Plugin: Cabinet of IMD Agents (v2.1.0, 9 skills)
+├── cabinet-of-imd/         # Plugin: Cabinet of IMD Agents (v2.2.0)
 │   ├── .claude-plugin/     # Plugin metadata (plugin.json)
-│   ├── skills/             # 9 invocable skills
-│   ├── references/         # Character definitions, protocols, conventions
+│   ├── skills/             # 5 invocable skills (cabinet-resume, cabinet-status, cabinet-tune, crew-roster, vault-bridge)
+│   ├── commands/           # 4 slash commands (/cabinet, /invoke, /dream, /create-classmate)
+│   ├── hooks/              # SessionStart, PreCompact, UserPromptSubmit, Stop, SessionEnd, Notification
+│   ├── references/         # Character definitions, protocols, conventions, vault integration
 │   ├── examples/           # Templates and samples
 │   ├── CHANGELOG.md
 │   └── README.md
@@ -73,9 +84,14 @@ Personal collection of Claude Code plugins by Onnozelaer.
 │   └── README.md
 ├── bash-tui-toolkit/       # Plugin: Bash TUI Toolkit (v0.1.0, 1 skill)
 │   ├── .claude-plugin/     # Plugin metadata (plugin.json)
-│   ├── SKILL.md            # NOTE: lives at plugin root, not skills/<name>/SKILL.md
+│   ├── skills/bash-tui-toolkit/SKILL.md
 │   ├── references/         # components.md, palette.md, architecture.md
 │   └── evals/              # Skill evaluation cases
+├── gemin-eye/              # Plugin: GeminEye (v0.1.0, 1 skill)
+│   ├── .claude-plugin/     # Plugin metadata (plugin.json)
+│   ├── skills/gemin-eye/SKILL.md
+│   ├── references/         # invocation-patterns.md (prompt scaffolds, CLI usage)
+│   └── README.md
 └── README.md               # This file
 ```
 
