@@ -366,7 +366,7 @@ IF "--save" in args:
 
 ## Personality Layer
 
-When cabinet-of-imd is installed and active, the chronicler voice (Bostrol/Kevijntje/Jonasty) wraps the report. Bridge detects cabinet via the `crew/` folder and adjusts formatting if the current session is a `/cabinet` session. Without cabinet, `/dream` is dry — no personality, no flair, just the report.
+When cabinet is installed and active, the chronicler voice (Bostrol/Kevijntje/Jonasty) wraps the report. Bridge detects cabinet via the `crew/` folder and adjusts formatting if the current session is a `/cabinet` session. Without cabinet, `/dream` is dry — no personality, no flair, just the report.
 
 ---
 

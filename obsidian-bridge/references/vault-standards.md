@@ -26,7 +26,7 @@ Clickable in Obsidian, resolves to the brief, displays the slug as alias. Always
 
 ### Specialist Names (cabinet integration)
 
-When cabinet-of-imd is installed and populates the `specialist:` field, names are always **lowercase**: `bostrol`, `thieuke`, `sakke`, `jonasty`, `pitr`, `henske`, `kevijntje`, `poekie`. Bridge preserves these values but does not require the field.
+When cabinet is installed and populates the `specialist:` field, names are always **lowercase**: `bostrol`, `thieuke`, `sakke`, `jonasty`, `pitr`, `henske`, `kevijntje`, `poekie`. Bridge preserves these values but does not require the field.
 
 ---
 

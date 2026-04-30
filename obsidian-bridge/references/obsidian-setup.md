@@ -54,5 +54,5 @@ Bridge manages:
 
 Bridge leaves alone:
 - `.obsidian/` — Obsidian's internal config
-- `crew/` — cabinet-of-imd owned (if installed)
+- `crew/` — cabinet owned (if installed)
 - Any root-level files not matching known types
