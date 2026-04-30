@@ -2,6 +2,12 @@
 
 All notable changes to the Cabinet of IMD plugin.
 
+## 2.3.0 — 2026-04-30
+
+Vault structure & /dream extracted to obsidian-bridge plugin. Cabinet's /vault-bridge skill and /dream command removed. Cabinet's vault refactor pending; existing v2 vault behavior preserved as deprecated path.
+
+---
+
 ## v2.2.0 — Vault-First + Hooks
 
 - **Vault is now required.** `/cabinet` refuses to boot without a connected vault. No local-filesystem fallback. Rationale: ghost-state bugs and confusing "degraded mode." See `references/vault-integration.md § Vault Requirement`.

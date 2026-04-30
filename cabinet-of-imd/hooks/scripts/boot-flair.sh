@@ -10,11 +10,17 @@ main() {
   [ -z "$project_dir" ] && return 0
 
   # --- Resolve anchor path via breadcrumb ---
-  # Preferred: a hint file in the project root telling us which vault/project slug we belong to.
+  # Preferred: bridge's .obsidian-bridge file. Fall back to cabinet's .cabinet-anchor-hint.
+  local bridge_file="$project_dir/.obsidian-bridge"
   local hint_file="$project_dir/.cabinet-anchor-hint"
   local vault="" slug="" anchor_path=""
 
-  if [ -f "$hint_file" ]; then
+  if [ -f "$bridge_file" ]; then
+    vault=$(grep -E '^vault_path=' "$bridge_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+    slug=$(grep -E '^project_slug=' "$bridge_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+  fi
+
+  if [ -z "$vault" ] && [ -f "$hint_file" ]; then
     # Hint file format (simple KEY=VALUE lines):
     #   vault=/absolute/path/to/Claude Cabinet
     #   slug=dashboard-v2

@@ -1,7 +1,7 @@
 {
   "name": "cabinet-of-imd",
-  "version": "2.2.0",
-  "description": "The Cabinet of IMD Agents — a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support, and /dream-driven vault analysis.",
+  "version": "2.3.0",
+  "description": "The Cabinet of IMD Agents — a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support. (Vault structure & /dream now owned by obsidian-bridge plugin — cabinet refactor pending.)",
   "author": {
     "name": "Onnozelaer"
   },

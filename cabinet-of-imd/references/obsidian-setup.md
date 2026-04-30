@@ -1,5 +1,7 @@
 # Obsidian Setup Guide
 
+> **STALE.** Superseded by `obsidian-bridge/references/obsidian-setup.md`. Cabinet refactor pending.
+
 Bostrol walks Tom through this guide when he asks to set up or optimise the vault for Obsidian. The goal: a vault that feels native — graph view, queries, templates, and backlinks from day one.
 
 ---

@@ -1,3 +1,5 @@
+> **STALE.** Superseded by `obsidian-bridge/references/vault-integration.md`. Cabinet refactor pending.
+
 # Vault Integration
 
 Loaded at boot. The cabinet detects vault availability during startup (step 1.6). As of v2.2 a connected vault is required — see the Vault Requirement section below.

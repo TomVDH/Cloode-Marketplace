@@ -44,7 +44,11 @@ Then read the **core** operational references:
 
 ### 1.5. Vault Check (REQUIRED)
 
-A connected vault is mandatory. Run the discovery chain from `vault-integration.md § "Vault Discovery"`:
+A connected vault is mandatory.
+
+**If `obsidian-bridge` plugin is installed:** Defer to bridge's vault discovery (bridge's SessionStart hook has already run and injected vault context). Read `.obsidian-bridge` breadcrumb for vault path and project slug. Skip cabinet's own discovery chain.
+
+**If `obsidian-bridge` is NOT installed (deprecated path):** Run the discovery chain from `vault-integration.md § "Vault Discovery"`:
 
 1. Anchor fast path (use stored vault config if a prior anchor is readable anywhere known)
 2. CLI detection (terminal/Code only)

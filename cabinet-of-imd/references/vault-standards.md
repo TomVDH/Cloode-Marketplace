@@ -1,5 +1,7 @@
 # Vault Standards
 
+> **STALE.** Superseded by `obsidian-bridge/references/vault-standards.md`. Cabinet refactor pending.
+
 Canonical frontmatter schemas, naming conventions, and structural rules for the Cabinet's Obsidian vault. This is the single source of truth — all vault writes by the Cabinet must conform to these schemas. Templates in `examples/vault-templates/` mirror these definitions.
 
 ## General Rules
