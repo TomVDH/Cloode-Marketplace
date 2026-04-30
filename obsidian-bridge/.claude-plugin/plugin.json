@@ -1,0 +1,10 @@
+{
+  "name": "obsidian-bridge",
+  "version": "0.1.0",
+  "description": "Canonical Obsidian-vault layout, schema, primitives, and cleanup workflow for Claude Code. Standalone and cabinet-aware.",
+  "author": { "name": "Onnozelaer" },
+  "homepage": "https://github.com/TomVDH/onnozelaer-claude-marketplace/tree/main/obsidian-bridge",
+  "repository": "https://github.com/TomVDH/onnozelaer-claude-marketplace",
+  "license": "MIT",
+  "keywords": ["obsidian", "vault", "knowledge-management", "markdown", "frontmatter", "wikilinks"]
+}

@@ -10,25 +10,31 @@
       "name": "cabinet-of-imd",
       "version": "2.2.0",
       "source": "./cabinet-of-imd",
-      "description": "The Cabinet of IMD Agents — a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support, hook-enriched UI flair, and /dream-driven vault analysis."
+      "description": "The Cabinet of IMD Agents \u2014 a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support, hook-enriched UI flair, and /dream-driven vault analysis."
     },
     {
       "name": "iteration-shelf",
       "version": "0.1.0",
       "source": "./iteration-shelf",
-      "description": "Terminal-aesthetic review boards for in-browser design iteration. Generates a curated shelf and a monster index from a JSON manifest — self-contained HTML, zero build step, on-demand iframe loading, sidebar outliner, and a warn-gate that keeps the browser from stalling on 100+ iterations. Explicit invocation only. Integrates with Superpowers and the Cabinet plugin."
+      "description": "Terminal-aesthetic review boards for in-browser design iteration. Generates a curated shelf and a monster index from a JSON manifest \u2014 self-contained HTML, zero build step, on-demand iframe loading, sidebar outliner, and a warn-gate that keeps the browser from stalling on 100+ iterations. Explicit invocation only. Integrates with Superpowers and the Cabinet plugin."
     },
     {
       "name": "bash-tui-toolkit",
       "version": "0.1.0",
       "source": "./bash-tui-toolkit",
-      "description": "Build polished, interactive bash CLI tools with rich terminal UI — menus, tables, loading bars, spinners, splash screens, transitions, and animated effects. Makes shell scripts look crafted, not cobbled."
+      "description": "Build polished, interactive bash CLI tools with rich terminal UI \u2014 menus, tables, loading bars, spinners, splash screens, transitions, and animated effects. Makes shell scripts look crafted, not cobbled."
     },
     {
       "name": "gemin-eye",
       "version": "0.1.0",
       "source": "./gemin-eye",
-      "description": "Invoke Gemini as a review and coding partner from inside Claude Code. Vault-aware (pairs with vault-bridge). Sources primarily from Claude-provided context, generated Markdown, and existing docs — does not scaffold new project files unless explicitly authorised. Gemini-specific artefacts live under `gemin-eye/` subfolders in the vault or in `docs/`."
+      "description": "Invoke Gemini as a review and coding partner from inside Claude Code. Vault-aware (pairs with vault-bridge). Sources primarily from Claude-provided context, generated Markdown, and existing docs \u2014 does not scaffold new project files unless explicitly authorised. Gemini-specific artefacts live under `gemin-eye/` subfolders in the vault or in `docs/`."
+    },
+    {
+      "name": "obsidian-bridge",
+      "version": "0.1.0",
+      "source": "./obsidian-bridge",
+      "description": "Standalone Obsidian-vault primitive layer: canonical schema, type-shaped project layouts, /vault-bridge command, /dream cleanup, CLI-first writes with filesystem fallback. Pairs cleanly with the cabinet-of-imd plugin but functions on its own."
     }
   ]
 }
