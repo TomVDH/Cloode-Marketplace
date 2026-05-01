@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # boot-flair.sh — SessionStart hook
 # Emits up to 3 short flair lines for the crew based on vault history.
+# Reads only — vault paths come from obsidian-bridge's breadcrumb.
 # Silently exits 0 on any error. Must never block Claude Code startup.
 set -euo pipefail
 
@@ -9,39 +10,17 @@ main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
 
-  # --- Resolve anchor path via breadcrumb ---
-  # Preferred: bridge's .obsidian-bridge file. Fall back to cabinet's .cabinet-anchor-hint.
+  # --- Resolve vault + slug via obsidian-bridge breadcrumb ---
   local bridge_file="$project_dir/.obsidian-bridge"
-  local hint_file="$project_dir/.cabinet-anchor-hint"
-  local vault="" slug="" anchor_path=""
+  local vault="" slug=""
 
   if [ -f "$bridge_file" ]; then
     vault=$(grep -E '^vault_path=' "$bridge_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)
     slug=$(grep -E '^project_slug=' "$bridge_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)
   fi
 
-  if [ -z "$vault" ] && [ -f "$hint_file" ]; then
-    # Hint file format (simple KEY=VALUE lines):
-    #   vault=/absolute/path/to/Claude Cabinet
-    #   slug=dashboard-v2
-    vault=$(grep -E '^vault=' "$hint_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)
-    slug=$(grep -E '^slug=' "$hint_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)
-  fi
-
-  # Fallback: look one level above the project dir for a cabinet vault marker.
-  if [ -z "$vault" ] && [ -d "$project_dir/.." ]; then
-    local parent
-    parent=$(cd "$project_dir/.." 2>/dev/null && pwd || true)
-    if [ -n "$parent" ] && [ -f "$parent/Home.md" ] && grep -q "type: cabinet-home" "$parent/Home.md" 2>/dev/null; then
-      vault="$parent"
-    fi
-  fi
-
   [ -z "$vault" ] && return 0
   [ -z "$slug" ] && return 0
-
-  anchor_path="$vault/projects/$slug/.anchor.json"
-  [ -f "$anchor_path" ] || return 0
 
   local today_md today_year
   today_md=$(date +%m-%d)

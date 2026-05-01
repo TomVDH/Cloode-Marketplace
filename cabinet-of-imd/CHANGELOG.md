@@ -2,6 +2,44 @@
 
 All notable changes to the Cabinet of IMD plugin.
 
+## 3.0.0 — 2026-05-01
+
+**Flavour-only cut.** The cabinet sunsets all functionality and
+becomes a flavour layer: characters, voices, pairings, working
+disciplines. Persistence is delegated to `obsidian-bridge`.
+
+### Removed
+- **Vault references** — `vault-integration.md`, `vault-standards.md`, `vault-images.md`, `obsidian-setup.md`. All vault structure and writes belong to `obsidian-bridge`.
+- **Session anchor** — `session-anchor.md` and all anchor logic. The cabinet has no state file.
+- **Gate enforcement** — `gate-protocol.md` deleted. Gates remain as informal milestones in working disciplines, not enforcement machinery.
+- **Wrap-up ceremony** — `chatter-extended.md` deleted. Wrap-ups still happen organically through chatter and pairings; no dedicated ceremony protocol.
+- **Superpowers integration** — `superpowers-integration.md` deleted.
+- **Vault templates** — `examples/vault-templates/` folder removed (lived in `obsidian-bridge` already).
+- **State-tracking hooks** — `save-anchor.sh`, `pulse.sh`, `session-close.sh`, `banter-roll.sh` deleted.
+- **Skills** — `cabinet-resume`, `cabinet-status`, `cabinet-tune` deleted (anchor-dependent).
+- **Commands** — `/invoke` (manual specialist activation; auto-selection from `dynamics.md` + `specialist-contract.md` is the only path now), `/create-classmate` (guest-specialist creation flow).
+
+### Changed
+- **`commands/cabinet.md` slimmed** — from 486 lines to ~150. Removed: vault discovery, anchor reads/writes, chatter level setting, vault chatter initialisation, memories file initialisation, anchor write triggers. Kept: lazy character loading, roster header, time/day-aware wake-up chatter, scene seeds, running-joke pulls, voice rules, ready state.
+- **`references/memories-system.md` rewritten** — describes the memory **discipline** (what to ask, who notices, how it sounds). All persistence delegated to `obsidian-bridge` via a clean structured payload. If the bridge isn't active, moments are ephemeral.
+- **`references/chatter-system.md` rewritten** — chatter is **in-chat only**. Stripped: file location, append method, vault paths. Kept and recast: voice cheat-sheet, in-chat formatting, markers (now "milestone" framing not "gate"), when-to-chime-in cadence, content guidelines, easter eggs, the nudge.
+- **`references/protocols.md` rewritten** — kept all working disciplines (micro-handoffs, escalation, dissent, scope, parking lot, temperature, momentum, tone scaling, ambiguity, knowledge gaps, Pitr's razor, Poekie's user hat, Henske's visual counsel, version parity, pushback, accountability). Recast vault-write logic to delegate to `obsidian-bridge`. Documentation Authority section softened — Bostrol still cares; the bridge does the writing.
+- **`references/specialist-contract.md` rewritten** — major slim. Removed all anchor/vault discovery logic. New flow: load identity, display header, acknowledge in voice. Documentation moments flagged in voice; the bridge picks them up.
+- **`references/dynamics.md`** — Chroniclers trio recast: discipline persists, persistence flows through `obsidian-bridge`. "Governance Model > Gate Protocol" subsection rewritten as informal "Working in Stages."
+- **`hooks/hooks.json`** — keeps only `SessionStart → boot-flair.sh` and `Notification → crew-notify.sh`.
+- **`hooks/scripts/boot-flair.sh`** — simplified. Reads vault state only via `obsidian-bridge` breadcrumb. Removed cabinet's own `.cabinet-anchor-hint` fallback and the anchor-file existence gate.
+- **`skills/crew-roster/SKILL.md`** — light pass; removed references to chatter logging and gate mechanics.
+- README and plugin description rewritten around the flavour-only positioning.
+
+### Kept (unchanged)
+- All eight character YAMLs (`references/characters/`).
+- `references/code-conventions.md` (CABINET marker system).
+- `references/terminal-colours.md` (header colours).
+- `hooks/scripts/crew-notify.sh` (notification voice).
+- `hooks/lib/running-jokes.txt`.
+
+---
+
 ## 2.3.0 — 2026-04-30
 
 Vault structure & /dream extracted to obsidian-bridge plugin. Cabinet's /vault-bridge skill and /dream command removed. Cabinet's vault refactor pending; existing v2 vault behavior preserved as deprecated path.

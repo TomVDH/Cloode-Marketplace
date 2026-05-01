@@ -1,7 +1,7 @@
 {
   "name": "cabinet-of-imd",
-  "version": "2.3.0",
-  "description": "The Cabinet of IMD Agents — a crew of 8 college classmates serving as specialised web development agents. Vault-first operation: chatter, memories, decisions, and session anchors persist in an Obsidian vault. Gated handoffs, organic personality, lazy character loading, Cowork + terminal support. (Vault structure & /dream now owned by obsidian-bridge plugin — cabinet refactor pending.)",
+  "version": "3.0.0",
+  "description": "The Cabinet of IMD Agents — a flavour layer for Claude Code. Eight college classmates with distinct personalities, voices, disciplines, and pairings serve as specialised web-development agents. v3.0.0 sunsets all functionality (vault writes, session anchors, gate enforcement, hooks for state) and keeps only character, voice, and working disciplines. Persistence is delegated to the obsidian-bridge plugin when active.",
   "author": {
     "name": "Onnozelaer"
   },
@@ -9,17 +9,16 @@
   "repository": "https://github.com/TomVDH/onnozelaer-claude-marketplace",
   "license": "MIT",
   "keywords": [
-    "web-development",
-    "agents",
     "personas",
+    "agents",
+    "voice",
+    "flavour",
+    "web-development",
     "frontend",
     "backend",
-    "devops",
     "documentation",
     "team",
-    "gated-handoffs",
-    "scope-management",
-    "obsidian",
-    "vault"
+    "pairings",
+    "obsidian-bridge"
   ]
 }

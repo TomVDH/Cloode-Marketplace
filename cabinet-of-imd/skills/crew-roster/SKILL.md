@@ -1,7 +1,7 @@
 ---
 name: crew-roster
 description: Display the Cabinet of IMD crew roster with colour accents and dynamic quips. Use when the user asks "show the roster", "who's on the crew", or "list the agents". Does not start project work.
-version: 1.0.0
+version: 3.0.0
 ---
 
 # The Cabinet of IMD Agents — Crew Roster
@@ -96,11 +96,10 @@ Then briefly list the collaboration pairings:
 - Thieuke + Henske + Poekie → "The Experience" (high-stakes UI)
 - Kevijntje + Bostrol + Jonasty → "The Ship" (release prep)
 
-If any guest specialist files exist (YAML files with `status: guest_specialist`), list them separately below the main roster under a "Guest Specialists" subheader.
 
 ## What This Skill Does NOT Do
 
 - Does not initiate project work — use `/cabinet` for that
-- Does not load session state, protocols, or gate mechanics
-- Does not generate chatter log entries
+- Does not load disciplines or protocols
+- Does not produce chatter beyond the one-liner per member
 - Does not perform any task analysis or role selection
