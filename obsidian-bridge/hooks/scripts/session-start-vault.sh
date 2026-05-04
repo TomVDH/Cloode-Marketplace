@@ -114,7 +114,7 @@ main() {
     # Vault not linked — emit steering context
     printf '## Obsidian Bridge — Not Linked\n\n'
     printf 'No vault linked to this session. Before vault-dependent work, ask the user\n'
-    printf 'to run `/vault-bridge connect <path>` or `/vault-bridge create`. Do not\n'
+    printf 'to run `/connect <path>` (creates one if needed). Do not\n'
     printf 'fabricate vault paths or invent a layout.'
   fi
 

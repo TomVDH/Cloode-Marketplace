@@ -35,10 +35,10 @@ main() {
     remember_mtime=$(stat -f %m "$remember_file" 2>/dev/null || stat -c %Y "$remember_file" 2>/dev/null || echo 0)
     handoff_mtime=$(stat -f %m "$handoff_file" 2>/dev/null || stat -c %Y "$handoff_file" 2>/dev/null || echo 0)
     if [ "$remember_mtime" -gt "$handoff_mtime" ]; then
-      printf 'remember.md updated since last handoff — run /vault-bridge handoff sync to mirror.'
+      printf 'remember.md updated since last handoff — run /sync handoff to mirror.'
     fi
   else
-    printf 'remember.md exists but no vault handoff yet — run /vault-bridge handoff sync to mirror.'
+    printf 'remember.md exists but no vault handoff yet — run /sync handoff to mirror.'
   fi
 
   return 0

@@ -50,7 +50,7 @@ except Exception:
   # If we could not parse a prompt, fall back to the old "always fire"
   # behavior so we don't silently swallow the reminder when stdin is empty.
   if [ -z "$prompt" ]; then
-    printf 'No vault linked. Run /vault-bridge connect or /vault-bridge create before vault-dependent work.'
+    printf 'No vault linked. Run /connect before vault-dependent work.'
     return 0
   fi
 
@@ -58,7 +58,7 @@ except Exception:
   # Conservative regex — false positive = one harmless extra reminder.
   local pattern='vault|obsidian|frontmatter|wiki[ -]?link|/vault-bridge|/dream|#ob/|_handoff\.md|_index\.md|brief\.md|\.base\b'
   if printf '%s' "$prompt" | grep -qiE "$pattern"; then
-    printf 'No vault linked. Run /vault-bridge connect or /vault-bridge create before vault-dependent work.'
+    printf 'No vault linked. Run /connect before vault-dependent work.'
   fi
 }
 
