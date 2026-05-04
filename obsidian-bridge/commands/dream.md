@@ -1,5 +1,5 @@
 ---
-description: Two-pass vault analysis — structural sanitation (auto-fixable) + content review (report-only). Run on current project or vault-wide.
+description: Deep diagnostic — surfaces structural and content issues
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
