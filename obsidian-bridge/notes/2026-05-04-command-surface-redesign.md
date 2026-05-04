@@ -70,7 +70,8 @@ Subverbs are accepted because each routes into a structurally distinct artefact 
 | `sync`, `handoff sync` | `/sync` |
 | `status`, `handoff status` | `/check` (optional `[section]`) |
 | `reindex`, `housekeeping` | `/ramasse` |
-| `migrate` (v2→v3), `migrate-anchor` | conversational ("migrate this vault to v3", "move my anchor") |
+| `migrate` (v2→v3) | conversational ("migrate this vault to v3") |
+| `migrate-anchor` | **removed** — auto-migration in SessionStart hook step 0 replaces it (see Anchor chain section) |
 | All `iteration-*` and `add-iteration-*` plurality | folded into `/iterate` (transitions only) + conversational (creation/listing) |
 
 ## What is preserved (no change)
@@ -79,7 +80,11 @@ Subverbs are accepted because each routes into a structurally distinct artefact 
 - All 5 hooks (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PostToolUse`, `PreCompact`).
 - Frontmatter schema (canonical in `vault-standards` skill).
 - Vault layout and naming rules.
-- Anchor file location (`.claude/obsidian-bridge` canonical, legacy `.obsidian-bridge` fallback) — pending merge of `feat/anchor-in-dot-claude` branch.
+- Frontmatter validator hook behaviour (PostToolUse) and PreCompact handoff sync — same logic, just reads canonical anchor only.
+
+**Changed (no longer "preserved"):**
+
+- Anchor file location → `.claude/obsidian-bridge` is now the **only** read location. Legacy `.obsidian-bridge` at project root is auto-migrated on encounter (SessionStart step 0). See "Anchor chain" section below.
 
 ---
 
@@ -121,37 +126,80 @@ The bet: with `vault-bridge` skill + `vault-standards` skill auto-loading, the m
 
 ---
 
+## Anchor chain — cleaned up (no legacy reads)
+
+The SessionStart hook resolves the vault via this chain. First hit wins.
+
+```
+0.  AUTO-MIGRATE  IF $CLAUDE_PROJECT_DIR/.obsidian-bridge exists AND
+                     $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge does NOT:
+                       mkdir -p .claude
+                       mv .obsidian-bridge → .claude/obsidian-bridge
+                       rewrite ".obsidian-bridge" → ".claude/obsidian-bridge" in .gitignore (if present)
+                       emit one-line notice: "[obsidian-bridge] auto-migrated anchor → .claude/obsidian-bridge"
+        ↓ then proceed to read chain…
+1.  $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge        ← canonical anchor (only location read)
+        ↓ not present
+2.  $CLAUDE_PROJECT_DIR/.cabinet-anchor-hint           ← cabinet-of-imd interop (active contract, NOT legacy)
+        ↓ not present
+3.  OB_DEFAULT_VAULT env var                           ← global default
+        ↓ not set
+4.  walk parent dirs (≤5) for Home.md
+        with frontmatter `type: vault-home` or `type: cabinet-home`
+        ↓ none found
+    → "Not Linked" — user must run /connect
+```
+
+Step 0 makes step 1's "legacy fallback" unnecessary — anchors get transparently upgraded the next time anyone opens Claude in that project. After migration, only canonical reads happen.
+
+`/vault-bridge migrate-anchor` is **removed** (auto-migration replaces it).
+
+## Resolved: previously-open questions
+
+| Question | Resolution |
+|---|---|
+| `/draw` — own skill or direct dispatch? | **Direct dispatch.** Command body routes to `canvas` / `bases` / `mermaid` skills via context. No new `draw` skill. |
+| Deprecation aliases for old commands? | **No aliases.** Old `/vault-bridge` and `/dream` commands removed in the same commit as the new surface — modernise invocations cleanly. |
+| `/check` — multi-section? | **Yes.** `/check iterations decisions` returns both sections in one call. |
+| `/connect` — inference rule order? | path doesn't exist → **create** new vault; path exists with `Home.md` (`type: vault-home` or `cabinet-home`) → **connect**; path exists with `projects/` folder but no `Home.md` → **connect** (best-effort); path exists with neither → **error** with clear "expected `Home.md` or a `projects/` folder" message. |
+| Cabinet-anchor-hint — keep in chain? | **Keep** as step 2. Cabinet-of-imd v3 explicitly delegates persistence to obsidian-bridge — interop contract is active, not legacy. |
+
+---
+
 ## Implementation outline (for the writing-plans phase)
 
-1. **Author the new commands** — 6 new `*.md` command files in `obsidian-bridge/commands/`:
+1. **Author the 6 new commands** — `*.md` files in `obsidian-bridge/commands/`:
    - `connect.md`, `sync.md`, `check.md`, `draw.md`, `ramasse.md`, `iterate.md`
-   - (`/dream` already exists, keep as-is)
-2. **Update `vault-bridge` skill** — refactor pseudocode so it serves the new commands' needs:
-   - `/connect` dispatches to: existing create/connect/link logic with inference
-   - `/sync` dispatches to: existing sync + handoff sync logic combined
-   - `/check` dispatches to: existing status logic + section filters
-   - `/ramasse` dispatches to: existing reindex + housekeeping combined
-   - `/iterate` dispatches to: existing iteration-set-status logic
-3. **Author the `draw` skill OR fold into existing skills** — TBD: `/draw` could either (a) get its own thin `draw` skill that routes to `canvas`/`bases`/`mermaid`, or (b) just dispatch directly via the command body. Decide in implementation plan.
-4. **Update plugin description** in `.claude-plugin/plugin.json`.
-5. **Add deprecation notes** to old `commands/vault-bridge.md` and old `commands/dream.md` for one release cycle, then remove. Or remove immediately if no one but Tom uses this plugin (likely true today).
-6. **Update `vault-bridge` skill body** with the `/iterate` sunset note.
-7. **Update README** with the new command surface.
-8. **Update `notes/mermaid-house-style.md`** (and any other notes) if they reference old command names.
-9. **No hook changes needed.** Hooks already work on the underlying file operations, not on command names.
-10. **Migration guide** — short doc in `notes/` mapping old → new for any users who have the existing surface in muscle memory.
+   - (`/dream` already exists; keep its file but refresh its description if needed)
+2. **Remove old commands** in the same commit:
+   - Delete `commands/vault-bridge.md` and `commands/dream.md` if `/dream` is being recreated; OR keep `dream.md` if it's already correctly shaped.
+   - No deprecation aliases — clean break.
+3. **Refactor `vault-bridge` skill** — same pseudocode primitives, new dispatch surface. Sections now organised by new verb:
+   - `/connect` — combines create + connect + link logic with inference
+   - `/sync` — combines sync + handoff sync
+   - `/check` — status with optional sections (`iterations`, `decisions`, `sessions`)
+   - `/ramasse` — reindex + housekeeping merged
+   - `/iterate` — iteration state transitions only (creation/listing conversational)
+4. **Add `/iterate` sunset note** in `vault-bridge` skill body.
+5. **Update SessionStart hook** to add step 0 (auto-migrate legacy anchor + .gitignore rewrite).
+6. **Update other hooks** (UserPromptSubmit, PostToolUse, PreCompact) to read ONLY canonical anchor — drop the legacy fallback added in `feat/anchor-in-dot-claude` (auto-migration replaces the need).
+7. **Update plugin description** in `.claude-plugin/plugin.json` to the new punchier copy.
+8. **Update README** with the new 7-verb surface.
+9. **Update notes** referencing old command names (`mermaid-house-style.md`, `ATTRIBUTIONS.md`, etc.) — sweep for `vault-bridge` mentions in commands context.
+10. **Add a brief migration guide** in `notes/` mapping old → new commands, for anyone with old surface in muscle memory (mostly Tom). Single page, ~30 lines.
 
-## Open questions for the implementation plan
+## Reconciliation with in-flight branches
 
-- Should `/draw` get its own thin skill (`draw`) that routes to canvas/bases/mermaid, or should the command body itself dispatch?
-- Should the old `/vault-bridge` and `/dream` commands stay as deprecated aliases for one release cycle, or be removed in the same commit as the new surface?
-- Should `/check` accept multiple sections (`/check iterations decisions`) or only one at a time?
-- For `/connect`, what's the inference rule order? (path doesn't exist → create; path exists with Home.md → connect; path exists without Home.md → ?)
+Before this redesign lands, two branches from earlier in the session need to be merged or absorbed:
 
-These get resolved during the implementation plan.
+- **`feat/anchor-in-dot-claude`** — moved anchor to `.claude/obsidian-bridge` with canonical-then-legacy fallback in all readers. The redesign **drops the legacy fallback** in favour of auto-migration. Two options:
+  - (a) Merge the branch first, then this redesign edits readers again to drop legacy fallback.
+  - (b) Cherry-pick only the canonical-write changes from the branch, drop the fallback-read changes, do the rest fresh.
+  - **Recommended: (a)** — simpler, less mental tax, the eventual diff is small.
+- **`feat/obsidian-deepening`** — added canvas + search skills, deepening references. Independent of command surface; merge cleanly before or after.
 
 ---
 
 ## Next step
 
-User reviews this spec. On approval, transition to writing-plans to produce the implementation plan.
+Spec written and committed. On user approval (no further changes), invoke writing-plans to produce the detailed implementation plan.
