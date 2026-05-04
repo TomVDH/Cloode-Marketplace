@@ -1,6 +1,6 @@
 ---
 name: vault-bridge
-description: Operate the Obsidian vault. Dispatched by /connect, /sync, /check, /ramasse, /iterate. Use for vault setup, project scaffolding, syncing briefs, status views, cleanup, iteration state.
+description: Operate the Obsidian vault. Dispatched by /connect, /sync, /check, /draw, /ramasse, /iterate. Use for vault setup, project scaffolding, syncing briefs, status views, cleanup, visual-artefact discovery, iteration state.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 version: 0.1.0
 ---
@@ -705,6 +705,62 @@ REPORT:
 // If user chooses "Fix all": run all auto_fixes sequentially
 // If "Pick": present each, user approves/skips
 // If "Skip": done
+```
+
+### /draw — list visual artefacts
+
+The `/draw` command in `commands/draw.md` has subverbs (`canvas`, `base`, `diagram`) that route to the `canvas`, `bases`, and `mermaid` skills directly. The bare `/draw` form (no subverb) lists visual artefacts in the current project — that flow lives here.
+
+Subforms (other than bare):
+- `/draw canvas <name>` → handled by `obsidian-bridge:canvas` skill (this skill is not invoked)
+- `/draw base <name>` → handled by `obsidian-bridge:bases` skill
+- `/draw diagram [type]` → handled by `obsidian-bridge:mermaid` skill
+
+Bare `/draw` (this skill's `draw-list` flow):
+
+```pseudocode
+breadcrumb = read $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge
+IF NOT breadcrumb: ERROR "No vault connected. Run /connect first."
+
+vault_path = read vault_path from breadcrumb
+project_slug = read project_slug from breadcrumb
+IF NOT project_slug: scope = "vault-wide" ELSE: scope = "project: {project_slug}"
+
+// Discover artefacts
+IF project_slug:
+    project_dir = {vault_path}/projects/{project_slug}
+    canvases = glob {project_dir}/**/*.canvas
+    bases = glob {project_dir}/**/*.base
+    diagrams = grep -lE '^```mermaid' {project_dir}/**/*.md
+ELSE:
+    canvases = glob {vault_path}/**/*.canvas (excluding archive/)
+    bases = glob {vault_path}/**/*.base (excluding archive/)
+    diagrams = grep -lE '^```mermaid' {vault_path}/**/*.md (excluding archive/)
+
+// Render summary
+REPORT: "Visual artefacts ({scope}):"
+IF canvases.length > 0:
+    REPORT: "  Canvases ({canvases.length}):"
+    FOR c IN canvases (sort by mtime desc, top 10):
+        REPORT: "    - {c.path} ({c.mtime})"
+ELSE:
+    REPORT: "  Canvases: none"
+
+IF bases.length > 0:
+    REPORT: "  Bases ({bases.length}):"
+    FOR b IN bases:
+        REPORT: "    - {b.path}"
+ELSE:
+    REPORT: "  Bases: none"
+
+IF diagrams.length > 0:
+    REPORT: "  Notes containing mermaid blocks ({diagrams.length}):"
+    FOR d IN diagrams (sort by mtime desc, top 10):
+        REPORT: "    - {d.path}"
+ELSE:
+    REPORT: "  Mermaid blocks: none"
+
+REPORT: "(Use `/draw canvas|base|diagram <name>` to create. See obsidian-bridge:canvas / :bases / :mermaid skills for syntax.)"
 ```
 
 ### /iterate — state transitions
