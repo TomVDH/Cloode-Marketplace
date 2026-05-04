@@ -1,7 +1,7 @@
 {
   "name": "obsidian-bridge",
   "version": "0.1.0",
-  "description": "Canonical Obsidian-vault layout, schema, primitives, and cleanup workflow for Claude Code. Standalone and cabinet-aware.",
+  "description": "Operate an Obsidian vault from Claude — opinionated layout, frontmatter schema, content know-how (canvas, bases, mermaid), and cleanup workflows.",
   "author": { "name": "Onnozelaer" },
   "homepage": "https://github.com/TomVDH/onnozelaer-claude-marketplace/tree/main/obsidian-bridge",
   "repository": "https://github.com/TomVDH/onnozelaer-claude-marketplace",
