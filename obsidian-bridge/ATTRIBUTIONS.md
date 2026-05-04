@@ -25,6 +25,29 @@ These ship under `obsidian-bridge` and are original to this plugin:
 | `dream` | Two-pass vault analysis dispatched by `/dream` command. |
 | `vault-standards` | Canonical schema (frontmatter, naming, tags, wikilinks, file-type templates). Promoted from `references/vault-standards.md` so it loads as active model knowledge whenever frontmatter is touched. |
 | `mermaid` | Reference for Mermaid diagram syntax across all common types, with Obsidian-specific rendering notes and pitfalls. |
+| `canvas` | Reference for the JSON Canvas v1 file format (`.canvas`) and Obsidian's Canvas plugin. Sourced from <https://help.obsidian.md/plugins/canvas> and <https://jsoncanvas.org/spec/1.0/>. |
+| `search` | Reference for Obsidian's search query syntax (operators, property filters, regex, embedded `query` blocks). Sourced from <https://help.obsidian.md/plugins/search>. |
+
+## Authoritative-reference pointers
+
+The following per-skill `references/` files index official Obsidian documentation
+(both online and within the user's local Obsidian Help vault, if present). They
+are pointer files — content is by reference, not duplication:
+
+- `skills/bases/references/AUTHORITATIVE_REFERENCE.md`
+- `skills/markdown/references/AUTHORITATIVE_REFERENCE.md`
+- `skills/vault-standards/references/OBSIDIAN_PROPERTIES_SPEC.md`
+
+## Upstream: Obsidian Help vault
+
+Several skills cite or quote the official Obsidian Help vault
+(<https://github.com/obsidianmd/obsidian-help>), licensed under
+**Creative Commons Attribution 4.0 International (CC BY 4.0)** — see
+<https://creativecommons.org/licenses/by/4.0/>. Where this plugin paraphrases
+or quotes from those docs (notably in `canvas` and `search` SKILL.md), the
+source URL is in each skill's frontmatter `source:` field.
+
+JSON Canvas spec is open-source under MIT — see <https://jsoncanvas.org/>.
 
 ## Licenses
 
