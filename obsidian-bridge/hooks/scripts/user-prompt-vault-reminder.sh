@@ -6,7 +6,7 @@
 # (which was noisy and ignored).
 #
 # Suppression rules (any one → silent exit):
-#   1. .obsidian-bridge breadcrumb exists in $CLAUDE_PROJECT_DIR
+#   1. Anchor file exists at .claude/obsidian-bridge (or legacy .obsidian-bridge)
 #   2. .cabinet-anchor-hint exists (cabinet plugin can resolve a vault)
 #   3. OB_DEFAULT_VAULT env var is set
 #   4. The user's prompt contains no vault-related keywords
@@ -22,7 +22,9 @@ main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
 
-  # 1. Breadcrumb exists → vault is linked, no reminder needed
+  # 1. Anchor file exists → vault is linked, no reminder needed
+  # Prefer .claude/obsidian-bridge; fall back to legacy .obsidian-bridge
+  [ -f "$project_dir/.claude/obsidian-bridge" ] && return 0
   [ -f "$project_dir/.obsidian-bridge" ] && return 0
 
   # 2. Cabinet anchor hint → vault discoverable via cabinet plugin

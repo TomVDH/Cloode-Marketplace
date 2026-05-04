@@ -37,6 +37,25 @@ Read `references/vault-integration.md` for the full operation table and fallback
 
 ---
 
+## Anchor / Breadcrumb file
+
+Every per-project link to a vault is persisted in a small key=value anchor file. All `/vault-bridge` subcommands read it on every operation; SessionStart, UserPromptSubmit, PostToolUse, and PreCompact hooks read it too.
+
+**Canonical location (current):** `$CLAUDE_PROJECT_DIR/.claude/obsidian-bridge`
+**Legacy location (still read for backward compat):** `$CLAUDE_PROJECT_DIR/.obsidian-bridge`
+
+**Read pattern (all subcommands):** look for the canonical file first; if absent, fall back to the legacy file. If neither exists, the project is "not linked."
+
+**Write pattern (all subcommands that create or update the anchor):**
+1. `mkdir -p $CLAUDE_PROJECT_DIR/.claude` (no-op if it already exists).
+2. Write to `$CLAUDE_PROJECT_DIR/.claude/obsidian-bridge`.
+3. Append `.claude/obsidian-bridge` to `.gitignore` if not already present.
+4. If a legacy `$CLAUDE_PROJECT_DIR/.obsidian-bridge` exists, do NOT delete it automatically — `/vault-bridge migrate-anchor` handles legacy cleanup explicitly.
+
+Wherever the pseudocode below says `read … from breadcrumb` or `WRITE breadcrumb`, this is the file and the pattern in use.
+
+---
+
 ## Commands
 
 ### create — Scaffold a new v3 vault
@@ -63,8 +82,9 @@ ELSE:
     mode = "filesystem"
     vault_name = basename(vault_path)
 
-// Write breadcrumb
-WRITE $CLAUDE_PROJECT_DIR/.obsidian-bridge:
+// Write breadcrumb (canonical location — see "Anchor / Breadcrumb file")
+mkdir -p $CLAUDE_PROJECT_DIR/.claude
+WRITE $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge:
     vault_path={base}
     vault_name={vault_name}
     project_slug=
@@ -72,8 +92,8 @@ WRITE $CLAUDE_PROJECT_DIR/.obsidian-bridge:
     mode={mode}
 
 // Add to .gitignore if not present
-IF .gitignore exists AND NOT contains ".obsidian-bridge":
-    APPEND ".obsidian-bridge" to .gitignore
+IF .gitignore exists AND NOT contains ".claude/obsidian-bridge":
+    APPEND ".claude/obsidian-bridge" to .gitignore
 
 REPORT: "Vault created at {base}. Transport: {mode}. Run /vault-bridge create-project <slug> <type> to scaffold your first project."
 ```
@@ -120,7 +140,9 @@ FOR each project dir in base/projects/:
     REPORT: slug, type, status, decisions, sessions
 
 // 5. Write breadcrumb (no project_slug yet — user links separately)
-WRITE $CLAUDE_PROJECT_DIR/.obsidian-bridge:
+//    Canonical location — see "Anchor / Breadcrumb file"
+mkdir -p $CLAUDE_PROJECT_DIR/.claude
+WRITE $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge:
     vault_path={base}
     vault_name={vault_name}
     project_slug=
@@ -128,8 +150,8 @@ WRITE $CLAUDE_PROJECT_DIR/.obsidian-bridge:
     mode={mode}
 
 // 6. Add to .gitignore if needed
-IF .gitignore exists AND NOT contains ".obsidian-bridge":
-    APPEND ".obsidian-bridge" to .gitignore
+IF .gitignore exists AND NOT contains ".claude/obsidian-bridge":
+    APPEND ".claude/obsidian-bridge" to .gitignore
 
 // 7. Cabinet detection
 IF base/crew/ exists:
@@ -145,9 +167,11 @@ REPORT: "Connected to {vault_name} at {base}. Schema: {version}. Transport: {mod
 
 ```pseudocode
 slug = user-provided slug
-breadcrumb = $CLAUDE_PROJECT_DIR/.obsidian-bridge
+breadcrumb = first existing of:
+    $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge
+    $CLAUDE_PROJECT_DIR/.obsidian-bridge   // legacy
 
-IF NOT exists breadcrumb:
+IF NOT breadcrumb:
     ERROR "No vault connected. Run /vault-bridge connect <path> first."
 
 // Read existing breadcrumb
@@ -177,8 +201,8 @@ Requires both `<slug>` and `<type>`. Asks if either is omitted. Validates slug a
 slug = validate_slug(user-provided slug)
 project_type = validate_type(user-provided type)  // coding | knowledge | plugin | tinkerage
 
-// Read breadcrumb for vault path
-vault_path = read vault_path from $CLAUDE_PROJECT_DIR/.obsidian-bridge
+// Read breadcrumb for vault path (canonical-then-legacy lookup)
+vault_path = read vault_path from breadcrumb
 IF NOT vault_path: ERROR "No vault connected."
 
 project_dir = {vault_path}/projects/{slug}
@@ -226,8 +250,8 @@ REBUILD projects/_index.md from all project briefs
 // 5. Update Home.md
 RUN update_home()
 
-// 6. Update breadcrumb with slug
-UPDATE $CLAUDE_PROJECT_DIR/.obsidian-bridge: project_slug={slug}
+// 6. Update breadcrumb with slug (writes go to canonical .claude/obsidian-bridge)
+UPDATE breadcrumb: project_slug={slug}
 
 // 7. If codebase root detected, scaffold codebase dirs
 IF git root OR $CLAUDE_PROJECT_DIR is a code project:
@@ -885,6 +909,51 @@ ELSE:
 ---
 
 ## Migration
+
+### migrate-anchor — Move legacy `.obsidian-bridge` → `.claude/obsidian-bridge`
+
+Idempotent. Safe to re-run. Use when the project still has the legacy anchor file at the project root and you want to move to the canonical `.claude/` location. All hooks and subcommands already read both — this command just consolidates.
+
+```pseudocode
+project_dir = $CLAUDE_PROJECT_DIR
+legacy = {project_dir}/.obsidian-bridge
+canonical = {project_dir}/.claude/obsidian-bridge
+
+IF NOT exists legacy:
+    IF exists canonical:
+        REPORT: "Already migrated — anchor at .claude/obsidian-bridge."
+    ELSE:
+        REPORT: "No anchor file in this project. Nothing to migrate."
+    RETURN
+
+IF exists canonical:
+    // Both exist — canonical wins; warn and offer to remove legacy
+    legacy_kv = read all key=value from legacy
+    canonical_kv = read all key=value from canonical
+    IF legacy_kv == canonical_kv:
+        REPORT: "Both anchors exist with identical content. Removing legacy."
+        rm legacy
+    ELSE:
+        REPORT: "Both anchors exist with different content. Canonical (.claude/obsidian-bridge) is in effect:"
+        SHOW diff
+        ASK: "Delete legacy file? (y/n)"
+        IF yes: rm legacy
+    RETURN
+
+// Standard case: legacy exists, canonical does not
+mkdir -p {project_dir}/.claude
+mv legacy canonical
+
+// Update .gitignore
+IF .gitignore exists:
+    IF contains ".obsidian-bridge" but NOT ".claude/obsidian-bridge":
+        // Replace line in place
+        REPLACE ".obsidian-bridge" with ".claude/obsidian-bridge"
+    ELIF NOT contains ".claude/obsidian-bridge":
+        APPEND ".claude/obsidian-bridge" to .gitignore
+
+REPORT: "Anchor migrated: .obsidian-bridge → .claude/obsidian-bridge."
+```
 
 ### migrate — v2 → v3 walkthrough
 
