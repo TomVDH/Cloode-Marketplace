@@ -1,49 +1,67 @@
 # GeminEye
 
-Invoke Gemini as a review and coding partner from inside Claude Code.
+Invoke Gemini as a **sandboxed review partner** from inside Claude Code.
 
 GeminEye gives Claude a controlled way to consult Gemini for second
-opinions, focused reviews, and reasoning checks — without letting Gemini
-sprawl across the project. Context goes in deliberately. Outputs land in
-a single, predictable folder. Source files are never written by Gemini
-unless Tom explicitly says so.
+opinions, focused reviews, and reasoning checks — without letting
+Gemini sprawl across the project. Context goes in deliberately.
+Every prompt follows a rigid template. Gemini reviews only — Claude
+applies any edits.
 
 ## Install
 
-This plugin ships as part of the `onnozelaer-claude-marketplace`
-marketplace. Once installed, the `gemin-eye` skill activates on phrases
-like "ask Gemini", "second opinion", "Gemini review", or the explicit
-`/gemin-eye` command.
+Ships as part of the `onnozelaer-claude-marketplace`. Once installed,
+the `gemin-eye` skill activates on the `/gemin-eye` command, its
+subcommands, or natural-language phrases ("ask Gemini", "second
+opinion", "Gemini review").
 
-**Requires:** the `gemini` CLI on `PATH`. Install: <https://github.com/google-gemini/gemini-cli>
+**Requires:** the `gemini` CLI on `PATH`, recent enough to support
+`--sandbox`. Install: <https://github.com/google-gemini/gemini-cli>
 
 **Pairs with (optional but recommended):**
-- `vault-bridge` (from `cabinet-of-imd`) — auto-loads project context
-  from the Obsidian vault and routes outputs into the project's
-  `gemin-eye/` subfolder.
-- `cabinet-of-imd` — when active, Bostrol owns indexing of GeminEye
-  artefacts as documentation.
+- `obsidian-bridge` — auto-loads project context from the Obsidian
+  vault and routes outputs into the project's `gemin-eye/` subfolder.
+- `cabinet-of-imd` — when active, Bostrol indexes GeminEye outputs
+  as documentation artefacts.
+
+## Subcommands
+
+```
+/gemin-eye review <target>              Focused review of one artefact — flash
+/gemin-eye megareview <scope>           Broad sweep across module / feature / plugin — pro
+/gemin-eye wip                          Review uncommitted + current branch work — flash
+/gemin-eye sanity <topic>               Steel-man + failure modes + alternative — flash
+/gemin-eye name <thing(s)>              Naming bikeshed — flash
+/gemin-eye compare <A> <B> [<C>...]     Head-to-head ranking — flash
+/gemin-eye save [topic]                 Persist last in-line review to gemin-eye/ folder
+```
 
 ## Behaviour at a glance
 
 | Aspect | Default |
-|--------|---------|
-| Trigger | Explicit phrases or `/gemin-eye` |
-| Context source | Claude-prepared bundle, project Markdown, vault if available |
-| Source-code reads | Only when explicitly named or *is* the review target |
-| Source-code writes | None (use override clause to relax) |
+|---|---|
+| Trigger | Explicit phrases or `/gemin-eye` subcommand |
+| Sandbox | Always (`--sandbox`). Folder is not trusted by Gemini |
+| Permissions | Review-only. No `--yolo`. No write tools |
+| Default model | `gemini-3.5-flash` |
+| `megareview` model | `gemini-3.5-pro` |
+| Prompt shape | Rigid ROLE / DO / DON'T / SCOPE / OUTPUT / CONTEXT |
+| Edits | Returned as elaborate code blocks; Claude applies |
+| Context | Claude-prepared bundle, project Markdown, vault if available |
+| Source-code reads | Only when explicitly named or *is* the target |
 | Output destination | `docs/gemin-eye/` or `${VAULT}/projects/{slug}/gemin-eye/` |
-| Persistence | Inline by default; persisted only when worth keeping |
+| Persistence | In-line by default; `save` for explicit persist |
 
 ## What it is not
 
 - Not an autonomous agent — every call is initiated in response to a Tom request.
-- Not a code generator for the project — Gemini's output never lands in
-  source files without Claude's review and Tom's approval.
+- Not a code generator — Gemini's output never lands in source files
+  without Claude's review and Tom's approval.
 - Not a project scaffolder — the one allowed scaffold is `docs/gemin-eye/`.
 
 See `skills/gemin-eye/SKILL.md` for full operating protocol and
-`references/invocation-patterns.md` for reusable prompt scaffolds.
+`references/invocation-patterns.md` for filled-in templates per
+subcommand.
 
 ## Author
 

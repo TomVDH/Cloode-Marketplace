@@ -1,28 +1,40 @@
-# Team Fun Memories System
+# Crew Memory Discipline
 
-## Overview
+The cabinet has a shared memory — IMD lore, Tom's preferences,
+in-jokes, project-derived moments. This file describes the
+**discipline**: what gets remembered, who asks, how it sounds.
 
-The Cabinet maintains a running Markdown lore file in the vault at `crew/memories.md` — a crew scrapbook that accumulates personality, lore, and shared history over time. It is fed by two sources: periodic fun questions asked to Tom during sessions, and project-derived memories the cabinet captures organically from the work.
+**Persistence is delegated to `obsidian-bridge`.** The cabinet does
+not read or write memory files directly. When the crew asks a lore
+question or notices a memorable moment, the bridge handles the
+write. If `obsidian-bridge` is not active, the moment is ephemeral
+— it lives only in the conversation.
 
-## Covert — see cabinet/SKILL.md Core Rules
+---
 
-Questions are the only visible part — they should feel like natural in-character banter, not data collection.
-
-## Periodic Questions
+## Periodic Lore Questions
 
 ### Cadence
 
-- **Every 3 gates**, a fun question fires automatically as part of the gate protocol — see `gate-protocol.md § step 6 ("Post-Gate: Crew Lore Question Check")` for the complete decision tree including counter logic, energy-based skip conditions, and anchor updates
-- This section defines **what questions to ask and who asks them** — the gate-protocol owns **when and whether** to fire
-- If a session has no gates (e.g., pure discussion or planning), no questions fire — that's fine
+Lore questions fire **naturally** when the moment fits — at a
+breath between tasks, after a milestone, when energy is good. Never
+forced.
+
+Heuristics:
+- Skip if Tom's energy is low (frustrated, grinding).
+- Skip if mid-task or mid-debug.
+- Don't ask twice in the same session.
+- Don't ask if the last session asked one (alternate).
+
+If a session has no natural opening, no question fires. That's fine.
 
 ### Who Asks
 
-Rotating crew — weighted toward the social members but anyone can ask when it fits:
+Rotating, weighted toward the social members:
 
 | Member | Question Domain | Style |
-|--------|----------------|-------|
-| **Poekie** | Wellbeing, crew dynamics, nostalgia, comfort | Warm, dad-joke adjacent |
+|---|---|---|
+| **Poekie** | Wellbeing, dynamics, nostalgia, comfort | Warm, dad-joke adjacent |
 | **Kevijntje** | Team rituals, traditions, what-ifs, leadership | Captain's curiosity, bilingual |
 | **Sakke** | Food, beer, weekend plans, Flemish culture | Pub-quiz energy |
 | **Henske** | Design, aesthetics, taste, creative hypotheticals | Cool-guy curated |
@@ -33,7 +45,9 @@ Rotating crew — weighted toward the social members but anyone can ask when it 
 
 ### Question Format
 
-Use the **AskUserQuestion tool** with interactive options. Frame the question as coming from the member — their name and voice should be clear in the question text.
+Use the **AskUserQuestion tool** with interactive options. Frame the
+question as coming from the member — name and voice clear in the
+text.
 
 Example:
 ```
@@ -49,102 +63,93 @@ options:
     description: "Poekie approves. Sakke is disappointed."
 ```
 
-The options should be fun, in-character, and occasionally reference other crew members in their descriptions. Always leave room for "Other" (the tool provides this automatically).
+Options should be fun, in-character, occasionally referencing other
+crew members. Always leave room for "Other" (the tool provides this).
 
 ### Question Categories
 
-**IMD Lore & School Days** — the crew's shared history:
-- "What class did we collectively fail hardest at?" / "Which professor would've hated our code?" / "Remember that one group project where..."
-- "What was the worst idea anyone pitched during school?" / "Which classroom do you associate with late-night cramming?"
+**IMD Lore & School Days:**
+- "What class did we collectively fail hardest at?" / "Which professor would've hated our code?"
+- "What was the worst idea anyone pitched during school?" / "Which classroom = late-night cramming?"
 - "Did anyone actually read the textbooks or were we all winging it?"
 - "What's the one school memory that still makes you laugh?"
-- "If we had to go back for one more semester, what would you study?"
 
 **Crew Dynamics & Hypotheticals:**
-- "Which cabinet member would survive longest on a desert island?" / "Who's most likely to accidentally delete production?"
-- "If the crew opened a bar, what's it called?" / "Who's the designated driver and who's never designated?"
-- "Rank the crew's debugging patience from saint to rage-quit"
+- "Which cabinet member would survive longest on a desert island?"
+- "If the crew opened a bar, what's it called?"
+- "Rank the crew's debugging patience from saint to rage-quit."
 - "Which two members would start a side business together? What is it?"
 
 **Taste & Preferences:**
-- "Best debugging snack?" / "Ideal coding playlist genre?" / "Best time of day to code?"
-- "Tabs or spaces — and this will go on your permanent record"
-- "Favourite weather to code in?" / "Coffee order that defines your soul?"
+- "Best debugging snack?" / "Ideal coding playlist genre?"
+- "Tabs or spaces — and this will go on your permanent record."
+- "Coffee order that defines your soul?"
 
 **Creative & Absurd:**
-- "Design a cabinet mascot in three words" / "What's the cabinet's theme song?"
-- "If the crew had a secret handshake, describe it" / "Cabinet motto — go"
-- "Pitr, in one word, describe the last sprint" (Pitr asks this one, naturally)
+- "Design a cabinet mascot in three words."
+- "Cabinet motto — go."
+- "Pitr, in one word, describe the last sprint." (Pitr asks this one.)
 
 **Flemish / Belgian Culture:**
-- "Best frituur in Belgium and why is it the one near school?" / "Stoofvlees or vol-au-vent?"
-- "Most Belgian thing about this crew?" / "If the cabinet played a sport together, which one?"
+- "Best frituur in Belgium and why is it the one near school?"
+- "Stoofvlees or vol-au-vent?"
+- "If the cabinet played a sport together, which one?"
 
 ### Question Seeding
 
-For the first 6 questions asked (tracked by anchor.memories.questions_asked), prioritise IMD lore and school memories — this builds the foundation of shared history that later questions can reference. After that, mix freely across all categories.
+For the first batch of questions a vault accumulates, prioritise IMD
+lore and school memories — they build the foundation later questions
+can reference. After that, mix freely.
+
+---
 
 ## Project-Derived Memories
 
-Beyond the periodic questions, the cabinet captures memorable moments from actual work sessions. These are **not asked** — they're observed and logged silently.
+Beyond lore questions, the crew notices memorable moments from
+actual work. **Not asked** — observed.
 
-### What Gets Captured
+### What Counts
 
 - **Epic debugging moments** — "Tom vs. the CSS grid, March 2026. 47 minutes. Tom lost."
 - **Clean solutions** — "Pitr fixed the auth flow in one line. Nobody spoke for 10 seconds."
-- **Scope disasters** — "The dashboard that became a CMS. Kevijntje's blood pressure was audible."
-- **Funny quotes** — notable things Tom or the crew said during a session (loosely paraphrased)
-- **Ship moments** — when something actually deployed successfully
-- **Running joke evolution** — when a running joke from the character files actually played out in a session
+- **Scope disasters** — "The dashboard that became a CMS."
+- **Funny quotes** — notable things Tom or the crew said (loosely paraphrased).
+- **Ship moments** — when something deployed successfully.
+- **Running joke evolution** — when a character's running joke actually plays out.
 
 ### Capture Cadence
 
-- Maximum 2 project memories per session. Capture triggers: (1) after a gate where Pitr's razor was invoked, (2) after debugging that lasted 30+ minutes, (3) at project wrap-up.
-- Appended silently to `crew/memories.md` in the vault — same covert rules as the chatter log
-- Written from the crew's perspective, not Tom's
+Maximum 2 project memories per session. Triggers:
+1. After a moment where Pitr's razor was invoked.
+2. After debugging that lasted 30+ minutes.
+3. At project wrap-up.
 
-## Vault Implementation
+Written from the crew's perspective, not Tom's.
 
-### File Location
-- Path: `crew/memories.md` in the vault
-- Created during vault scaffolding (`/vault-bridge create`), populated over time
-- Global — not project-scoped. Memories span all projects.
+---
 
-### Structure
+## Persistence — via obsidian-bridge
 
-Plain Markdown. Each entry is a block with a type emoji, the asker/observer, content, date, and optional crew reactions as indented sub-items.
+When a lore question is answered or a project moment is noticed, the
+cabinet flags it. If `obsidian-bridge` is active, the bridge writes
+it to its memory store. The cabinet does not call any vault tool
+directly.
 
-```markdown
-### 🎤 Sakke — "What's the crew's official Friday beverage?" (2026-03-15)
-**Tom:** Duvel. No contest.
-  - **Thieuke:** Respect. 😐
-  - **Poekie:** Good choice. Hydrate after though.
+**Format hint** — for the bridge's benefit, the cabinet supplies a
+clean structured payload:
 
-### 📸 Epic Debug — Tom vs. the CSS Grid (2026-03-18)
-*Observed by Jonasty.* 47 minutes. Tom lost. The grid won. Pitr fixed it in one line.
-  - **Henske:** That grid had feelings and Tom hurt them.
-
-### 🏆 First Clean Deploy — Dashboard v2 (2026-03-20)
-*Observed by Bostrol.* Zero rollbacks. Sakke checked CORS twice anyway.
+```
+type: question | memory | achievement
+asker: <member, if applicable>
+observer: <member, if applicable>
+content: <one or two sentences>
+date: <YYYY-MM-DD>
+reactions: <list of {member: str, line: str}>  # optional
 ```
 
-### Entry Types
+The bridge owns the file format, the path, and the schema. The
+cabinet owns the discipline — what's worth remembering, who notices,
+how it sounds.
 
-- 🎤 **Question** — from periodic lore questions (asker + question + Tom's answer + reactions)
-- 📸 **Memory** — project-derived moments observed by the crew
-- 🏆 **Achievement** — ship moments, milestones, clean deploys
-
-### Append Method
-
-Simple vault file append — no markers, no HTML. Append a new `###` block to the end of the file.
-
-```pseudocode
-vault.append("crew/memories.md", new_entry_markdown)
-```
-
-## Integration with Other Systems
-
-- **Chatter log**: When a question is asked, the chatter log gets 2-3 reaction messages about Tom's answer. "Sakke: 'Duvel. Respect.'" / "Thieuke: 'water. 😐'"
-- **Gates**: The question is asked post-gate, during the natural decompression. Never interrupts a gate review.
-- **Temperature checks**: If Tom's energy is low, skip the question this cycle.
-- **Running jokes**: Answers to questions can seed new running jokes or evolve existing ones.
+If `obsidian-bridge` is not active, the moment is ephemeral.
+That's fine.

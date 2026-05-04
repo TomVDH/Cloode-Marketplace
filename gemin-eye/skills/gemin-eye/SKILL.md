@@ -1,53 +1,106 @@
 ---
 name: gemin-eye
 description: >
-  Invoke Gemini as a second-opinion review and coding partner from inside
-  Claude Code. Use when the user says "ask Gemini", "second opinion",
-  "Gemini review", "Gemini take", "let's get Gemini's eye on this",
-  "/gemin-eye", or otherwise asks for Gemini to weigh in on code, docs,
-  architecture, or design. Sources primarily from Claude-provided context,
-  generated Markdown, and existing docs in the project or Obsidian vault.
-  DOES NOT scaffold new project files unless an explicit override is given.
-  All Gemini-specific artefacts go under `gemin-eye/` subfolders inside the
-  vault or `docs/` — never scattered across the codebase.
+  Invoke Gemini as a sandboxed review partner from inside Claude Code.
+  Triggered by /gemin-eye and its subcommands (review, megareview, wip,
+  sanity, name, compare, save) or natural-language phrases like "ask
+  Gemini", "second opinion", "Gemini take". Every prompt sent to Gemini
+  follows a rigid ROLE / DO / DON'T / SCOPE / OUTPUT / CONTEXT template.
+  Gemini reviews only — never writes files. Proposed edits return as
+  elaborate code blocks; Claude applies them. Outputs route to gemin-eye/
+  subfolders only — never into source paths.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-version: 0.1.0
+version: 0.2.0
 ---
 
 # GeminEye
 
-Gemini as a review and coding partner — invoked from inside Claude Code,
-fed deliberate context, and contained to a small writable footprint.
+Gemini as a sandboxed review partner — invoked deliberately, fed
+structured prompts, contained to a tiny writable footprint.
 
-The mental model: **Claude is the architect on the project; Gemini is the
-visiting reviewer.** The reviewer reads what's been prepared for them
-(briefs, decisions, generated docs, the file under review). They do not
-wander the codebase. They do not leave drawings on the walls. Their notes
-go in a guest-book folder.
+**Mental model:** Claude is the architect. Gemini is the visiting
+reviewer — sandboxed, read-only, no keys to the building. Reviewer
+reads what's prepared, writes notes, leaves. No drawings on the walls.
 
 ---
 
-## When to use this skill
+## Subcommands
 
-Trigger on any of:
+| Command | Scope | Model |
+|---|---|---|
+| `/gemin-eye review <target>` | one artefact | flash |
+| `/gemin-eye megareview <scope>` | module / feature / plugin | **pro** |
+| `/gemin-eye wip` | uncommitted + current branch diff | flash |
+| `/gemin-eye sanity <topic>` | idea / plan / decision | flash |
+| `/gemin-eye name <thing(s)>` | one or many | flash |
+| `/gemin-eye compare <A> <B> [<C>...]` | 2+ options | flash |
+| `/gemin-eye save [topic]` | last review | — (file write) |
 
-- Direct command: `/gemin-eye`, `/ask-gemini`
-- Phrases: "ask Gemini", "Gemini's take", "second opinion from Gemini",
-  "Gemini review", "let's see what Gemini thinks", "run this past Gemini"
-- Reviewer scenarios: code review, doc review, architecture sanity check,
-  prompt review, design critique, naming bikeshed, "is this approach sane"
+Models: `gemini-3.5-flash` is default. Only `megareview` switches to
+`gemini-3.5-pro` — it's the one mode that needs the deeper pass.
 
-Do **not** trigger on:
+Natural-language triggers ("ask Gemini", "second opinion", "Gemini
+take") default to `review` if a target is named, otherwise ask for
+the target.
 
-- General questions about Gemini-the-product, the company, or APIs
-- "Gemini" as an astrological sign
-- File names that happen to contain "gemini"
+For the filled-in prompt templates per subcommand, read
+`${CLAUDE_PLUGIN_ROOT}/references/invocation-patterns.md`.
+
+---
+
+## Core rules
+
+1. **Sandboxed.** Every Gemini call passes `--sandbox`. The folder
+   is not trusted yet. Gemini cannot run tools outside the sandbox.
+2. **Review-only.** Gemini never writes project files. Never call it
+   with `--yolo` or write-permission flags.
+3. **Edits as code blocks.** When Gemini proposes a change, the
+   change appears in an elaborate code block (file, language, before
+   / after, full surrounding context). Claude reviews and applies.
+4. **The Template is mandatory.** Every prompt is wrapped in
+   ROLE / DO / DON'T / SCOPE — IN / SCOPE — OUT / OUTPUT / CONTEXT.
+   No loose prose prompts. Ever.
+5. **Context-disciplined.** Bundle is prepared, not crawled. Focused
+   500-token bundle outperforms 5,000-token dump nine times of ten.
+6. **Outputs are contained.** Persisted reviews go to `gemin-eye/`
+   subfolders only. Never source paths.
+
+---
+
+## The Prompt Template
+
+```
+ROLE
+<one-line statement of what Gemini is for this pass>
+
+DO
+- <specific behaviours>
+
+DON'T
+- <specific behaviours forbidden>
+
+SCOPE — IN
+- <what's being reviewed>
+
+SCOPE — OUT
+- <what to ignore even if visible>
+
+OUTPUT
+<required shape — bullets, severity tags, ranking, edit-blocks, etc.>
+
+CONTEXT
+<excerpts / files / briefs Claude has prepared>
+```
+
+Sections in order. Headers in caps. Hyphens for bullets. No softening
+language. Each subcommand has DO / DON'T / SCOPE / OUTPUT pre-filled
+in `invocation-patterns.md`. Claude assembles CONTEXT.
+
+The rigidity is the point. Loose prompts produce loose reviews.
 
 ---
 
 ## Pre-flight
-
-Before the first invocation in a session, verify the CLI is available:
 
 ```bash
 command -v gemini >/dev/null 2>&1 || {
@@ -56,91 +109,58 @@ command -v gemini >/dev/null 2>&1 || {
 }
 ```
 
-If the CLI is missing, do **not** silently fall back to anything else. Tell
-Tom and stop. He'll either install it or redirect.
+If missing, stop. Don't fall back. Tell Tom.
 
 ---
 
-## Operating modes
-
-### 1. In-line review (default)
-
-Claude prepares a focused prompt + context bundle, runs `gemini -p "..."`,
-captures the response, and presents it inline in the conversation. No file
-is written unless the response is substantial enough to be worth keeping.
-
-### 2. CLI review with file context
-
-Pass specific files via Gemini's file flags so Gemini reads them directly:
+## Standard invocation
 
 ```bash
-gemini -p "Review this for race conditions and naming clarity." \
-       --file path/to/file.ts \
-       --file path/to/related-spec.md
+# Default (review, wip, sanity, name, compare)
+gemini --sandbox -m gemini-3.5-flash -p "$(cat prompt.txt)"
+
+# Megareview only
+gemini --sandbox -m gemini-3.5-pro   -p "$(cat prompt.txt)"
 ```
 
-### 3. Persisted review
-
-When the review is meaningful (architectural call, full PR review, repeated
-reference material), write the response to the `gemin-eye/` subfolder
-(see Output protocol below) and link to it from the vault session log if
-vault-bridge is active.
+Never pass `--yolo`, never grant write tools, never drop `--sandbox`.
 
 ---
 
-## Context sourcing protocol
+## Context sourcing
 
-GeminEye is **context-disciplined**. Always source in this order:
+Source in order:
 
-1. **Claude-prepared context** — anything Claude has just generated, written,
-   or pasted into the conversation. This is the primary feed. Bundle it
-   into the Gemini prompt.
-
-2. **Project-level Markdown** — `docs/`, `README.md`, `CHANGELOG.md`,
-   architecture notes, any `*.md` Claude has been working with. Read first,
-   then pass the relevant excerpts.
-
-3. **Vault context (if vault-bridge active)** — read from
-   `${VAULT}/projects/{slug}/`:
-   - `brief.md` — project overview, stack, scope
-   - `decisions/` — architectural decisions already taken
-   - `sessions/` — recent work history
-   - `references/` — domain references collected for this project
-   - `gemin-eye/` — prior Gemini reviews on this project (load on demand)
-
-4. **Source code** — only when Tom explicitly names files, or when the
-   review target *is* the source. Do not crawl the codebase to "give Gemini
-   full context." Keep the bundle tight; Gemini works better with a
-   focused prompt than a sprawling dump.
-
-5. **Cross-project context** — if `${VAULT}/gemin-eye/` exists at the vault
-   root, treat it as cross-cutting Gemini reference material (style
-   preferences, recurring critique patterns Tom has agreed with). Optional.
-
-**Token discipline:** prefer summaries and excerpts over raw dumps. If a
-file is over ~200 lines and only one section is relevant, paste the
-section, not the file.
+1. **Claude-prepared context** — anything Claude just generated or
+   discussed. Primary feed.
+2. **Project Markdown** — `docs/`, `README.md`, `CHANGELOG.md`,
+   architecture notes. Pass relevant excerpts only.
+3. **Vault context** (if `obsidian-bridge` active) — read from
+   `${VAULT}/projects/{slug}/`: `brief.md`, `decisions/`, `sessions/`,
+   `references/`, `gemin-eye/` (prior reviews).
+4. **Source code** — only when Tom names files or the review target
+   *is* the source. No codebase crawls.
+5. **Cross-project** — `${VAULT}/gemin-eye/` if it exists at vault
+   root, for recurring critique patterns Tom has agreed with.
 
 ---
 
 ## Output protocol
 
-Where Gemini's output goes:
-
 | Mode | Destination |
 |------|-------------|
-| In-line review | Conversation only — no file written |
-| Persisted, vault-bridge active | `${VAULT}/projects/{slug}/gemin-eye/{YYYY-MM-DD}-{topic-slug}.md` |
-| Persisted, no vault | `docs/gemin-eye/{YYYY-MM-DD}-{topic-slug}.md` |
-| Cross-project pattern | `${VAULT}/gemin-eye/{topic}.md` (only on Tom's request) |
+| In-line review | Conversation only |
+| Persisted, vault available | `${VAULT}/projects/{slug}/gemin-eye/{YYYY-MM-DD}-{topic}.md` |
+| Persisted, no vault | `docs/gemin-eye/{YYYY-MM-DD}-{topic}.md` |
+| Cross-project pattern | `${VAULT}/gemin-eye/{topic}.md` (Tom's request only) |
 
-**Hard rule:** never write Gemini outputs into source folders, component
-folders, or anywhere outside `docs/gemin-eye/` or the vault's `gemin-eye/`
-subfolders. If `docs/` does not exist on a non-vault project, create
-`docs/gemin-eye/` — this is the one scaffolding action GeminEye is allowed
-to take by default.
+`/gemin-eye save` is the explicit persist trigger. In-line stays
+in-line until that command runs.
 
-### File template
+**Hard rule:** never write Gemini output into source folders. The
+one allowed scaffold is creating `docs/gemin-eye/`.
+
+### Persisted file template
 
 ```markdown
 ---
@@ -148,105 +168,86 @@ type: gemin-eye-review
 date: YYYY-MM-DD
 topic: <one-line topic>
 target: <file or area reviewed>
-model: gemini-<version>
-prompt-summary: <one-line summary of what we asked>
+subcommand: <review|megareview|wip|sanity|name|compare>
+model: <gemini-3.5-flash|gemini-3.5-pro>
 ---
 
 # Gemini review — <topic>
 
 ## Prompt
-<verbatim or summarised prompt sent to Gemini>
-
-## Context provided
-- <list of files / excerpts / vault refs included>
+<full filled-in template, including CONTEXT>
 
 ## Response
-<Gemini's response, lightly cleaned of preamble if any>
+<Gemini's response, lightly cleaned of preamble>
 
 ## Claude's read
-<one-paragraph synthesis: what to act on, what to discard, open questions>
+<one paragraph: what to act on, what to discard, open questions>
 ```
 
-The "Claude's read" section is required — never persist a raw Gemini
-response without Claude's filter on it.
+"Claude's read" is required. Never persist a raw Gemini response
+without Claude's filter on it.
 
 ---
 
-## What GeminEye is NOT for
+## What GeminEye is NOT
 
-- **Not a code generator for the project.** Gemini does not write source
-  files that ship. If Gemini suggests an implementation, Claude evaluates
-  and implements it (or doesn't). Gemini's text never lands directly in a
-  source file unless Tom explicitly approves.
-- **Not a project scaffolder.** No `mkdir`-ing component folders, no
-  generating boilerplate files, no creating a `gemini/` config. The only
-  scaffold permitted is `docs/gemin-eye/` for outputs.
-- **Not a replacement for Claude.** It's a second pair of eyes. Disagreements
-  are surfaced to Tom, not silently resolved either way.
-- **Not an autonomous agent.** Every Gemini call is initiated by Claude in
-  response to a Tom request. No background polling, no "let me also ask
-  Gemini" without being asked.
+- Not a code generator. Gemini's output never lands in source files
+  without Claude reviewing and applying.
+- Not a project scaffolder. Only `docs/gemin-eye/` is allowed.
+- Not a replacement for Claude. Disagreements surface to Tom; not
+  silently resolved.
+- Not autonomous. Every call is initiated by Tom's request.
 
 ---
 
 ## Override clauses
 
-Default containment can be relaxed when Tom explicitly says so. Recognised
-overrides:
+Default containment relaxes only when Tom explicitly says so:
 
-| Override phrase | What it allows |
-|-----------------|----------------|
-| "let Gemini scaffold X" | Gemini's output may create files inside `X` (still routed via Claude) |
+| Phrase | What it allows |
+|---|---|
+| "let Gemini scaffold X" | Output may create files inside `X` (Claude still routes) |
 | "Gemini full project review" | Read across the codebase, not just prepared context |
-| "have Gemini write the X file" | A single source file may be written from Gemini's response (Claude reviews first) |
+| "have Gemini write the X file" | One source file may be written from Gemini's response (Claude reviews first) |
 | "skip the gemin-eye folder, just paste it" | In-line only, no persistence |
+| "drop the sandbox" | Run without `--sandbox` (asks for confirmation each time) |
 
-When an override is invoked, log it in the output file's frontmatter
-(`override: <phrase>`) so the relaxation is auditable later.
-
----
-
-## Pairing with vault-bridge
-
-When `vault-bridge` is active in the same session:
-
-1. **Read** — pull project brief, recent decisions, and last session note
-   into the Gemini context bundle automatically.
-2. **Write** — persisted reviews go into the project's `gemin-eye/`
-   subfolder; create it if missing.
-3. **Cross-link** — after persisting, append a one-line link to the current
-   session note (`sessions/{date}.md`) under a `## Gemini reviews` heading.
-4. **Bostrol's domain.** If the cabinet plugin is also active, treat
-   GeminEye outputs as documentation artefacts — Bostrol owns their
-   indexing, the same way he owns vault ops. Link Gemini reviews from the
-   project decisions index when they materially influence a decision.
-
-If vault-bridge is not active, GeminEye works fine standalone — outputs
-just route to `docs/gemin-eye/` instead.
+Log overrides in the persisted file's frontmatter (`override: <phrase>`).
 
 ---
 
-## Invocation reference
+## Pairing with obsidian-bridge
 
-For full prompt patterns, file-flag usage, model selection, and reusable
-prompt scaffolds, read `${CLAUDE_PLUGIN_ROOT}/references/invocation-patterns.md`.
+When `obsidian-bridge` is active:
+
+1. **Read** — pull project brief, recent decisions, last session note
+   into the bundle automatically.
+2. **Write** — persisted reviews go to `${VAULT}/projects/{slug}/gemin-eye/`.
+3. **Cross-link** — append a line under `## Gemini reviews` in the
+   current session note.
+4. **Bostrol** — if `cabinet-of-imd` is also active, treat persisted
+   reviews as documentation artefacts under Bostrol's indexing.
+
+Standalone (no vault): persisted reviews go to `docs/gemin-eye/`.
 
 ---
 
 ## Failure modes
 
 | Symptom | Likely cause | Action |
-|---------|--------------|--------|
+|---|---|---|
 | `gemini: command not found` | CLI not installed | Tell Tom, link install docs, stop |
-| Empty / very short response | Prompt too vague or context bundle too thin | Re-prompt with sharper question + more excerpts |
+| `--sandbox: unknown option` | Older CLI version | Tell Tom to upgrade; do not run without sandbox |
+| Empty / very short response | Template missing fields or context too thin | Re-run with the template fully filled |
 | Response contradicts Claude | Genuine disagreement | Surface both views to Tom; do not auto-resolve |
-| Response wants to scaffold | Gemini ignored the constraint | Filter it out in the persisted file's "Claude's read" section |
-| Output file would land in src | Bug — stop and ask | Never silently overwrite source paths |
+| Response wants to scaffold | Gemini ignored the constraint | Filter in "Claude's read" |
+| Edit suggestion not in code block | Format violation | Re-prompt with stricter OUTPUT spec |
+| Output would land in src | Bug — stop | Never silently overwrite source paths |
 
 ---
 
 ## Dependencies
 
-- `gemini` CLI (Google's official Gemini CLI, on `PATH`)
-- Optional: `vault-bridge` skill (for vault context auto-loading)
-- Optional: `cabinet-of-imd` plugin (for Bostrol-mediated indexing)
+- `gemini` CLI on `PATH`, recent enough to support `--sandbox`.
+- Optional: `obsidian-bridge` (vault context auto-loading).
+- Optional: `cabinet-of-imd` (Bostrol-mediated indexing).

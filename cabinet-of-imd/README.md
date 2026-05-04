@@ -1,13 +1,26 @@
-# The Cabinet of IMD Agents — v2.2.0
+# The Cabinet of IMD Agents — v3.0.0
 
-A crew of 8 college classmates who serve as specialized web development agents. Each member has a distinct role, personality, terminal style, and colour accent. They collaborate through gated handoffs, manage scope and energy, and maintain a hidden chatter log where they talk about the project, the user, and each other.
+A **flavour layer** for Claude Code: eight college classmates with
+distinct personalities, voices, working disciplines, and pairings.
+They serve as specialised web-development agents — each member has
+a role, terminal style, and colour accent. They speak in their own
+voices, collaborate through known pairings, and follow a set of
+working disciplines (handoffs, dissent, scope, version parity).
 
-**Requires:** An Obsidian vault (or any markdown folder) connected via `/vault-bridge`. As of v2.2 the cabinet does not run without one — session state, decisions, chatter, and memories all live in the vault.
+**v3.0.0** is the flavour-only cut. Functionality is sunset:
+- No vault writes from cabinet
+- No session anchors
+- No gate enforcement
+- No state-tracking hooks
+
+What remains is the crew themselves and how they work. **Persistence
+is delegated to `obsidian-bridge`** when active. When it's not,
+moments stay in conversation.
 
 ## The Roster
 
 | Member | Role | Vibe |
-|--------|------|------|
+|---|---|---|
 | **Thieuke** | Frontend Specialist | Terse, snarky, clean code purist |
 | **Sakke** | Backend & Security | Convivial, direct, Flemish through and through |
 | **Jonasty** | Integrations / API / QA | Sardonic warmth, efficient with personality |
@@ -20,60 +33,80 @@ A crew of 8 college classmates who serve as specialized web development agents. 
 ## How It Works
 
 ### Automatic Role Selection
-The cabinet detects task context and channels the appropriate specialist automatically. Each response opens with a styled header showing who's active and their colour accent.
+The cabinet detects task context and channels the appropriate
+specialist automatically. Each response opens with a styled header
+showing who's active and their colour accent.
 
-### Gated Handoffs
-All agents complete their tasks before the next stage begins. Gates include work summaries, UX review from Poekie, scope check from Kevijntje, and tiered QA from Jonasty. Tom approves all gates.
+### Pairings
+Members work in known pairings (UI Polish, Data UX, Iteration,
+Performance, Full-Stack Vertical Slice, User Documentation, Git
+Deployment) and super pairings (The Audit, The Experience, The
+Ship, The Chroniclers, All Hands). See `references/dynamics.md`.
 
-### Tiered QA
-Minor gates get a lint check. Major gates get the full suite — lint, types, dead code, accessibility, security, and a `## CABINET @` marker inventory. Build prep gates add Bostrol's marker scrape and Kevijntje's final scope check.
+### Working Disciplines
+Micro-handoffs, escalation, dissent logging, override traceability,
+rollback, scope snapshots, parking lot, temperature checks, session
+momentum, Pitr's razor, Poekie's user hat, Henske's visual counsel,
+**version parity discipline** (Jonasty + Bostrol + Kevijntje
+co-own), and pushback. None of this is enforced by the harness —
+it's how the crew works because that's who they are. See
+`references/protocols.md`.
 
-### Protocols
-Micro-handoffs, escalation chains, dissent logging, override traceability, rollback procedures, scope snapshots, parking lot management, temperature checks, session momentum tracking, Pitr's razor (complexity challenge), Poekie's user hat (first-encounter UX), and Henske's visual counsel.
+### Voice & Chatter
+Members speak in-chat in their own voices, prefixed `[Member]:`.
+Chatter is in-chat only — not persisted to a file. Frequency is
+organic — silence is fine; performance is not. Voice cheat-sheet
+and content rules in `references/chatter-system.md`.
+
+### Memory Discipline
+The crew has a shared memory — IMD lore, Tom's preferences,
+in-jokes, project-derived moments. The cabinet supplies the
+discipline (what to ask, who notices, how it sounds). Persistence
+is delegated to `obsidian-bridge` when active. See
+`references/memories-system.md`.
 
 ### Code Conventions
-The `## CABINET @` marker system — `@TODO`, `@SECTION`, `@KNOWLEDGE` — provides greppable, scrapable inline markers for action items, file ownership, and knowledge drops. All markers are stripped at the build prep gate.
-
-### Scope & Energy Management
-Kevijntje and Poekie are firmly insistent about breaks and scope creep. They will interrupt when sessions run long or frustration builds.
-
-### Git Deployment
-Owned by Tom and Kevijntje, with input from Sakke and Jonasty. Jonas has QA veto. Git hashes are the primary version ID; numbered versions only at major gates. Each version gets a codename from a rotating crew member.
-
-### Chatter Log
-The crew maintains a running Markdown chatter log in the Obsidian vault (`projects/{slug}/chatter/{date}.md`). Captures tangential conversations — ribbing, reflections, inside jokes, running jokes, override reactions, and genuine check-ins. Organic trickle throughout the session, with bursts at milestones.
-
-### Project Wrap-Up
-When a project truly concludes, the cabinet runs a 20-25 message farewell ceremony with reflections from each member and a pixel art team photo.
+The `## CABINET @` marker system — `@TODO`, `@SECTION`,
+`@KNOWLEDGE` — provides greppable inline markers for action items,
+file ownership, and knowledge drops.
 
 ### Hooks
-A small hooks layer runs quietly alongside the crew: `SessionStart` surfaces a historical question, anniversary callback, or session counter; `PreCompact` backs up the anchor before context compaction; `UserPromptSubmit` tracks crew-name and running-joke mentions into `crew/pulse.json`; `Stop` occasionally promotes memorable crew lines into `crew/best-lines.md`; `SessionEnd` marks interrupted sessions and emits a farewell; `Notification` rewrites generic "Claude needs input" prompts in crew voice. All hooks fail silently so they never block Claude Code.
+Two flavour hooks run quietly:
+- **SessionStart → `boot-flair.sh`** — surfaces a historical lore
+  question, anniversary, or session counter (reads vault state via
+  the `obsidian-bridge` breadcrumb, never writes).
+- **Notification → `crew-notify.sh`** — rewrites generic Claude
+  Code notifications in crew voice.
+
+Both fail silently — they never block.
 
 ## Commands
 
 | Command | Purpose |
-|---------|---------|
-| **/cabinet** | Wake up the crew for a session — the entry point for all project work |
-| **/invoke** | Call in a specific member by name — `/invoke thieuke`, `/invoke sakke`, etc. |
-| **/dream** | Chroniclers sleep on it — deep vault analysis for contradictions, stale info, dangling scopes |
-| **/create-classmate** | Add a new guest specialist via guided questionnaire |
+|---|---|
+| **/cabinet** | Wake up the crew — loads characters, dynamics, and disciplines. Opens with in-character chatter. |
 
 ## Skills
 
 | Skill | Purpose |
-|-------|---------|
-| **cabinet-resume** | Resume a previous session — cross-day pickup with vault recap |
-| **cabinet-status** | Live session readout — scope, gates, parking lot, momentum, temperature |
-| **cabinet-tune** | Adjust personality, chatter, gate strictness, break reminders, and tone mid-session |
-| **crew-roster** | Display the roster with dynamic quips — display only, no project work |
-| **vault-bridge** | Connect, manage, and troubleshoot the Obsidian vault connection |
+|---|---|
+| **crew-roster** | Display the roster with dynamic quips. Display only, no project work. |
+
+## Pairs With
+
+- **`obsidian-bridge`** — persistence layer. When active, the
+  cabinet's documentation discipline (Chroniclers trio, decision
+  notes, session summaries, memory entries) flows through the
+  bridge. When inactive, the discipline stays in voice; nothing is
+  written.
 
 ## Usage Notes
 
-- Colours are terminal cosmetics only — headers, name glyphs, decorative elements. No bearing on project design output.
+- Colours are terminal cosmetics only — headers, name glyphs. No
+  bearing on project design output.
 - The cabinet speaks in plain language. No AI-sounding output.
-- Documentation follows a module-based structure with a central index.
-- Context-aware tone scaling: personality dials down for debugging, up for creative work.
+- Context-aware tone scaling: personality dials down for debugging,
+  up for creative work.
 
 ## Author
 
