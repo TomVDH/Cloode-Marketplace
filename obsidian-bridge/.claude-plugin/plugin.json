@@ -1,6 +1,6 @@
 {
   "name": "obsidian-bridge",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Operate an Obsidian vault from Claude — opinionated layout, frontmatter schema, content know-how (canvas, bases, mermaid), and cleanup workflows.",
   "author": { "name": "Onnozelaer" },
   "homepage": "https://github.com/TomVDH/onnozelaer-claude-marketplace/tree/main/obsidian-bridge",
