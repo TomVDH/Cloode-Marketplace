@@ -11,8 +11,17 @@ main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
 
-  local breadcrumb="$project_dir/.obsidian-bridge"
-  [ -f "$breadcrumb" ] || return 0
+  # Prefer .claude/obsidian-bridge; fall back to legacy .obsidian-bridge
+  local breadcrumb=""
+  for candidate in \
+      "$project_dir/.claude/obsidian-bridge" \
+      "$project_dir/.obsidian-bridge"; do
+    if [ -f "$candidate" ]; then
+      breadcrumb="$candidate"
+      break
+    fi
+  done
+  [ -z "$breadcrumb" ] && return 0
 
   local vault_path="" project_slug=""
   vault_path=$(grep -E '^vault_path=' "$breadcrumb" 2>/dev/null | head -n1 | cut -d= -f2- || true)

@@ -36,10 +36,23 @@ from datetime import date
 REMEMBER_MARKER = "<!-- BEGIN remember import -->"
 
 
+def find_anchor(project_dir: str) -> str:
+    """Locate the obsidian-bridge anchor file. Prefer the current
+    convention (.claude/obsidian-bridge); fall back to the legacy
+    location (.obsidian-bridge at project root)."""
+    for candidate in (
+        os.path.join(project_dir, ".claude", "obsidian-bridge"),
+        os.path.join(project_dir, ".obsidian-bridge"),
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
 def read_breadcrumb_kv(project_dir: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    breadcrumb = os.path.join(project_dir, ".obsidian-bridge")
-    if not os.path.isfile(breadcrumb):
+    breadcrumb = find_anchor(project_dir)
+    if not breadcrumb:
         return out
     try:
         with open(breadcrumb, encoding="utf-8") as f:

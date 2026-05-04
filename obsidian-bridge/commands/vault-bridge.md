@@ -20,6 +20,7 @@ Obsidian vault management. Dispatches to the `vault-bridge` skill.
 /vault-bridge reindex                           Rebuild all _index.md files
 /vault-bridge housekeeping                      Full consistency check
 /vault-bridge migrate                           v2 → v3 walkthrough
+/vault-bridge migrate-anchor                    Move legacy .obsidian-bridge → .claude/obsidian-bridge
 /vault-bridge handoff sync                      Mirror .remember/remember.md → _handoff.md
 /vault-bridge handoff status                    Show last sync time
 /vault-bridge set-type <slug> <type>            Change project type

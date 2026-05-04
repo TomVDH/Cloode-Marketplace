@@ -9,9 +9,19 @@ main() {
 
   local vault_path="" vault_name="" project_slug="" mode="" linked_at=""
 
-  # --- 1. Read breadcrumb (.obsidian-bridge) ---
-  local breadcrumb="$project_dir/.obsidian-bridge"
-  if [ -f "$breadcrumb" ]; then
+  # --- 1. Read breadcrumb ---
+  # Prefer .claude/obsidian-bridge (current convention); fall back to
+  # .obsidian-bridge at project root (legacy, pre-migration).
+  local breadcrumb=""
+  for candidate in \
+      "$project_dir/.claude/obsidian-bridge" \
+      "$project_dir/.obsidian-bridge"; do
+    if [ -f "$candidate" ]; then
+      breadcrumb="$candidate"
+      break
+    fi
+  done
+  if [ -n "$breadcrumb" ]; then
     vault_path=$(grep -E '^vault_path=' "$breadcrumb" 2>/dev/null | head -n1 | cut -d= -f2- || true)
     vault_name=$(grep -E '^vault_name=' "$breadcrumb" 2>/dev/null | head -n1 | cut -d= -f2- || true)
     project_slug=$(grep -E '^project_slug=' "$breadcrumb" 2>/dev/null | head -n1 | cut -d= -f2- || true)
@@ -91,7 +101,7 @@ main() {
     fi
 
     ctx+="Root docs require \`type: doc\` frontmatter.\n"
-    ctx+="Standards: \`obsidian-bridge/references/vault-standards.md\` (read on demand)."
+    ctx+="Standards: invoke the \`obsidian-bridge:vault-standards\` skill for the canonical schema."
 
     printf '%b' "$ctx"
   else

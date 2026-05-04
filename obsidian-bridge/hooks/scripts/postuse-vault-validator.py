@@ -37,10 +37,23 @@ import sys
 from datetime import date
 
 
+def find_anchor(project_dir: str) -> str:
+    """Locate the obsidian-bridge anchor file. Prefer the current
+    convention (.claude/obsidian-bridge); fall back to the legacy
+    location (.obsidian-bridge at project root)."""
+    for candidate in (
+        os.path.join(project_dir, ".claude", "obsidian-bridge"),
+        os.path.join(project_dir, ".obsidian-bridge"),
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
 def read_breadcrumb_vault(project_dir: str) -> str:
-    """Return vault_path from .obsidian-bridge breadcrumb, or empty string."""
-    breadcrumb = os.path.join(project_dir, ".obsidian-bridge")
-    if not os.path.isfile(breadcrumb):
+    """Return vault_path from the breadcrumb, or empty string."""
+    breadcrumb = find_anchor(project_dir)
+    if not breadcrumb:
         return ""
     try:
         with open(breadcrumb, encoding="utf-8") as f:
