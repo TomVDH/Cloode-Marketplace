@@ -20,7 +20,7 @@
       "matcher": "*",
       "hooks": [{
         "type": "command",
-        "command": "[ -f \"$CLAUDE_PROJECT_DIR/.obsidian-bridge\" ] || printf 'No vault linked. Run /vault-bridge connect or /vault-bridge create before vault-dependent work.'",
+        "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/user-prompt-vault-reminder.sh",
         "timeout": 3
       }]
     }]
