@@ -48,7 +48,7 @@ Run by SessionStart hook. Order:
 
 ## Breadcrumb File — `.obsidian-bridge`
 
-Plain `KEY=VALUE` text file in the working directory. Written by `/vault-bridge connect` or `/vault-bridge link`. Add to `.gitignore`.
+Plain `KEY=VALUE` text file in the working directory. Written by `/connect` (or `/connect --link-only`). Add to `.gitignore`.
 
 ```
 vault_path=/Users/tom/Library/Mobile Documents/iCloud~md~obsidian/Documents/Claude Cabinet

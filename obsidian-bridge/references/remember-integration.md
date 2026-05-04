@@ -6,7 +6,7 @@ Light, opt-in integration between obsidian-bridge and the `remember` Claude Code
 
 | Direction | Mechanism | Behavior |
 |---|---|---|
-| remember → vault | `/vault-bridge handoff sync` | Read `$CLAUDE_PROJECT_DIR/.remember/remember.md`, mirror to `{vault}/projects/{slug}/_handoff.md` with `type: handoff` frontmatter. Single file per project, overwritten each sync. |
+| remember → vault | `/sync handoff` | Read `$CLAUDE_PROJECT_DIR/.remember/remember.md`, mirror to `{vault}/projects/{slug}/_handoff.md` with `type: handoff` frontmatter. Single file per project, overwritten each sync. |
 | remember → vault (auto) | SessionEnd hook (opt-in) | If `remember.md` mtime > `_handoff.md` mtime + active project breadcrumb, emit one-line nudge. |
 | vault → remember | n/a | Bridge never writes to `.remember/`. |
 
@@ -29,7 +29,7 @@ Body: verbatim copy of `remember.md` content, preceded by a header noting source
 
 ## Status Surface
 
-`/vault-bridge status` shows: `Remember plugin: detected — last handoff sync: 2026-04-29` when `.remember/` exists in the working directory.
+`/check handoff` shows: `Remember plugin: detected — last handoff sync: 2026-04-29` when `.remember/` exists in the working directory.
 
 ## Enabling Auto-Nudge
 

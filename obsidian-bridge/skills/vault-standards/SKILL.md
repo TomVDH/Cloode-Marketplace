@@ -298,9 +298,9 @@ Every folder under a project (or at vault root) that holds ≥2 sibling `.md` fi
 **Exceptions:** `sessions/` (chronological ordering is the index), `images/`, `assets/`, `previews/` (non-text or build artefacts).
 
 **Auto-creation triggers:**
-- `/vault-bridge create-project` scaffolds defaults per type.
-- `/vault-bridge add-collection <name>` scaffolds arbitrary collection.
-- `/vault-bridge reindex` rebuilds all.
+- Conversational project creation ("new project foo, knowledge type") scaffolds defaults per type.
+- Conversational collection add ("add a tasks/ folder to foo") scaffolds arbitrary collection.
+- `/ramasse indexes` (or full `/ramasse`) rebuilds all.
 - `/dream` flags missing `_index.md` and offers to create.
 - Migration auto-creates missing ones.
 

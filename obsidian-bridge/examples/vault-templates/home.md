@@ -9,7 +9,7 @@ Persistent knowledge base. Project briefs, decisions, session history — all in
 
 ## Active Projects
 
-*No projects yet. Run `/vault-bridge create-project <slug> <type>` to scaffold your first project.*
+*No projects yet. Ask Claude conversationally — e.g. "new project foo, knowledge type" — to scaffold your first project.*
 
 ## Recent Decisions
 

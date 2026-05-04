@@ -9,4 +9,4 @@ tags:
 | Project | Type | Status | Decisions | Sessions | Last Session |
 |---|---|---|---|---|---|
 
-*Run `/vault-bridge create-project <slug> <type>` to add a project.*
+*Ask Claude conversationally — e.g. "new project foo, knowledge type" — to add a project.*
