@@ -23,6 +23,14 @@
         "command": "[ -f \"$CLAUDE_PROJECT_DIR/.obsidian-bridge\" ] || printf 'No vault linked. Run /vault-bridge connect or /vault-bridge create before vault-dependent work.'",
         "timeout": 3
       }]
+    }],
+    "PreCompact": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/precompact-handoff-sync.py",
+        "timeout": 5
+      }]
     }]
   }
 }
