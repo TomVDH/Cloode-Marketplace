@@ -23,8 +23,23 @@ Mermaid renders diagrams from Markdown-inspired text. Obsidian renders ```` ```m
 - **One diagram per fence.** Multiple fences in the same note is fine.
 - **Quote labels with special characters** (colons, parens, `<`, `>`, `#`, `"`): `A["Some: label (v2)"]`.
 - **Wikilinks (`[[note]]`) do NOT work inside Mermaid.** Use external URL clicks: `click NodeId "https://..."`.
-- **Long labels** — wrap with `<br/>` for explicit line breaks.
+- **Long labels** — wrap with `<br>` for explicit line breaks. (NOT `<br/>` — XHTML self-closing form is unreliable across Mermaid versions.)
 - **Comments** inside Mermaid: `%% this is a comment` (not `//` and not `#`).
+
+## Generation discipline (READ THIS BEFORE GENERATING)
+
+When **producing** new diagrams (not just understanding existing ones), follow the discipline in [`references/GENERATION_RULES.md`](references/GENERATION_RULES.md). Eight rule groups covering:
+
+1. **Topology** — one terminal per path, pure DAGs only, mirror parallel branches, no hub nodes, avoid subgraphs for layout grouping
+2. **Label parser safety** — quote always, no markdown-list prefixes, `<br>` not `<br/>`, escape `<>&`
+3. **Label visual cleanliness** — uniform width, two-line max, terse edge labels
+4. **Direction heuristics** — when `TD` vs `LR` vs `stateDiagram-v2` vs `sequenceDiagram`
+5. **Styling** — one `classDef` per role, palette ≤6, role stamped at generation time
+6. **Renderer config** — front-matter config preferred over `%%{init}%%`, default Dagre layout
+7. **Anti-patterns to refuse** — single End with >2 inbound, hub nodes >5 edges, etc.
+8. **Validation** — pre-flight parse + anti-pattern check before write
+
+The base SKILL.md (this file) covers syntax. `GENERATION_RULES.md` covers taste and discipline. Both apply when generating.
 
 ## Diagram Types — Quick Reference
 
