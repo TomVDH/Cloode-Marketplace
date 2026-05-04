@@ -38,16 +38,11 @@ from datetime import date
 
 
 def find_anchor(project_dir: str) -> str:
-    """Locate the obsidian-bridge anchor file. Prefer the current
-    convention (.claude/obsidian-bridge); fall back to the legacy
-    location (.obsidian-bridge at project root)."""
-    for candidate in (
-        os.path.join(project_dir, ".claude", "obsidian-bridge"),
-        os.path.join(project_dir, ".obsidian-bridge"),
-    ):
-        if os.path.isfile(candidate):
-            return candidate
-    return ""
+    """Return the canonical anchor file path if present, else empty string.
+    Legacy .obsidian-bridge at project root is auto-migrated by the
+    SessionStart hook (step 0) — readers see only the canonical path."""
+    candidate = os.path.join(project_dir, ".claude", "obsidian-bridge")
+    return candidate if os.path.isfile(candidate) else ""
 
 
 def read_breadcrumb_vault(project_dir: str) -> str:
