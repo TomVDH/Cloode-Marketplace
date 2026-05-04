@@ -1,11 +1,11 @@
 ---
 name: vault-bridge
-description: Connect, create, scaffold, or manage the Obsidian vault. Use for setting up vaults, scaffolding projects, syncing briefs, running housekeeping, managing iterations, migrating from v2, and handoff operations.
+description: Operate the Obsidian vault. Dispatched by /connect, /sync, /check, /ramasse, /iterate. Use for vault setup, project scaffolding, syncing briefs, status views, cleanup, iteration state.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 version: 0.1.0
 ---
 
-Bridge between Claude Code sessions and a persistent Obsidian vault. This skill handles explicit vault operations — creating, connecting, scaffolding, syncing, archiving, housekeeping, iterations, migration, and handoff. Vault interactions outside of explicit `/vault-bridge` commands should be silent and automatic.
+Bridge between Claude Code sessions and a persistent Obsidian vault. This skill handles explicit vault operations — creating, connecting, scaffolding, syncing, archiving, housekeeping, iterations, migration, and handoff. Vault interactions outside of explicit commands should be silent and automatic.
 
 ## Vault Structure (v3)
 
@@ -39,18 +39,18 @@ Read `references/vault-integration.md` for the full operation table and fallback
 
 ## Anchor / Breadcrumb file
 
-Every per-project link to a vault is persisted in a small key=value anchor file. All `/vault-bridge` subcommands read it on every operation; SessionStart, UserPromptSubmit, PostToolUse, and PreCompact hooks read it too.
+Every per-project link to a vault is persisted in a small key=value anchor file. All vault-bridge operations read it on every operation; SessionStart, UserPromptSubmit, PostToolUse, and PreCompact hooks read it too.
 
 **Canonical location (current):** `$CLAUDE_PROJECT_DIR/.claude/obsidian-bridge`
 **Legacy location (still read for backward compat):** `$CLAUDE_PROJECT_DIR/.obsidian-bridge`
 
-**Read pattern (all subcommands):** look for the canonical file first; if absent, fall back to the legacy file. If neither exists, the project is "not linked."
+**Read pattern (all operations):** look for the canonical file first; if absent, fall back to the legacy file. If neither exists, the project is "not linked."
 
-**Write pattern (all subcommands that create or update the anchor):**
+**Write pattern (all operations that create or update the anchor):**
 1. `mkdir -p $CLAUDE_PROJECT_DIR/.claude` (no-op if it already exists).
 2. Write to `$CLAUDE_PROJECT_DIR/.claude/obsidian-bridge`.
 3. Append `.claude/obsidian-bridge` to `.gitignore` if not already present.
-4. If a legacy `$CLAUDE_PROJECT_DIR/.obsidian-bridge` exists, do NOT delete it automatically — `/vault-bridge migrate-anchor` handles legacy cleanup explicitly.
+4. Legacy `$CLAUDE_PROJECT_DIR/.obsidian-bridge` cleanup is handled silently and automatically by the SessionStart hook (step 0).
 
 Wherever the pseudocode below says `read … from breadcrumb` or `WRITE breadcrumb`, this is the file and the pattern in use.
 
@@ -58,7 +58,50 @@ Wherever the pseudocode below says `read … from breadcrumb` or `WRITE breadcru
 
 ## Commands
 
-### create — Scaffold a new v3 vault
+### /connect — onboard
+
+Combined entry for create + connect + link + create-project. Inference rules:
+
+| Path state | Action |
+|---|---|
+| Path doesn't exist | Create new vault (scaffold Home.md, projects/, templates/) |
+| Path exists with Home.md (type: vault-home or cabinet-home) | Connect (read-only verification of vault structure) |
+| Path exists with projects/ folder, no Home.md | Connect (best-effort) |
+| Path exists with neither | Error: "Expected Home.md with type: vault-home or a projects/ folder at <path>" |
+
+Subforms:
+- `/connect` (no args) — discover or prompt for path
+- `/connect <path>` — infer create vs connect from path state
+- `/connect <path> <slug>` — connect AND link to project <slug>
+- `/connect --new <path>` — force-create (error if path is non-empty and not a vault)
+- `/connect --link-only <slug>` — set slug only; vault must already be connected
+
+```pseudocode
+PARSE flags and positional args from invocation
+breadcrumb = read canonical anchor at $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge
+
+CASE invocation:
+  --link-only <slug>:
+    // Original /link logic — see "link subform" pseudocode below
+
+  --new <path>:
+    // Force-create — see "create subform" pseudocode below
+
+  bare <path>:
+    IF path doesn't exist: → create flow
+    ELIF path/Home.md exists with type vault-home|cabinet-home: → connect flow
+    ELIF path/projects/ exists: → connect flow (best-effort)
+    ELSE: ERROR
+
+  bare <path> <slug>:
+    Run the path-inference flow above to ensure connect, then run link <slug>
+
+  no args:
+    IF breadcrumb exists: REPORT current vault + project (read-only summary)
+    ELSE: PROMPT user for vault path
+```
+
+#### create subform — Scaffold a new v3 vault
 
 ```pseudocode
 IF user provides path: vault_path = resolve(path)
@@ -95,10 +138,10 @@ WRITE $CLAUDE_PROJECT_DIR/.claude/obsidian-bridge:
 IF .gitignore exists AND NOT contains ".claude/obsidian-bridge":
     APPEND ".claude/obsidian-bridge" to .gitignore
 
-REPORT: "Vault created at {base}. Transport: {mode}. Run /vault-bridge create-project <slug> <type> to scaffold your first project."
+REPORT: "Vault created at {base}. Transport: {mode}. Run /connect <path> <slug> to scaffold your first project."
 ```
 
-### connect — Point at an existing vault
+#### connect subform — Point at an existing vault
 
 ```pseudocode
 path = resolve(user-provided path)
@@ -158,12 +201,12 @@ IF base/crew/ exists:
     REPORT: "Cabinet detected — crew/ folder present, untouched by bridge."
 
 IF version == "v2":
-    SUGGEST: "Run /vault-bridge migrate to convert to v3 schema."
+    SUGGEST: "Run vault migration to convert to v3 schema."
 
 REPORT: "Connected to {vault_name} at {base}. Schema: {version}. Transport: {mode}."
 ```
 
-### link — Set project slug for current directory
+#### link subform — Set project slug for current directory
 
 ```pseudocode
 slug = user-provided slug
@@ -172,7 +215,7 @@ breadcrumb = first existing of:
     $CLAUDE_PROJECT_DIR/.obsidian-bridge   // legacy
 
 IF NOT breadcrumb:
-    ERROR "No vault connected. Run /vault-bridge connect <path> first."
+    ERROR "No vault connected. Run /connect <path> first."
 
 // Read existing breadcrumb
 vault_path = read vault_path from breadcrumb
@@ -193,7 +236,7 @@ status = read status from brief.md
 REPORT: "Linked to project '{slug}' (type: {project_type}, status: {status})."
 ```
 
-### create-project — Scaffold a type-shaped project
+#### create-project subform — Scaffold a type-shaped project
 
 Requires both `<slug>` and `<type>`. Asks if either is omitted. Validates slug against naming rules (lowercase, hyphenated, no spaces, no dots).
 
@@ -267,26 +310,16 @@ FUNCTION collection_index(slug, folder_name):
         title: capitalize(folder_name)
 ```
 
-### add-collection — Add sub-collection folder + `_index.md`
+### /sync — push state
 
-```pseudocode
-name = validate_slug(user-provided name)  // kebab-case
+Combined sync + handoff sync. Subforms:
+- `/sync` — both brief and handoff
+- `/sync brief` — brief only
+- `/sync handoff` — handoff only
 
-// Read breadcrumb
-vault_path = read vault_path from breadcrumb
-project_slug = read project_slug from breadcrumb
-IF NOT project_slug: ERROR "No project linked. Run /vault-bridge link <slug> first."
+The default `/sync` runs brief sync followed by handoff sync in sequence.
 
-collection_dir = {vault_path}/projects/{project_slug}/{name}
-IF exists collection_dir: ERROR "Collection '{name}' already exists."
-
-mkdir {collection_dir}
-vault.write("projects/{project_slug}/{name}/_index.md", collection_index(project_slug, name))
-
-REPORT: "Collection '{name}' added to project '{project_slug}' with _index.md."
-```
-
-### sync — Write/update current project's brief
+#### brief subform — Write/update current project's brief
 
 ```pseudocode
 // Read breadcrumb
@@ -323,7 +356,61 @@ RUN update_home()
 REPORT: "Brief synced for '{project_slug}'."
 ```
 
-### status — Vault summary + per-project counts
+#### handoff subform — Mirror remember.md → `_handoff.md`
+
+Light integration with the `remember` plugin. See `references/remember-integration.md`.
+
+```pseudocode
+vault_path = read vault_path from breadcrumb
+project_slug = read project_slug from breadcrumb
+IF NOT project_slug: ERROR "No project linked."
+
+remember_file = $CLAUDE_PROJECT_DIR/.remember/remember.md
+IF NOT exists remember_file:
+    ERROR "No .remember/remember.md found in project directory."
+
+// Read remember content
+content = read remember_file
+
+// Build handoff file
+handoff = """
+---
+type: handoff
+project: "[[projects/{project_slug}/brief|{project_slug}]]"
+updated: {TODAY}
+source: remember
+tags:
+  - ob/handoff
+---
+
+# Handoff — {project_slug}
+
+*Mirrored from `.remember/remember.md` on {TODAY}.*
+
+---
+
+{content}
+"""
+
+vault.write("projects/{project_slug}/_handoff.md", handoff)
+
+REPORT: "Handoff synced for '{project_slug}'. Mirrored {line_count} lines from remember.md."
+```
+
+### /check — read-only
+
+Status + handoff status + iterations listing, with optional sections.
+
+Subforms:
+- `/check` — full vault summary
+- `/check handoff` — handoff section only
+- `/check iterations [--all]` — iteration listing
+- `/check decisions [--all]` — recent decisions
+- `/check sessions` — recent sessions
+- `/check tags` — tag taxonomy summary
+- Multi-section: `/check iterations decisions` returns both
+
+#### Full status (default `/check`)
 
 ```pseudocode
 // Read breadcrumb
@@ -378,76 +465,95 @@ IF issues > 0:
     REPORT: "Drift: {issues} issues detected. Run /dream for details."
 ```
 
-### templates — List or print available templates
+#### handoff subform — Show last sync time
 
 ```pseudocode
-IF subcommand == "list" OR no subcommand:
-    FOR each .md file in examples/vault-templates/:
-        name = filename without .md
-        type = read type from frontmatter
-        REPORT: "  {name} — type: {type}"
+vault_path = read vault_path from breadcrumb
+project_slug = read project_slug from breadcrumb
 
-IF subcommand == "print" AND template_name provided:
-    path = examples/vault-templates/{template_name}.md
-    IF NOT exists path:
-        path = examples/vault-templates/{template_name}  // try with extension
-    IF NOT exists path:
-        ERROR "Template '{template_name}' not found."
-    content = read path
-    REPORT: content
+remember_file = $CLAUDE_PROJECT_DIR/.remember/remember.md
+handoff_file = {vault_path}/projects/{project_slug}/_handoff.md
+
+remember_exists = exists remember_file
+handoff_exists = vault.exists("projects/{project_slug}/_handoff.md")
+
+IF NOT remember_exists:
+    REPORT: "No .remember/remember.md found."
+    RETURN
+
+IF handoff_exists:
+    handoff_date = vault.property_read("projects/{project_slug}/_handoff.md", "updated")
+    // Compare mtimes
+    remember_mtime = file mtime of remember_file
+    handoff_mtime = file mtime of handoff_file (resolved to filesystem path)
+    IF remember_mtime > handoff_mtime:
+        REPORT: "Handoff: stale. Last sync: {handoff_date}. remember.md updated since."
+    ELSE:
+        REPORT: "Handoff: current. Last sync: {handoff_date}."
+ELSE:
+    REPORT: "Handoff: never synced. Run /sync handoff."
 ```
 
-### archive — Move project to archive/
+#### iterations subform — List iterations grouped by track
 
 ```pseudocode
 slug = user-provided slug OR read project_slug from breadcrumb
+tree_flag = optional --tree flag
 vault_path = read vault_path from breadcrumb
 
-IF NOT exists {vault_path}/projects/{slug}/:
-    ERROR "Project '{slug}' not found in projects/."
+iter_dir = {vault_path}/projects/{slug}/iterations
+IF NOT exists iter_dir: REPORT "No iterations for project '{slug}'." RETURN
 
-// Update brief status
-vault.property_set("projects/{slug}/brief.md", "status", "archived")
-vault.property_set("projects/{slug}/brief.md", "updated", TODAY)
+// Collect all iterations
+iterations = []
+FOR each entry in iter_dir (excluding _index.md):
+    IF entry is .md file:
+        fm = read frontmatter
+    ELIF entry is folder with _iteration.md:
+        fm = read _iteration.md frontmatter
+    ELSE: SKIP
 
-// Move the folder
-vault.move("projects/{slug}", "archive/{slug}")
+    iterations.add({
+        identifier: fm.identifier,
+        status: fm.status,
+        date: fm.date,
+        track: fm.track OR "Loose",
+        register: fm.register,
+        supersedes: fm.supersedes,
+        builds_on: fm.builds_on,
+        filename: entry name
+    })
 
-// Rebuild indices
-REBUILD projects/_index.md
-RUN update_home()
+// Group by track
+tracks = group iterations by track
+sort tracks by most recent iteration date (descending)
 
-// If current breadcrumb points to this slug, clear it
-IF breadcrumb project_slug == slug:
-    UPDATE breadcrumb: project_slug=
+FOR each track:
+    REPORT: "## Track: {track_name}"
+    FOR each iteration in track (sorted by date):
+        status_badge = iteration.status
+        REPORT: "  [{iteration.identifier}] {iteration.filename} — {status_badge}"
+        IF iteration.register:
+            REPORT: "      {iteration.register}"
 
-REPORT: "Project '{slug}' archived."
+IF tree_flag:
+    // Show lineage tree
+    REPORT: "\n## Lineage"
+    FOR each iteration with supersedes or builds_on:
+        REPORT: "  {identifier} → supersedes {target}" or "  {identifier} ← builds on {ancestor}"
 ```
 
-### unarchive — Restore project from archive/
+### /ramasse — tidy
 
-```pseudocode
-slug = user-provided slug
-vault_path = read vault_path from breadcrumb
+Combined reindex + housekeeping. Subforms:
+- `/ramasse` — full sweep (both)
+- `/ramasse --dry-run` — show what would change without writing
+- `/ramasse indexes` — reindex only
+- `/ramasse housekeeping` — consistency check only
 
-IF NOT exists {vault_path}/archive/{slug}/:
-    ERROR "Project '{slug}' not found in archive/."
+The full sweep runs the `indexes` subform followed by the `housekeeping` subform.
 
-// Update brief status
-vault.property_set("archive/{slug}/brief.md", "status", "active")
-vault.property_set("archive/{slug}/brief.md", "updated", TODAY)
-
-// Move back
-vault.move("archive/{slug}", "projects/{slug}")
-
-// Rebuild indices
-REBUILD projects/_index.md
-RUN update_home()
-
-REPORT: "Project '{slug}' restored to active."
-```
-
-### reindex — Rebuild all `_index.md` files from disk
+#### indexes subform — Rebuild all `_index.md` files from disk
 
 ```pseudocode
 vault_path = read vault_path from breadcrumb
@@ -481,38 +587,7 @@ RUN update_home()
 REPORT: "Reindexed {N} projects, rebuilt {M} _index.md files."
 ```
 
-### set-type — Change project type post-hoc
-
-```pseudocode
-slug = user-provided slug
-new_type = validate_type(user-provided type)
-vault_path = read vault_path from breadcrumb
-
-brief_path = "projects/{slug}/brief.md"
-IF NOT vault.exists(brief_path): ERROR "Project '{slug}' not found."
-
-old_type = vault.property_read(brief_path, "project_type")
-
-// Update frontmatter
-vault.property_set(brief_path, "project_type", new_type)
-vault.property_set(brief_path, "updated", TODAY)
-
-// Update tags: remove old type tag, add new
-// Read tags, replace type/{old_type} with type/{new_type}
-tags = vault.property_read(brief_path, "tags")
-tags = replace "type/{old_type}" with "type/{new_type}" in tags
-vault.property_set(brief_path, "tags", tags)
-
-// Scaffold new type-specific folders if missing
-MATCH new_type:
-    // Same logic as create-project folder scaffolding
-    // Only create folders that don't already exist
-    // Create _index.md for new collection folders
-
-REPORT: "Project '{slug}' type changed from {old_type} to {new_type}. New folders scaffolded if needed."
-```
-
-### housekeeping — Full consistency check
+#### housekeeping subform — Full consistency check
 
 Runs all structural checks from the housekeeping checklist. Auto-fixes safe items, reports manual items.
 
@@ -543,7 +618,7 @@ FOR each slug in scope:
 
     // 3. Slug shape violation
     IF slug contains dots, spaces, or uppercase:
-        manual_items.add("Slug '{slug}' violates naming rules — rename with /vault-bridge?")
+        manual_items.add("Slug '{slug}' violates naming rules — rename?")
 
     // 4. Collection folders missing _index.md
     FOR each subfolder with ≥2 .md siblings (excluding sessions/, images/, assets/):
@@ -632,15 +707,191 @@ REPORT:
 // If "Skip": done
 ```
 
----
+### /iterate — state transitions
 
-## Iteration Commands
+Set the status of an iteration. Replaces `iteration-set-status`.
 
-Iterations are a first-class collection type. Canonical folder: `projects/{slug}/iterations/`. Opt-in for all project types — not auto-created on `create-project`. See `obsidian-bridge:vault-standards` for the iteration schema.
+> **Note on `/iterate`:** This command exists for mechanical state-machine reliability. Iteration creation and listing are conversational (e.g. "new iteration D for foo on navy track", "show on-shelf iterations"). If conversational handling of state transitions proves robust across model versions, /iterate may be sunset in a future release.
 
-### add-iteration — Create iteration in current project
+Subforms:
+- `/iterate <id> <status>` — set in current project
+- `/iterate <slug>:<id> <status>` — explicit project slug
+
+Valid statuses: `drafting`, `on-shelf`, `picked`, `parked`, `rejected`, `superseded`.
 
 ```pseudocode
+iter_id = user-provided identifier
+new_status = validate(user-provided status)
+    // drafting | on-shelf | picked | parked | rejected | superseded
+
+vault_path = read vault_path from breadcrumb
+project_slug = read project_slug from breadcrumb
+iter_dir = {vault_path}/projects/{project_slug}/iterations
+
+// Find iteration
+iter_file = find iteration file by identifier (same logic as add-iteration-artefact)
+IF NOT found: ERROR "Iteration '{iter_id}' not found."
+
+// Set status
+vault.property_set(iter_file, "status", new_status)
+
+// If "picked": offer to mark same-track siblings as "superseded"
+IF new_status == "picked":
+    track = vault.property_read(iter_file, "track")
+    IF track:
+        siblings = find other iterations with same track AND status NOT IN [rejected, superseded]
+        IF siblings.length > 0:
+            ASK: "Mark {siblings.length} sibling(s) on track '{track}' as superseded?"
+            IF yes:
+                FOR each sibling:
+                    vault.property_set(sibling.file, "status", "superseded")
+
+// Rebuild _index.md
+REBUILD iterations/_index.md
+
+REPORT: "Iteration {iter_id} status set to {new_status}."
+```
+
+---
+
+## Conversational operations
+
+These operations don't have a slash-command in the new surface, but the vault-bridge skill still handles them — the model invokes the underlying logic when the user describes the intent in natural language.
+
+### add-collection (formerly /vault-bridge add-collection)
+
+Trigger: "add a tasks/ folder to foo", "scaffold a notes/ collection in bar"
+
+```pseudocode
+name = validate_slug(user-provided name)  // kebab-case
+
+// Read breadcrumb
+vault_path = read vault_path from breadcrumb
+project_slug = read project_slug from breadcrumb
+IF NOT project_slug: ERROR "No project linked. Run /connect --link-only <slug> first."
+
+collection_dir = {vault_path}/projects/{project_slug}/{name}
+IF exists collection_dir: ERROR "Collection '{name}' already exists."
+
+mkdir {collection_dir}
+vault.write("projects/{project_slug}/{name}/_index.md", collection_index(project_slug, name))
+
+REPORT: "Collection '{name}' added to project '{project_slug}' with _index.md."
+```
+
+### archive / unarchive (formerly /vault-bridge archive | unarchive)
+
+Trigger: "archive foo", "restore bar from archive"
+
+```pseudocode
+// archive
+slug = user-provided slug OR read project_slug from breadcrumb
+vault_path = read vault_path from breadcrumb
+
+IF NOT exists {vault_path}/projects/{slug}/:
+    ERROR "Project '{slug}' not found in projects/."
+
+// Update brief status
+vault.property_set("projects/{slug}/brief.md", "status", "archived")
+vault.property_set("projects/{slug}/brief.md", "updated", TODAY)
+
+// Move the folder
+vault.move("projects/{slug}", "archive/{slug}")
+
+// Rebuild indices
+REBUILD projects/_index.md
+RUN update_home()
+
+// If current breadcrumb points to this slug, clear it
+IF breadcrumb project_slug == slug:
+    UPDATE breadcrumb: project_slug=
+
+REPORT: "Project '{slug}' archived."
+
+
+// unarchive
+slug = user-provided slug
+vault_path = read vault_path from breadcrumb
+
+IF NOT exists {vault_path}/archive/{slug}/:
+    ERROR "Project '{slug}' not found in archive/."
+
+// Update brief status
+vault.property_set("archive/{slug}/brief.md", "status", "active")
+vault.property_set("archive/{slug}/brief.md", "updated", TODAY)
+
+// Move back
+vault.move("archive/{slug}", "projects/{slug}")
+
+// Rebuild indices
+REBUILD projects/_index.md
+RUN update_home()
+
+REPORT: "Project '{slug}' restored to active."
+```
+
+### set-type (formerly /vault-bridge set-type)
+
+Trigger: "change foo to plugin type", "set baz's project_type to knowledge"
+
+```pseudocode
+slug = user-provided slug
+new_type = validate_type(user-provided type)
+vault_path = read vault_path from breadcrumb
+
+brief_path = "projects/{slug}/brief.md"
+IF NOT vault.exists(brief_path): ERROR "Project '{slug}' not found."
+
+old_type = vault.property_read(brief_path, "project_type")
+
+// Update frontmatter
+vault.property_set(brief_path, "project_type", new_type)
+vault.property_set(brief_path, "updated", TODAY)
+
+// Update tags: remove old type tag, add new
+// Read tags, replace type/{old_type} with type/{new_type}
+tags = vault.property_read(brief_path, "tags")
+tags = replace "type/{old_type}" with "type/{new_type}" in tags
+vault.property_set(brief_path, "tags", tags)
+
+// Scaffold new type-specific folders if missing
+MATCH new_type:
+    // Same logic as create-project folder scaffolding
+    // Only create folders that don't already exist
+    // Create _index.md for new collection folders
+
+REPORT: "Project '{slug}' type changed from {old_type} to {new_type}. New folders scaffolded if needed."
+```
+
+### templates (formerly /vault-bridge templates)
+
+Trigger: "show me the brief template for coding", "list available templates"
+
+```pseudocode
+IF subcommand == "list" OR no subcommand:
+    FOR each .md file in examples/vault-templates/:
+        name = filename without .md
+        type = read type from frontmatter
+        REPORT: "  {name} — type: {type}"
+
+IF subcommand == "print" AND template_name provided:
+    path = examples/vault-templates/{template_name}.md
+    IF NOT exists path:
+        path = examples/vault-templates/{template_name}  // try with extension
+    IF NOT exists path:
+        ERROR "Template '{template_name}' not found."
+    content = read path
+    REPORT: content
+```
+
+### add-iteration / add-iteration-artefact (formerly /vault-bridge add-iteration*)
+
+Iterations are a first-class collection type. Canonical folder: `projects/{slug}/iterations/`. Opt-in for all project types — not auto-created on project scaffold. See `obsidian-bridge:vault-standards` for the iteration schema.
+
+Trigger: "new iteration D for foo on navy track", "attach concept.png to iter D"
+
+```pseudocode
+// add-iteration
 identifier = user-provided id (letter, number, or short word)
 iter_slug = validate_slug(user-provided slug)
 track = optional --track flag
@@ -703,11 +954,9 @@ FUNCTION iterations_index(slug):
         project: "[[projects/{slug}/brief|{slug}]]"
         title: "Iterations — {slug}"
         description: "Design and code iterations grouped by track."
-```
 
-### add-iteration-artefact — Promote .md to folder; add artefact
 
-```pseudocode
+// add-iteration-artefact
 iter_id = user-provided iteration identifier (matches identifier field)
 file = user-provided file path (absolute or relative to CWD)
 
@@ -748,216 +997,21 @@ REBUILD iterations/_index.md
 REPORT: "Artefact '{artefact_name}' added to iteration {iter_id}. Promoted to folder form."
 ```
 
-### iterations — List iterations grouped by track
+### migrate (v2 → v3 schema, formerly /vault-bridge migrate)
 
-```pseudocode
-slug = user-provided slug OR read project_slug from breadcrumb
-tree_flag = optional --tree flag
-vault_path = read vault_path from breadcrumb
+Trigger: "migrate this vault to v3"
 
-iter_dir = {vault_path}/projects/{slug}/iterations
-IF NOT exists iter_dir: REPORT "No iterations for project '{slug}'." RETURN
-
-// Collect all iterations
-iterations = []
-FOR each entry in iter_dir (excluding _index.md):
-    IF entry is .md file:
-        fm = read frontmatter
-    ELIF entry is folder with _iteration.md:
-        fm = read _iteration.md frontmatter
-    ELSE: SKIP
-
-    iterations.add({
-        identifier: fm.identifier,
-        status: fm.status,
-        date: fm.date,
-        track: fm.track OR "Loose",
-        register: fm.register,
-        supersedes: fm.supersedes,
-        builds_on: fm.builds_on,
-        filename: entry name
-    })
-
-// Group by track
-tracks = group iterations by track
-sort tracks by most recent iteration date (descending)
-
-FOR each track:
-    REPORT: "## Track: {track_name}"
-    FOR each iteration in track (sorted by date):
-        status_badge = iteration.status
-        REPORT: "  [{iteration.identifier}] {iteration.filename} — {status_badge}"
-        IF iteration.register:
-            REPORT: "      {iteration.register}"
-
-IF tree_flag:
-    // Show lineage tree
-    REPORT: "\n## Lineage"
-    FOR each iteration with supersedes or builds_on:
-        REPORT: "  {identifier} → supersedes {target}" or "  {identifier} ← builds on {ancestor}"
-```
-
-### iteration-set-status — Change iteration status
-
-```pseudocode
-iter_id = user-provided identifier
-new_status = validate(user-provided status)
-    // drafting | on-shelf | picked | parked | rejected | superseded
-
-vault_path = read vault_path from breadcrumb
-project_slug = read project_slug from breadcrumb
-iter_dir = {vault_path}/projects/{project_slug}/iterations
-
-// Find iteration
-iter_file = find iteration file by identifier (same logic as add-iteration-artefact)
-IF NOT found: ERROR "Iteration '{iter_id}' not found."
-
-// Set status
-vault.property_set(iter_file, "status", new_status)
-
-// If "picked": offer to mark same-track siblings as "superseded"
-IF new_status == "picked":
-    track = vault.property_read(iter_file, "track")
-    IF track:
-        siblings = find other iterations with same track AND status NOT IN [rejected, superseded]
-        IF siblings.length > 0:
-            ASK: "Mark {siblings.length} sibling(s) on track '{track}' as superseded?"
-            IF yes:
-                FOR each sibling:
-                    vault.property_set(sibling.file, "status", "superseded")
-
-// Rebuild _index.md
-REBUILD iterations/_index.md
-
-REPORT: "Iteration {iter_id} status set to {new_status}."
-```
-
----
-
-## Handoff Commands
-
-Light integration with the `remember` plugin. See `references/remember-integration.md`.
-
-### handoff sync — Mirror remember.md → `_handoff.md`
-
-```pseudocode
-vault_path = read vault_path from breadcrumb
-project_slug = read project_slug from breadcrumb
-IF NOT project_slug: ERROR "No project linked."
-
-remember_file = $CLAUDE_PROJECT_DIR/.remember/remember.md
-IF NOT exists remember_file:
-    ERROR "No .remember/remember.md found in project directory."
-
-// Read remember content
-content = read remember_file
-
-// Build handoff file
-handoff = """
----
-type: handoff
-project: "[[projects/{project_slug}/brief|{project_slug}]]"
-updated: {TODAY}
-source: remember
-tags:
-  - ob/handoff
----
-
-# Handoff — {project_slug}
-
-*Mirrored from `.remember/remember.md` on {TODAY}.*
-
----
-
-{content}
-"""
-
-vault.write("projects/{project_slug}/_handoff.md", handoff)
-
-REPORT: "Handoff synced for '{project_slug}'. Mirrored {line_count} lines from remember.md."
-```
-
-### handoff status — Show last sync time
-
-```pseudocode
-vault_path = read vault_path from breadcrumb
-project_slug = read project_slug from breadcrumb
-
-remember_file = $CLAUDE_PROJECT_DIR/.remember/remember.md
-handoff_file = {vault_path}/projects/{project_slug}/_handoff.md
-
-remember_exists = exists remember_file
-handoff_exists = vault.exists("projects/{project_slug}/_handoff.md")
-
-IF NOT remember_exists:
-    REPORT: "No .remember/remember.md found."
-    RETURN
-
-IF handoff_exists:
-    handoff_date = vault.property_read("projects/{project_slug}/_handoff.md", "updated")
-    // Compare mtimes
-    remember_mtime = file mtime of remember_file
-    handoff_mtime = file mtime of handoff_file (resolved to filesystem path)
-    IF remember_mtime > handoff_mtime:
-        REPORT: "Handoff: stale. Last sync: {handoff_date}. remember.md updated since."
-    ELSE:
-        REPORT: "Handoff: current. Last sync: {handoff_date}."
-ELSE:
-    REPORT: "Handoff: never synced. Run /vault-bridge handoff sync."
-```
+Stays in `## Migration` section below (kept conversational because it's rare and deliberate).
 
 ---
 
 ## Migration
 
-### migrate-anchor — Move legacy `.obsidian-bridge` → `.claude/obsidian-bridge`
-
-Idempotent. Safe to re-run. Use when the project still has the legacy anchor file at the project root and you want to move to the canonical `.claude/` location. All hooks and subcommands already read both — this command just consolidates.
-
-```pseudocode
-project_dir = $CLAUDE_PROJECT_DIR
-legacy = {project_dir}/.obsidian-bridge
-canonical = {project_dir}/.claude/obsidian-bridge
-
-IF NOT exists legacy:
-    IF exists canonical:
-        REPORT: "Already migrated — anchor at .claude/obsidian-bridge."
-    ELSE:
-        REPORT: "No anchor file in this project. Nothing to migrate."
-    RETURN
-
-IF exists canonical:
-    // Both exist — canonical wins; warn and offer to remove legacy
-    legacy_kv = read all key=value from legacy
-    canonical_kv = read all key=value from canonical
-    IF legacy_kv == canonical_kv:
-        REPORT: "Both anchors exist with identical content. Removing legacy."
-        rm legacy
-    ELSE:
-        REPORT: "Both anchors exist with different content. Canonical (.claude/obsidian-bridge) is in effect:"
-        SHOW diff
-        ASK: "Delete legacy file? (y/n)"
-        IF yes: rm legacy
-    RETURN
-
-// Standard case: legacy exists, canonical does not
-mkdir -p {project_dir}/.claude
-mv legacy canonical
-
-// Update .gitignore
-IF .gitignore exists:
-    IF contains ".obsidian-bridge" but NOT ".claude/obsidian-bridge":
-        // Replace line in place
-        REPLACE ".obsidian-bridge" with ".claude/obsidian-bridge"
-    ELIF NOT contains ".claude/obsidian-bridge":
-        APPEND ".claude/obsidian-bridge" to .gitignore
-
-REPORT: "Anchor migrated: .obsidian-bridge → .claude/obsidian-bridge."
-```
+Anchor migration is now silent and automatic — handled by SessionStart hook step 0.
 
 ### migrate — v2 → v3 walkthrough
 
-One-shot opt-in command. Idempotent — re-running on a v3 vault effectively becomes `housekeeping`. See spec §16 for full detail.
+Conversational invocation only — no /migrate command. One-shot opt-in operation. Idempotent — re-running on a v3 vault effectively becomes housekeeping. See spec §16 for full detail.
 
 ```pseudocode
 vault_path = read vault_path from breadcrumb
