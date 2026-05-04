@@ -31,6 +31,14 @@
         "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/postuse-vault-validator.py",
         "timeout": 5
       }]
+    }],
+    "PreCompact": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/precompact-handoff-sync.py",
+        "timeout": 5
+      }]
     }]
   }
 }
