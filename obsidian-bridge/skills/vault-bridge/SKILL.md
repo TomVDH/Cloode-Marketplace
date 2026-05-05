@@ -693,6 +693,15 @@ FOR each slug in scope:
         auto_fixes.add("Brief missing block: ## {block} for type {project_type}")
         ACTION: add empty block with placeholder
 
+    // 16. relations references unknown slugs
+    relations = vault.property_read(brief_path, "relations")
+    IF relations:
+        FOR field IN [parents, children, related]:
+            FOR slug IN relations[field]:
+                IF NOT vault.exists("projects/{slug}/brief.md")
+                   AND NOT vault.exists("archive/{slug}/brief.md"):
+                    manual_items.add("relations.{field} in {brief_path} references unknown slug '{slug}'")
+
 // Report
 REPORT:
     "## Auto-fixable ({count})"

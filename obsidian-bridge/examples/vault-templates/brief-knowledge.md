@@ -10,6 +10,10 @@ updated:
 tags:
   - ob/project
   - type/knowledge
+relations:                 # optional — cross-project links
+  parents: []
+  children: []
+  related: []
 ---
 
 # {Project Name}

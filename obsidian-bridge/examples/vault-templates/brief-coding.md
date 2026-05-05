@@ -12,6 +12,10 @@ tags:
   - type/coding
 repo:                      # optional — git remote URL or local path
 stack: []                  # optional — e.g. [Next.js, Tailwind, Node, Postgres]
+relations:                 # optional — cross-project links
+  parents: []
+  children: []
+  related: []
 ---
 
 # {Project Name}

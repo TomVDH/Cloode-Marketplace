@@ -13,6 +13,10 @@ tags:
 repo:                      # optional — git remote URL or local path
 stack: []                  # optional — e.g. [TypeScript, Node]
 marketplace:               # optional — marketplace name (e.g. onnozelaer)
+relations:                 # optional — cross-project links
+  parents: []
+  children: []
+  related: []
 ---
 
 # {Project Name}

@@ -124,8 +124,14 @@ tags:                                  # required
 repo: git@github.com:owner/repo.git   # optional (coding/plugin only)
 stack: [Next.js, Tailwind]             # optional (coding/plugin only)
 marketplace: onnozelaer                # optional (plugin only)
+relations:                             # optional — cross-project links
+  parents: []                          # slugs this project is gated by / descends from
+  children: []                         # slugs gated by / descended from this one
+  related: []                          # peer cross-references (siblings, spinoffs, deps)
 ---
 ```
+
+Project briefs may declare cross-project relationships in frontmatter via `relations:` (optional). Sub-fields `parents`, `children`, `related` are each lists of slug strings — *not* wikilinks. Body text still uses `[[wikilink]]` form for reader-facing cross-references; the `relations` field is for tooling (housekeeping checks, future graph views, indexers). A project can have multiple parents (e.g. a shared lib gated by two products). Cycles in `parents`/`children` are flagged by housekeeping; cycles in `related` are fine.
 
 Body: type-shaped block set (see §5 in spec). Block headers are UPPERCASE.
 

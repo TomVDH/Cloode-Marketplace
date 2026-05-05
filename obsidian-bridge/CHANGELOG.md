@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 — 2026-05-04
+
+**New optional schema field — `relations:` on project briefs.**
+
+Encodes cross-project topology: `parents`, `children`, `related`, each a list of slug strings. Lets projects declare gating / spinoff / sibling relationships in frontmatter rather than ad-hoc in body text. Frontmatter takes slugs; body still uses wikilinks. Field is optional — existing briefs are unaffected.
+
+- `vault-standards` — Brief frontmatter spec extended; note added on slug-vs-wikilink semantics.
+- `vault-bridge` — housekeeping check #16 (relations referencing unknown slugs flagged as manual items).
+- All four `brief-*` templates carry the field, initialised to empty lists.
+
+Non-breaking. No migration required.
+
 ## 1.0.1 — 2026-05-04
 
 Bug fix + content-style guide.

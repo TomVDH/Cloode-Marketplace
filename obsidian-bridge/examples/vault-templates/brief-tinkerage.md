@@ -10,6 +10,10 @@ updated:
 tags:
   - ob/project
   - type/tinkerage
+relations:                 # optional — cross-project links
+  parents: []
+  children: []
+  related: []
 ---
 
 # {Project Name}
