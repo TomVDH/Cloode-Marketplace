@@ -168,7 +168,7 @@ timeline
   title Vault history
   2024 : v1 launched
   2025 : v2 schema rewrite
-       : cabinet integration
+       : tag taxonomy normalised
   2026 : v3 — bridge plugin extracted
 ```
 

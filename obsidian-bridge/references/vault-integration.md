@@ -51,8 +51,8 @@ Run by SessionStart hook. Order:
 Plain `KEY=VALUE` text file in the working directory. Written by `/connect` (or `/connect --link-only`). Add to `.gitignore`.
 
 ```
-vault_path=/Users/tom/Library/Mobile Documents/iCloud~md~obsidian/Documents/Claude Cabinet
-vault_name=Claude Cabinet
+vault_path=/Users/tom/Documents/MyVault
+vault_name=MyVault
 project_slug=oz-floer
 linked_at=2026-04-30
 mode=cli

@@ -368,10 +368,10 @@ IF "--save" in args:
 
 ## Personality Layer
 
-When cabinet is installed and active, the chronicler voice (Bostrol/Kevijntje/Jonasty) wraps the report. Bridge detects cabinet via the `crew/` folder and adjusts formatting if the current session is a `/cabinet` session. Without cabinet, `/dream` is dry — no personality, no flair, just the report.
+When cabinet (or any compatible companion plugin) is installed and active in the current session, that plugin may wrap the report in its own voice. Bridge detects companion plugins via well-known folders (e.g. `crew/` for cabinet) and yields formatting to them when present. Without a companion plugin, `/dream` is dry — no personality, no flair, just the report. **Bridge never requires a companion plugin**; the dry path is the default.
 
 ---
 
 ## When to Suggest
 
-Bridge does not auto-suggest `/dream`. The command is always explicit. If cabinet is installed, cabinet's suggestion logic applies (Kevijntje suggests at 5+ sessions, 14+ days idle, or 3+ scope drifts).
+Bridge does not auto-suggest `/dream`. The command is always explicit. If a companion plugin (e.g. cabinet) implements its own suggestion logic, that's the companion's concern — bridge doesn't reach into it and doesn't depend on it.

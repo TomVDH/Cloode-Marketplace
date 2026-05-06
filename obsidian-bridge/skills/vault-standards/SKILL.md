@@ -31,9 +31,9 @@ project: "[[projects/hubspot-dev/brief|hubspot-dev]]"
 
 Clickable in Obsidian, resolves to the brief, displays the slug as alias. Always this format — not bare slugs, not unpiped wikilinks.
 
-### Specialist Names (cabinet integration)
+### Specialist field (opaque to bridge)
 
-When cabinet is installed and populates the `specialist:` field, names are always **lowercase**: `bostrol`, `thieuke`, `sakke`, `jonasty`, `pitr`, `henske`, `kevijntje`, `poekie`. Bridge preserves these values but does not require the field.
+Some other plugins (e.g. `cabinet-of-imd`) populate a `specialist:` (or `specialists:`) field on certain file types. **Bridge treats this field as opaque** — preserved verbatim on writes, never required, never validated. Whatever the source plugin's conventions are (casing, naming, taxonomy) are out of bridge's scope. Don't assume a populating plugin is installed.
 
 ---
 

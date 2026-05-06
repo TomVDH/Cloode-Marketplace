@@ -32,7 +32,7 @@
     },
     {
       "name": "obsidian-bridge",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "source": "./obsidian-bridge",
       "description": "Operate an Obsidian vault from Claude — opinionated layout, frontmatter schema, content know-how (canvas, bases, mermaid), and cleanup workflows."
     }

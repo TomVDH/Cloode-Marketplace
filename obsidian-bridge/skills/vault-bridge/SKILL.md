@@ -108,7 +108,7 @@ IF user provides path: vault_path = resolve(path)
 ELSE: REQUEST path from user
 
 IF non-empty dir AND not an Obsidian vault:
-    offer subfolder mode (_cabinet/) or new location
+    offer subfolder mode (suggest a name like `_vault/` — or ask the user) or a new location
 ELSE:
     base = vault_path
 

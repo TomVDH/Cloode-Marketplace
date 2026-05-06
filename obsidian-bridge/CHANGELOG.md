@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.1 — 2026-05-05
+
+**Decouple bridge from cabinet specifics.**
+
+Bridge can mention cabinet (interop is fine) but never expects it to be installed or accessible. This release scrubs the leakage points where bridge docs presumed cabinet's namespace, characters, or file conventions.
+
+- `skills/vault-bridge/SKILL.md` — Default subfolder name when scaffolding a vault inside a non-empty dir is now neutral (`_vault/` suggested or ask the user). Was hardcoded `_cabinet/`.
+- `skills/vault-standards/SKILL.md` — "Specialist Names (cabinet integration)" section replaced with "Specialist field (opaque to bridge)". No longer enumerates 8 cabinet-specific character names; bridge treats the field as opaque pass-through.
+- `skills/dream/SKILL.md` — Removed cabinet specialist names from the chronicler-voice description and the auto-suggest mention. Now describes "companion plugin" behavior generically; cabinet is one possible companion.
+- `references/vault-integration.md` — Cosmetic: example breadcrumb uses `MyVault`, not `Claude Cabinet`.
+- `skills/mermaid/SKILL.md` — Cosmetic: removed "cabinet integration" from a Mermaid timeline example.
+
+What still mentions cabinet (correctly framed as interop-tolerant, not required):
+- Anchor chain step 2: `.cabinet-anchor-hint` fallback (gracefully absent)
+- `Home.md` type accepts `vault-home | cabinet-home` (union, not requirement)
+- "Cabinet detection — `crew/` folder present, untouched by bridge" (detect-and-yield, no dependency)
+- Tag preservation: `cabinet/*` tags preserved alongside `ob/*` during migration
+- README "pairs cleanly with cabinet-of-imd when both are installed"
+- `# optional (cabinet)` annotations on optional fields (provenance hint, not requirement)
+
+Non-breaking. No schema change. Existing vaults unaffected.
+
 ## 1.1.0 — 2026-05-04
 
 **New optional schema field — `relations:` on project briefs.**
