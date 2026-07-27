@@ -14,6 +14,8 @@ Public API:
     parse_breadcrumb(project_root) -> Optional[dict]
     resolve_vault(project_root, env_vault=None) -> Optional[Path]
     is_bucket_d_tag(tag, project_slug=None) -> bool
+    schema_drift_for_file(vf, aliases=None) -> Optional[dict]
+    schema_drift(files, aliases=None) -> dict
 
 Schema constants (single source of truth, imported by dream + tidy):
     BUCKET_A_TYPES, BUCKET_B_MIGRATIONS, BUCKET_D_TAG_PREFIXES,
@@ -785,6 +787,83 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
         "optional": frozenset(),
     },
 }
+
+# Wild historical decision-status values that are plain synonyms of active.
+# tidy migrates these after preview; anything else off-enum is reported only.
+DECISION_STATUS_ALIASES: dict[str, str] = {
+    "accepted": "active", "locked": "active", "current": "active",
+}
+
+
+def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Optional[dict]:
+    """Schema drift for one file per FIELD_SCHEMA, or None when clean.
+
+    Only files with a parsed frontmatter block and a canonical type are
+    checked; everything else is ramasse territory (detect_frontmatter_drift,
+    detect_type_drift) and returns None here. `aliases` is the task-status
+    alias set (board.STATUS_TO_COLUMN keys) used to mark task values as
+    normalizable; decision values normalize via DECISION_STATUS_ALIASES.
+    """
+    fm = vf.frontmatter
+    ftype = vf.file_type
+    if not fm.has_block or fm.parse_error or ftype not in FIELD_SCHEMA:
+        return None
+    spec = FIELD_SCHEMA[ftype]
+    keys = set(fm.fields)
+    out: dict[str, Any] = {}
+    missing = spec["required"] - keys
+    if missing:
+        out["missing_required"] = sorted(missing)
+    unknown = keys - spec["required"] - spec["optional"]
+    if unknown:
+        out["unknown_fields"] = sorted(unknown)
+    enum = STATUS_VALUES_FOR_TYPE.get(ftype)
+    if enum is not None:
+        status = fm.fields.get("status")
+        if isinstance(status, str) and status and status not in enum:
+            if ftype == "decision":
+                normalizable = status in DECISION_STATUS_ALIASES
+            elif ftype == "task":
+                normalizable = bool(aliases and status in aliases)
+            else:
+                normalizable = False
+            out["status_invalid"] = {"value": status, "normalizable": normalizable}
+    if "node_type" in keys and "type" in keys:
+        out["type_conflict"] = True
+    if not out:
+        return None
+    out["file"] = str(vf.rel_path)
+    out["type"] = ftype
+    return out
+
+
+def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dict[str, Any]:
+    """Aggregate schema drift across walked files: counts + capped samples."""
+    flagged: list[dict] = []
+    checked = 0
+    unchecked = 0
+    for vf in files:
+        fm = vf.frontmatter
+        if not fm.has_block or fm.parse_error or vf.file_type not in FIELD_SCHEMA:
+            unchecked += 1
+            continue
+        checked += 1
+        d = schema_drift_for_file(vf, aliases)
+        if d:
+            flagged.append(d)
+    return {
+        "checked": checked,
+        "unchecked": unchecked,
+        "flagged": len(flagged),
+        "counts": {
+            "missing_required": sum(1 for d in flagged if "missing_required" in d),
+            "unknown_fields": sum(1 for d in flagged if "unknown_fields" in d),
+            "status_invalid": sum(1 for d in flagged if "status_invalid" in d),
+            "type_conflict": sum(1 for d in flagged if "type_conflict" in d),
+        },
+        "samples": flagged[:20],
+    }
+
 
 _DATED_STEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 

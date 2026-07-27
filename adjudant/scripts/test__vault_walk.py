@@ -839,5 +839,91 @@ class TestFieldSchema(unittest.TestCase):
         self.assertIn("marketplace", FIELD_SCHEMA["project"]["optional"])
 
 
+from _vault_walk import (
+    DECISION_STATUS_ALIASES,
+    VaultFile,
+    schema_drift,
+    schema_drift_for_file,
+)
+
+
+def _vf(text: str, rel: str = "notes/x.md") -> VaultFile:
+    fm, body = parse_frontmatter(text)
+    return VaultFile(path=Path("/tmp") / rel, rel_path=Path(rel), frontmatter=fm,
+                     body=body, tags_frontmatter=[], tags_inline=[],
+                     wikilinks=[], markdown_md_links=[])
+
+
+_CLEAN_DECISION = (
+    "---\ntype: decision\nstatus: active\ndate: 2026-07-27\ntags:\n  - decision\n---\n\nBody\n")
+
+
+class TestSchemaDrift(unittest.TestCase):
+
+    def test_clean_decision_returns_none(self):
+        self.assertIsNone(schema_drift_for_file(_vf(_CLEAN_DECISION)))
+
+    def test_missing_required_flagged(self):
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace("date: 2026-07-27\n", "")))
+        self.assertEqual(d["missing_required"], ["date"])
+
+    def test_project_field_is_unknown(self):
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace(
+            "type: decision\n", 'type: decision\nproject: "[[projects/x/brief|x]]"\n')))
+        self.assertEqual(d["unknown_fields"], ["project"])
+
+    def test_node_type_beside_type_is_conflict(self):
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace(
+            "type: decision\n", "type: decision\nnode_type: decision\n")))
+        self.assertTrue(d["type_conflict"])
+        self.assertIn("node_type", d["unknown_fields"])
+
+    def test_metadata_nest_surfaces_as_single_unknown(self):
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace(
+            "type: decision\n", "type: decision\nmetadata:\n  node_type: memory\n  foo: bar\n")))
+        self.assertEqual(d["unknown_fields"], ["metadata"])
+
+    def test_decision_alias_status_normalizable(self):
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace("status: active", "status: accepted")))
+        self.assertEqual(d["status_invalid"]["value"], "accepted")
+        self.assertTrue(d["status_invalid"]["normalizable"])
+
+    def test_decision_bogus_status_not_normalizable(self):
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace("status: active", "status: banana")))
+        self.assertFalse(d["status_invalid"]["normalizable"])
+
+    def test_task_alias_status_normalizable_via_alias_set(self):
+        task = "---\ntype: task\nstatus: wip\ntags:\n  - task\n---\n"
+        d = schema_drift_for_file(_vf(task), aliases={"wip", "parked"})
+        self.assertTrue(d["status_invalid"]["normalizable"])
+        d2 = schema_drift_for_file(_vf(task))
+        self.assertFalse(d2["status_invalid"]["normalizable"])
+
+    def test_session_with_empty_id_list_clean(self):
+        s = ("---\ntype: session\ndate: 2026-07-27\nstarted: \"09:00\"\n"
+             "session_id: []\ntags:\n  - session\n---\n")
+        self.assertIsNone(schema_drift_for_file(_vf(s)))
+
+    def test_decision_alias_map_locked(self):
+        self.assertEqual(DECISION_STATUS_ALIASES,
+                         {"accepted": "active", "locked": "active", "current": "active"})
+
+    def test_aggregate_counts_and_skips(self):
+        files = [
+            _vf(_CLEAN_DECISION),                                     # clean
+            _vf(_CLEAN_DECISION.replace("date: 2026-07-27\n", "")),   # flagged
+            _vf("no frontmatter at all\n"),                           # unchecked
+            _vf("---\ntype: tasks\n---\n"),                           # non-canonical type
+            _vf("---\ntype: decision\nbroken"),                       # parse error
+        ]
+        agg = schema_drift(files)
+        self.assertEqual(agg["checked"], 2)
+        self.assertEqual(agg["unchecked"], 3)
+        self.assertEqual(agg["flagged"], 1)
+        self.assertEqual(agg["counts"]["missing_required"], 1)
+        self.assertEqual(len(agg["samples"]), 1)
+        self.assertEqual(agg["samples"][0]["file"], "notes/x.md")
+
+
 if __name__ == "__main__":
     unittest.main()
