@@ -24,11 +24,13 @@ connect is three phases; the card in the middle is the only thing the user must 
    /adjudant board, born automatically on the first task note.
 
 Config knobs land in the breadcrumb at init with defaults visible on the card:
-`cost_warn_tokens: 30000`, `stale_after_days: 30`. Existing overrides survive re-connect.
+`cost_warn_tokens: 30000`, `stale_after_days: 30`. Existing overrides survive re-connect,
+as does an opt-in `stamp_source_session: true` (per-file session stamping, default off —
+connect never writes the key itself).
 
 ## The 5 features (locked spec)
 
-1. **Breadcrumb** — write `.claude/adjudant` at project root containing `vault_path`, `vault_name`, `slug`, `mode`, `cost_warn_tokens`, `stale_after_days`
+1. **Breadcrumb** — write `.claude/adjudant` at project root containing `vault_path`, `vault_name`, `slug`, `mode`, `cost_warn_tokens`, `stale_after_days` (plus `stamp_source_session` when a hand-added opt-in already exists)
 2. **Context files** — provision `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` at project root from the matching templates (skip if files exist)
 3. **Vault scaffold** — create `{vault}/projects/{slug}/` with `brief.md` (from `templates/project-brief-{project_type}.md`), per-`project_type` default subfolders, `_index.md` per subfolder
 4. **Session note** — create today's `{vault}/projects/{slug}/sessions/{YYYY-MM-DD}.md` from `templates/session.md` with frontmatter filled in

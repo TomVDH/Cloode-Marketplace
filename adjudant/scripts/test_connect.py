@@ -149,6 +149,25 @@ class TestWriteBreadcrumb(unittest.TestCase):
             content = (proj / ".claude" / "adjudant").read_text()
             self.assertIn("vault_path: /other", content)
 
+    def test_stamp_opt_in_preserved_on_rewrite(self):
+        # v0.16.0: a hand-added stamp_source_session opt-in must survive
+        # re-connect; connect itself never turns stamping on.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            write_breadcrumb(proj, Path("/v"), "Vault", "my-slug")
+            bc = proj / ".claude" / "adjudant"
+            bc.write_text(bc.read_text() + "stamp_source_session: true\n")
+            mark = write_breadcrumb(proj, Path("/other"), "Vault", "my-slug")
+            self.assertEqual(mark, "updated")
+            self.assertIn("stamp_source_session: true", bc.read_text())
+
+    def test_stamp_key_absent_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            write_breadcrumb(proj, Path("/v"), "Vault", "my-slug")
+            self.assertNotIn("stamp_source_session",
+                             (proj / ".claude" / "adjudant").read_text())
+
 
 # ============================================================
 # Step 2: context files

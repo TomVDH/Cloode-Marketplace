@@ -43,16 +43,20 @@ class _HookHarness(unittest.TestCase):
         if self._ob_vault is not None:
             os.environ["OB_VAULT"] = self._ob_vault
 
-    def _fixture(self, tmp: Path) -> tuple[Path, Path, Path]:
+    def _fixture(self, tmp: Path, *, stamp: bool = False,
+                 stamp_value: str = "true") -> tuple[Path, Path, Path]:
         """Project + vault + today's session note. Returns (project,
-        project_root_in_vault, session_note)."""
+        project_root_in_vault, session_note). stamp=True opts the breadcrumb
+        into source_session stamping (v0.16.0: default is off)."""
         project = tmp / "code"
         vault = tmp / "vault"
         proot = vault / "projects" / "demo"
         (proot / "sessions").mkdir(parents=True)
         (project / ".claude").mkdir(parents=True)
-        (project / ".claude" / "adjudant").write_text(
-            f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
+        bc = f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n"
+        if stamp:
+            bc += f"stamp_source_session: {stamp_value}\n"
+        (project / ".claude" / "adjudant").write_text(bc)
         today = datetime.now().strftime("%Y-%m-%d")
         session = proot / "sessions" / f"{today}.md"
         session.write_text("## Log\n")
@@ -199,7 +203,7 @@ class TestSessionLogFormat(_HookHarness):
     def test_no_session_note_still_stamps(self):
         # Job independence: a missing session log must not block job 2.
         with tempfile.TemporaryDirectory() as tmp:
-            project, proot, session = self._fixture(Path(tmp))
+            project, proot, session = self._fixture(Path(tmp), stamp=True)
             session.unlink()
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note))
@@ -211,7 +215,7 @@ class TestSourceSessionStamp(_HookHarness):
 
     def test_new_note_gets_stamped_in_frontmatter(self):
         with tempfile.TemporaryDirectory() as tmp:
-            project, proot, session = self._fixture(Path(tmp))
+            project, proot, session = self._fixture(Path(tmp), stamp=True)
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note))
             self.assertEqual(rc, 0)
@@ -220,7 +224,7 @@ class TestSourceSessionStamp(_HookHarness):
 
     def test_blank_session_id_logs_but_does_not_stamp(self):
         with tempfile.TemporaryDirectory() as tmp:
-            project, proot, session = self._fixture(Path(tmp))
+            project, proot, session = self._fixture(Path(tmp), stamp=True)
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note, session_id="  "))
             self.assertEqual(rc, 0)
@@ -229,7 +233,7 @@ class TestSourceSessionStamp(_HookHarness):
 
     def test_missing_session_id_key_logs_but_does_not_stamp(self):
         with tempfile.TemporaryDirectory() as tmp:
-            project, proot, session = self._fixture(Path(tmp))
+            project, proot, session = self._fixture(Path(tmp), stamp=True)
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, {"tool_name": "Write",
                                      "tool_input": {"file_path": str(note)}})
@@ -238,13 +242,50 @@ class TestSourceSessionStamp(_HookHarness):
             self.assertNotIn("source_session", note.read_text())
 
 
+class TestStampGate(_HookHarness):
+    """v0.16.0: stamping is breadcrumb opt-in, default off."""
+
+    def test_stamp_default_off(self):
+        # No stamp_source_session key: job 1 logs, job 2 never fires.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot, session = self._fixture(Path(tmp))
+            note = self._note(proot, "notes/idea.md")
+            rc = self._run(project, self._payload(note))
+            self.assertEqual(rc, 0)
+            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+            self.assertNotIn("source_session", note.read_text())
+
+    def test_stamp_opt_in_spellings(self):
+        for value in ("true", "1", "yes", "on", "TRUE"):
+            with self.subTest(value=value):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, proot, session = self._fixture(
+                        Path(tmp), stamp=True, stamp_value=value)
+                    note = self._note(proot, "notes/idea.md")
+                    rc = self._run(project, self._payload(note))
+                    self.assertEqual(rc, 0)
+                    self.assertIn(f"source_session: {SESSION_ID}", note.read_text())
+
+    def test_stamp_garbage_value_off(self):
+        for value in ("banana", "false", "0", "off", ""):
+            with self.subTest(value=value):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, proot, session = self._fixture(
+                        Path(tmp), stamp=True, stamp_value=value)
+                    note = self._note(proot, "notes/idea.md")
+                    rc = self._run(project, self._payload(note))
+                    self.assertEqual(rc, 0)
+                    self.assertNotIn("source_session", note.read_text())
+
+
 class TestStampSkipRules(_HookHarness):
 
     def test_session_note_write_is_not_stamped(self):
         # Session notes accumulate session_id (list) via SessionStart — the
         # PostToolUse pass must not also pin a scalar source_session on them.
+        # stamp=True: the skip rule must hold even when the gate is open.
         with tempfile.TemporaryDirectory() as tmp:
-            project, proot, session = self._fixture(Path(tmp))
+            project, proot, session = self._fixture(Path(tmp), stamp=True)
             session.write_text("---\ntype: session\ndate: 2026-01-01\n---\n\n## Log\n")
             rc = self._run(project, self._payload(session))
             self.assertEqual(rc, 0)
@@ -253,10 +294,11 @@ class TestStampSkipRules(_HookHarness):
     def test_system_files_are_never_stamped(self):
         # _handoff / _index / _index-* / _iteration are system-managed —
         # "which conversation authored this" makes no sense there.
+        # stamp=True: the skip rule must hold even when the gate is open.
         for name in ("_handoff.md", "_index.md", "_index-decisions.md", "_iteration.md"):
             with self.subTest(name=name):
                 with tempfile.TemporaryDirectory() as tmp:
-                    project, proot, session = self._fixture(Path(tmp))
+                    project, proot, session = self._fixture(Path(tmp), stamp=True)
                     target = self._note(proot, name)
                     rc = self._run(project, self._payload(target))
                     self.assertEqual(rc, 0)
@@ -279,7 +321,7 @@ class TestHookProcess(_HookHarness):
 
     def test_end_to_end_write_logs_and_stamps(self):
         with tempfile.TemporaryDirectory() as tmp:
-            project, proot, session = self._fixture(Path(tmp))
+            project, proot, session = self._fixture(Path(tmp), stamp=True)
             note = self._note(proot, "notes/idea.md")
             r = self._run_proc(project, json.dumps(self._payload(note)))
             self.assertEqual(r.returncode, 0, r.stderr)

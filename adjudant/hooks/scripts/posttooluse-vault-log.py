@@ -6,9 +6,12 @@ Three mechanical jobs on tool writes under {vault}/projects/{slug}/:
   0. On a task-note change (Write OR Edit under tasks/), nudge the board:
      `board_bridge.py --ensure-only` in a capped subprocess, fire-and-forget.
   1. Append a `- HH:MM · Decision|Added: [[link]]` entry to today's session log.
-  2. Stamp `source_session: <uuid>` into the new file's frontmatter so the
-     conversation that authored it is one hop away — not a grep through
-     transcripts. Session notes / _handoff / _index files are excluded.
+  2. Stamp `source_session: <uuid>` into the new file's frontmatter — ONLY
+     when the breadcrumb opts in with `stamp_source_session: true` (accepted
+     truthy spellings: true|1|yes|on, case-insensitive; absent means off).
+     The session log (job 1) already records the session→file mapping, so
+     the per-file stamp is opt-in provenance, not a default. Session notes /
+     _handoff / _index files are excluded by the stamping primitive.
 
 Jobs 1 and 2 fire only on Write (not Edit/MultiEdit, which typically modify
 existing files). All jobs are best-effort and fail-closed.
@@ -167,10 +170,13 @@ def main() -> int:
         except OSError:
             pass  # log-write failure must not block job 2
 
-    # --- Job 2: stamp source_session on the new file. The stamping primitive
-    # itself decides what's eligible (skips session notes, _handoff, _index,
-    # files without frontmatter, files already stamped). Best-effort. ---
-    if session_id and _STAMP:
+    # --- Job 2: stamp source_session on the new file, breadcrumb opt-in
+    # (stamp_source_session: true). The stamping primitive itself decides
+    # what's eligible (skips session notes, _handoff, _index, files without
+    # frontmatter, files already stamped). Best-effort. ---
+    stamp_enabled = (info.get("stamp_source_session", "") or "").strip().lower() in (
+        "true", "1", "yes", "on")
+    if stamp_enabled and session_id and _STAMP:
         try:
             stamp_source_session(file_path, session_id)
         except Exception:

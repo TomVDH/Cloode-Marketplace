@@ -268,14 +268,16 @@ def write_breadcrumb(
     slug: str,
 ) -> str:
     """Write the .claude/adjudant breadcrumb (six keys). Existing
-    cost_warn_tokens / stale_after_days overrides are preserved; a
-    byte-identical rewrite is skipped.
+    cost_warn_tokens / stale_after_days overrides are preserved, as is an
+    opt-in stamp_source_session key (written only when present — connect
+    never turns stamping on); a byte-identical rewrite is skipped.
 
     Returns 'created' | 'updated' | 'already-present'.
     """
     existing = parse_breadcrumb(project_root) or {}
     cwt = existing.get("cost_warn_tokens", "30000")
     sad = existing.get("stale_after_days", "30")
+    sss = existing.get("stamp_source_session")
     content = (
         f"vault_path: {vault_path}\n"
         f"vault_name: {vault_name}\n"
@@ -283,6 +285,7 @@ def write_breadcrumb(
         f"mode: project\n"
         f"cost_warn_tokens: {cwt}\n"
         f"stale_after_days: {sad}\n"
+        + (f"stamp_source_session: {sss}\n" if sss is not None else "")
     )
     bc = project_root / ".claude" / "adjudant"
     if bc.is_file():

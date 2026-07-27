@@ -41,9 +41,11 @@ conversation that produced it is one wikilink hop away — not a grep through
   ```
 
 - **`source_session:`** (scalar, optional, on decisions / notes / docs /
-  sources / releases / iterations / dream-reports) — the conversation UUID
-  that authored the file. Stamped by the `PostToolUse` hook when a new file
-  appears under the project. Optional and omit-if-absent per the rule above.
+  sources / releases / iterations / dream-reports / tasks) — the conversation
+  UUID that authored the file. Stamped by the `PostToolUse` hook only when the
+  breadcrumb opts in with `stamp_source_session: true` (default off since
+  v0.16.0 — the session log already records which session created what).
+  Historic stamps remain legal schema; `check` never flags them.
 
   ```yaml
   source_session: 2ada03ff-687f-4a82-9e1f-1234567890ab
