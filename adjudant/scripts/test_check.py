@@ -296,5 +296,48 @@ class TestSuitcaseStatus(unittest.TestCase):
             os.environ["PATH"] = old_path
 
 
+_CLEAN_BRIEF = (
+    "---\ntype: project\nproject_type: coding\nslug: t\naliases: [t]\n"
+    "status: active\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - project\n---\n\n# T\n")
+_CLEAN_DECISION = (
+    "---\ntype: decision\nstatus: active\ndate: 2026-07-27\ntags:\n  - decision\n---\n\nD\n")
+
+
+class TestSchemaSection(unittest.TestCase):
+
+    def test_clean_project_zero_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            _write(root / "decisions" / "2026-07-27-a.md", _CLEAN_DECISION)
+            report = run_check(root)
+            self.assertIn("schema", report)
+            self.assertEqual(report["schema"]["flagged"], 0)
+            self.assertEqual(report["schema"]["checked"], 2)
+
+    def test_drift_counted_with_samples(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            _write(root / "notes" / "n.md",
+                   "---\ntype: note\nproject: \"[[projects/t/brief|t]]\"\n"
+                   "created: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - note\n---\nN\n")
+            _write(root / "decisions" / "2026-07-27-a.md",
+                   _CLEAN_DECISION.replace("status: active", "status: accepted"))
+            report = run_check(root)
+            self.assertEqual(report["schema"]["flagged"], 2)
+            self.assertEqual(report["schema"]["counts"]["unknown_fields"], 1)
+            self.assertEqual(report["schema"]["counts"]["status_invalid"], 1)
+            files = [s["file"] for s in report["schema"]["samples"]]
+            self.assertIn("notes/n.md", files)
+
+    def test_report_json_serializable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            report = run_check(root)
+            _json.dumps(report)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -51,6 +51,10 @@ JSON output shape (top-level keys):
   skip entirely when false. Ground rules in reference/suitcase.md
 - `status` — declared vs. machine-suggested lifecycle status: `declared`, `declared_valid`,
   `last_session`, `days_quiet`, `suggested`, `reason`, `nudge`, `zone`, `zone_matches`
+- `schema` — frontmatter drift per `FIELD_SCHEMA`: `checked`, `unchecked` (no block /
+  parse error / non-canonical type — those are ramasse territory), `flagged`, `counts`
+  (`missing_required`, `unknown_fields`, `status_invalid`, `type_conflict`), `samples`
+  (capped at 20, each with `file`, `type`, and the offending keys/values)
 
 ## Render
 
@@ -73,6 +77,8 @@ Created: {created} · Updated: {updated}
 - Handoff:       {updated} ({stale_hours}h stale)
 - Counts:        {decisions} decisions, {sessions} sessions, {dreams} dreams, {notes} notes
 - Board:         {board.columns as "{id}: {n}" pairs, deck order}{" · stale" if board.stale}
+- Schema:        {schema.checked} checked, {schema.flagged} flagged
+                 ({counts as "{n} missing-required, {n} unknown-field, {n} status, {n} type-conflict", nonzero only})
 
 ## Drift signal
 
@@ -96,6 +102,7 @@ next ambient refresh), no alarm.
 - If `status.suggested` is set, render one line: "brief says {status.declared}, looks {status.suggested}: {status.reason} → run /adjudant shelf".
 - If `status.nudge` is set, render the nudge as its own line.
 - If `status.zone_matches` is false, flag the mismatch: the declared status doesn't match the vault zone the project actually sits in.
+- If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant tidy (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.
 
 ## Inputs
 

@@ -22,9 +22,19 @@ from typing import Any, Optional
 
 from _cost import breadcrumb_int, cost_block, read_threshold, stat_walk
 from _vault_walk import (
-    DEFAULT_STALE_DAYS, parse_frontmatter, resolve_vault, smart_project_dir,
-    suggest_status, zone_matches_status, zone_of, VaultUnresolvableError,
+    DEFAULT_STALE_DAYS, parse_frontmatter, resolve_vault, schema_drift,
+    smart_project_dir, suggest_status, walk_project, zone_matches_status,
+    zone_of, VaultUnresolvableError,
 )
+
+# Task-status alias set for schema_drift's normalizable flag (import
+# precedent: validate.py validator 26). Defensive: check must render even
+# if board.py is mid-edit.
+try:
+    from board import STATUS_TO_COLUMN
+    _TASK_ALIASES: set = set(STATUS_TO_COLUMN)
+except Exception:  # pragma: no cover - degraded, schema still reports
+    _TASK_ALIASES = set()
 
 
 def _read_brief(project_dir: Path) -> dict[str, Any]:
@@ -222,6 +232,7 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
         "board": _board_status(project_dir),
         "suitcase": _suitcase_status(),
         "status": status,
+        "schema": schema_drift(list(walk_project(project_dir)), _TASK_ALIASES),
     }
 
 
