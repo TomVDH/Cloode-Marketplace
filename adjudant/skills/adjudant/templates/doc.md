@@ -1,6 +1,5 @@
 ---
 type: doc
-project: "[[projects/{slug}/brief|{slug}]]"
 title: "{Document title}"
 updated: {YYYY-MM-DD}
 tags:

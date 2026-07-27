@@ -177,7 +177,6 @@ def _release_frontmatter(slug: str, version: str, today: str) -> str:
     return (
         "---\n"
         "type: release\n"
-        f'project: "[[projects/{slug}/brief|{slug}]]"\n'
         f"version: {version}\n"
         f"date: {today}\n"
         "tags:\n"
@@ -211,7 +210,6 @@ def _upsert_index(releases: Path, slug: str, plugin: str, version: str, today: s
             index.write_text(
                 "---\n"
                 "type: index\n"
-                f'project: "[[../brief|{slug}]]"\n'
                 f"updated: {today}\n"
                 "tags:\n"
                 "  - index\n"

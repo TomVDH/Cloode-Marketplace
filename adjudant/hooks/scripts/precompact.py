@@ -46,7 +46,6 @@ except Exception:  # pragma: no cover - degrade: mechanical work without freshne
     HANDOFF_FRONTMATTER_TEMPLATE = (
         "---\n"
         "type: handoff\n"
-        "project: \"[[projects/{slug}/brief|{slug}]]\"\n"
         "updated: {today}\n"
         "source: {source_stem}\n"
         "tags:\n"

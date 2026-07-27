@@ -160,7 +160,6 @@ PY
   if ( set -o noclobber; cat > "$session_file" <<EOF
 ---
 type: session
-project: "[[projects/$slug/brief|$slug]]"
 date: $today
 started: $ts
 $sid_block

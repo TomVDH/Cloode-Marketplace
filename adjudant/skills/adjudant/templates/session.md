@@ -1,6 +1,5 @@
 ---
 type: session
-project: "[[projects/{slug}/brief|{slug}]]"
 date: {YYYY-MM-DD}
 started: {HH:MM}
 session_id: []

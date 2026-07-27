@@ -439,7 +439,6 @@ def scaffold_vault_project(
             idx_content = (
                 "---\n"
                 "type: index\n"
-                f"project: \"[[../brief|{slug}]]\"\n"
                 f"updated: {today}\n"
                 "tags:\n"
                 "  - index\n"
@@ -493,7 +492,6 @@ def write_session_note(
         text = (
             "---\n"
             "type: session\n"
-            f"project: \"[[projects/{slug}/brief|{slug}]]\"\n"
             f"date: {today}\n"
             f"started: \"{now_hhmm}\"\n"
             "session_id: []\n"

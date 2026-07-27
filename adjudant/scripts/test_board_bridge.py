@@ -183,7 +183,8 @@ class TestBridgeSurvivors(_BridgeCase):
         fm, body = parse_frontmatter(note.read_text())
         self.assertEqual(fm.fields.get("type"), "task")
         self.assertEqual(fm.fields.get("status"), "todo")
-        self.assertEqual(fm.fields.get("project"), "[[projects/demo/brief|demo]]")
+        # v0.16.0: membership is the path — no project: field on written notes
+        self.assertNotIn("project", fm.fields)
         self.assertIn("task", fm.fields.get("tags") or [])
         # The template's trailing guidance comments must not survive into a
         # mechanically written note: the YAML parser keeps comments on

@@ -45,7 +45,6 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "tem
 # missing template.
 _FALLBACK_TEMPLATE = """---
 type: task
-project: "[[projects/{slug}/brief|{slug}]]"
 status: todo
 category: ""
 code: ""

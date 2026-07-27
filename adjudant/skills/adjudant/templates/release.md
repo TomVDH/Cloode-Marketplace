@@ -1,6 +1,5 @@
 ---
 type: release
-project: "[[projects/{slug}/brief|{slug}]]"
 version: {X.Y.Z}
 date: {YYYY-MM-DD}
 tags:

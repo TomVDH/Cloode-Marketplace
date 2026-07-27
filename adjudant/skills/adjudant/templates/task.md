@@ -1,6 +1,5 @@
 ---
 type: task
-project: "[[projects/{slug}/brief|{slug}]]"
 # status enum: todo | doing | review | blocked | done | icebox
 status: todo
 # optional fields, one line each:

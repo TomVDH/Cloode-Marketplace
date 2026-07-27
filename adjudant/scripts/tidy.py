@@ -244,12 +244,10 @@ def generate_index_content(
     pretty = _capitalize_folder_name(folder_name)
     sorted_entries = _sort_entries(entries)
     rows = [_format_entry_bullet(f) for f in sorted_entries]
-    project_line = f'project: "[[../brief|{project_slug}]]"\n' if project_slug else ""
     return (
         "---\n"
         "type: index\n"
-        + project_line
-        + f"updated: {today}\n"
+        f"updated: {today}\n"
         "tags:\n"
         "  - index\n"
         "---\n\n"

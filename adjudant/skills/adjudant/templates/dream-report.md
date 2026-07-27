@@ -1,6 +1,5 @@
 ---
 type: dream-report
-project: "[[projects/{slug}/brief|{slug}]]"
 date: {YYYY-MM-DD}
 tags:
   - dream-report

@@ -1,6 +1,5 @@
 ---
 type: index
-project: "[[projects/{slug}/brief|{slug}]]"
 tags:
   - index
 ---

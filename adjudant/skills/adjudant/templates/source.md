@@ -1,6 +1,5 @@
 ---
 type: source
-project: "[[projects/{slug}/brief|{slug}]]"
 title: "{Title of source}"
 author: "{Author name}"
 url: "{https://...}"

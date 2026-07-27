@@ -1,6 +1,5 @@
 ---
 type: iteration
-project: "[[projects/{slug}/brief|{slug}]]"
 identifier: {A|B|C... or short word}
 status: drafting              # drafting | on-shelf | picked | parked | rejected | superseded
 date: {YYYY-MM-DD}

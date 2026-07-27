@@ -171,7 +171,8 @@ class TestReleaseScaffold(_CommitLogCase):
         text = note.read_text()
         self.assertIn("type: release", text)
         self.assertIn("version: 0.15.0", text)
-        self.assertIn('project: "[[projects/demo/brief|demo]]"', text)
+        # v0.16.0: membership is the path — no project: field on written notes
+        self.assertNotIn("project:", text)
         self.assertIn("# v0.15.0 (adjudant)", text)
         self.assertIn("- task schema locked", text)
         index = self.project_root / "releases" / "_index.md"

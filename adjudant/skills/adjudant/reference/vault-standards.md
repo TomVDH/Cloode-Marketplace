@@ -8,21 +8,20 @@ Canonical schema, naming, folder rules, and wikilink form for any Adjudant-manag
 
 Every vault file has YAML frontmatter. No exceptions except `Home.md` (which only needs `type` + `updated`).
 
-- Standard YAML — no Obsidian-specific syntax inside frontmatter values except `project` fields (piped wikilinks).
+- Standard YAML — no Obsidian-specific syntax inside frontmatter values except wikilink-valued fields (a decision's `supersedes`, piped wikilinks).
 - Dates: ISO `YYYY-MM-DD` for date-only; full ISO 8601 for timestamps.
 - Strings with special characters (colons, brackets) must be quoted.
 - Empty optional fields: **omit the key entirely** rather than `null` or empty string.
 - Arrays use YAML list syntax, not inline `[]` (exception: empty arrays use `[]`).
 
-### Project reference field
+### Project membership
 
-The `project:` field uses a piped wikilink to the brief:
+Project membership is the folder path (`projects/[zone/]slug/…`), never a frontmatter field.
 
-```yaml
-project: "[[projects/hubspot-nightly/brief|hubspot-nightly]]"
-```
-
-Always this format — not bare slug, not unpiped wikilink. Clickable in Obsidian; alias displays as the slug.
+The historical `project:` field (a piped wikilink to the brief, retired v0.16.0) duplicated the
+path on every note and drifted whenever a project moved zones. Existing files still carrying it
+are unknown-field drift: `check` reports them, `tidy` strips them after preview. The Obsidian
+graph backlink flows through each folder's `_index.md` instead.
 
 ### Session traceability — `session_id` / `source_session`
 
@@ -91,7 +90,7 @@ Other topical tags allowed only if they meet all three criteria: namespaced (`ca
 
 - `#ob/*` (all) — replaced by bare equivalents
 - `#cabinet/*` — cabinet sunset; file-type variants migrate to Bucket B, others drop
-- Project-slug tags (`#dutchbc-poc`, `#hubspot-nightly`, etc.) — project membership lives in the `project:` frontmatter field
+- Project-slug tags (`#dutchbc-poc`, `#hubspot-nightly`, etc.) — project membership is the folder path
 - Vague topicals: `#architecture`, `#frontend`, `#cms`, `#toolbox`, `#moc`, `#scheduler`, `#campaign-request`, `#flow-c`, `#nightly`, `#hubspot`
 - Crew names: `#bostrol`, `#kevijntje`, `#henske`, `#jonasty`
 
@@ -171,7 +170,6 @@ Canonical shape (see `templates/task.md`):
 
 ```yaml
 type: task
-project: "[[projects/{slug}/brief|{slug}]]"
 status: todo        # todo | doing | review | blocked | done | icebox
 category: ""        # optional: board colour group
 code: ""            # optional: short card id cross-linking specs, handoffs, commits
@@ -242,7 +240,6 @@ All vault-internal links use `[[note-name]]` form.
 
 | Context | Form |
 |---|---|
-| Frontmatter `project:` | `"[[projects/{slug}/brief\|{slug}]]"` (piped, always) |
 | Body → brief | `[[projects/{slug}/brief\|{display}]]` |
 | Body → decision | `[[projects/{slug}/decisions/{file}\|{short title}]]` |
 | Body → session | `[[projects/{slug}/sessions/{date}\|{date}]]` |

@@ -1,6 +1,5 @@
 ---
 type: handoff
-project: "[[projects/{slug}/brief|{slug}]]"
 updated: {YYYY-MM-DD}
 source: remember              # remember | manual
 tags:
