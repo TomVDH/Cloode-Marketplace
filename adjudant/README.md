@@ -1,6 +1,6 @@
 # Adjudant
 
-Vault editor/writer and project initializer for Claude Code (and Gemini CLI). Successor to `obsidian-bridge`. One skill, one command, eleven verbs, Python helpers under each. Cost-gated heavy verbs, a shelf-driven project lifecycle across vault zones, a five-field connect contract, and a locked voice layer round out the surface.
+Vault editor/writer and project initializer for Claude Code (and Gemini CLI). Successor to `obsidian-bridge`. One skill, one command, eleven verbs, Python helpers under each. Cost-gated heavy verbs, a shelf-driven project lifecycle across vault zones, a five-field connect contract, a locked voice layer, and a frontmatter schema lock (FIELD_SCHEMA: check detects drift, tidy strips/migrates after preview) round out the surface.
 
 ## Install
 
@@ -20,8 +20,8 @@ Vault editor/writer and project initializer for Claude Code (and Gemini CLI). Su
 | Hooks | nine entries across eight events (SessionStart, UserPromptSubmit, PostToolUse Write\|Edit + Bash, PreCompact, PostCompact, TaskCreated, TaskCompleted, SessionEnd) |
 | Templates | 20 file-type scaffolds + `board.html` (self-hosted kanban) |
 | Python helpers | `_vault_walk.py` · `_handoff_freshness.py` · `_session_stamp.py` · `_cost.py` (primitives), `connect.py`, `port.py`, `sync.py`, `tidy.py`, `ramasse_scan.py`, `dream.py`, `board.py`, `board_bridge.py`, `graph.py`, `check.py`, `sitrep.py`, `shelf.py`; repo target: `repo_walk.py`, `repo_scan.py`, `repo_tidy.py` |
-| Drift defense | `python3 scripts/validate.py`: 27 validators, runs via pre-commit |
-| Tests | 681 unit tests; `python3 -m unittest discover -p 'test_*.py'` |
+| Drift defense | `python3 scripts/validate.py`: 29 validators, runs via pre-commit |
+| Tests | 761 unit tests; `python3 -m unittest discover -p 'test_*.py'` |
 
 ## The three-tier cleanup model (locked 2026-05-26)
 
@@ -42,7 +42,7 @@ Risk tolerance is the dividing line: tidy never breaks anything; ramasse can bre
 | `/adjudant sync` | Push project state to the vault: refresh brief, mirror handoff, refresh project-row counts. | `sync.py` |
 | `/adjudant check [vault\|repo\|all]` | Read-only summary — project + vault snapshot, schema compliance; `repo`/`all` also audit repo structure (versions, symlinks, registration, stale plans). | `check.py`, `repo_scan.py` |
 | `/adjudant sitrep` | ELI5 orientation briefing — where we were, what's done, where the vault is, where to start. Read-only. | `sitrep.py` |
-| `/adjudant tidy [vault\|repo\|all]` | Surface mechanical sweep — rebuild indexes, normalise tags, fix wikilink form. Two-phase preview → apply; `repo`/`all` also repair adopted-plugin harness symlinks. | `tidy.py`, `repo_tidy.py` |
+| `/adjudant tidy [vault\|repo\|all]` | Surface mechanical sweep — rebuild indexes, normalise tags, fix wikilink form, strip/migrate off-schema frontmatter. Two-phase preview → apply; `repo`/`all` also repair adopted-plugin harness symlinks. | `tidy.py`, `repo_tidy.py` |
 | `/adjudant ramasse` | Deep structural clean — analysis phase via `ramasse_scan.py`, planning + execute via the superpowers chain. | `ramasse_scan.py` |
 | `/adjudant dream` | Content/knowledge/memory refresh — semantic. Analysis via `dream.py` (read-only comparator catalog), judge + plan + execute via the superpowers chain, backups for destructive content ops. | `dream.py` |
 | `/adjudant draw <canvas\|base\|diagram> <name\|type>` | Create visual artefacts — canvases, bases, mermaid diagrams (hand-authored or generated from vault data). | `graph.py` |
@@ -81,7 +81,7 @@ Nine hook entries across eight events, all vault-aware:
 |---|---|---|
 | SessionStart | `hooks/scripts/session-start.sh` | Discover vault, detect AGENTS.md+CLAUDE.md, init/resume session note; stamp the Claude Code conversation UUID into `session_id:` (list, idempotent on resume); no resumed marker on `compact`/`clear` sources; nudges the model to replace the intent placeholder until it's filled; renders a board status line when a board exists, plus a suitcase pointer on `startup` when `suitcase-brief` is on PATH |
 | UserPromptSubmit | `hooks/scripts/user-prompt-reminder.sh` | Smart-fire vault reminder when project isn't linked and prompt has vault-y keywords (at most once per session) |
-| PostToolUse (Write\|Edit) | `hooks/scripts/posttooluse-vault-log.py` | Append vault file creation entries to today's session log + stamp `source_session: <uuid>` into the new file's frontmatter (skips session notes / `_handoff` / `_index*` / `_iteration`); matcher widened to `Write\|Edit` so a task-note change under `tasks/` nudges the board via `board_bridge.py --ensure-only` (log + stamp jobs stay Write-only) |
+| PostToolUse (Write\|Edit) | `hooks/scripts/posttooluse-vault-log.py` | Append vault file creation entries to today's session log; stamp `source_session: <uuid>` only when the breadcrumb opts in via `stamp_source_session: true` (default off; skips session notes / `_handoff` / `_index*` / `_iteration`); matcher widened to `Write\|Edit` so a task-note change under `tasks/` nudges the board via `board_bridge.py --ensure-only` (log + stamp jobs stay Write-only) |
 | PostToolUse (Bash) | `hooks/scripts/posttooluse-commit-log.py` | Self-gated commit logging (async; the `if: Bash(git commit *)` filter is defense in depth): append `- HH:MM · commit: {subject}` to today's session log; on `release(<plugin>): vX.Y.Z` subjects also scaffold `releases/v{X.Y.Z}.md` + an index row, never overwriting an existing note |
 | PreCompact | `hooks/scripts/precompact.py` | Mechanical, no model calls (5s budget): append enriched pause tombstone with a `next:` pointer + mirror handoff with a freshness header (traffic light · age · NEXT · stale flag); a blank `.remember` source is never mirrored over a populated handoff |
 | PostCompact | `hooks/scripts/postcompact.py` | Append `- HH:MM · compacted: {gist}` (single line, first 160 chars of the compaction summary) to today's session log; an empty or missing summary writes nothing |
