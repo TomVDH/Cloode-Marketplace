@@ -283,3 +283,21 @@ index-row form resolves across zones by Obsidian suffix matching and is never re
 Machines suggest only along the active/stale axis; `fridge`, `done`, `dead`, `seed`
 are deliberate, user-set states. Breadcrumb key `stale_after_days:` (default 30)
 tunes the staleness threshold per project.
+
+---
+
+## 9. Decision status vocabulary (locked 2026-07-27)
+
+`status:` on a decision note takes exactly one of:
+`active` | `superseded` | `reversed` | `implemented` | `deferred`.
+
+- `active`: in force, guiding work
+- `superseded`: replaced by a newer decision (name it in `supersedes:` on the successor)
+- `reversed`: undone without a replacement
+- `implemented`: the decided work has shipped; the record is historical
+- `deferred`: parked with intent to revisit; not in force, not rejected
+
+Wild historical values (`accepted`, `locked`, `current`) are synonyms of `active`:
+`check` reports them as off-vocabulary, `tidy` migrates them after preview. The
+machine-readable source of truth is `_vault_walk.DECISION_STATUS_VALUES`; the enum
+comment in `templates/decision.md` and this section are held to it by validator 28.

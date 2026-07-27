@@ -1,6 +1,6 @@
 ---
 type: decision
-status: active                # active | superseded | reversed | implemented
+status: active                # active | superseded | reversed | implemented | deferred
 date: {YYYY-MM-DD}
 tags:
   - decision

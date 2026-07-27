@@ -31,8 +31,10 @@ Validators:
  25. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON between them parses
  26. task-status-vocabulary       : every board.py STATUS_TO_COLUMN alias is documented in the vault-standards status alias table
  27. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
+ 28. decision-status-vocabulary   : _vault_walk constants, vault-standards, and the decision template agree on the five-state note vocabulary
+ 29. template-schema-parity       : every registered template's frontmatter keys cover its type's required set and stay inside required | optional
 
-27 validators total.
+29 validators total.
 """
 
 import json
@@ -42,7 +44,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _vault_walk import PROJECT_STATUS_VALUES  # noqa: E402
+from _vault_walk import (  # noqa: E402
+    DECISION_STATUS_VALUES,
+    FIELD_SCHEMA,
+    PROJECT_STATUS_VALUES,
+    parse_frontmatter,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL = ROOT / "skills" / "adjudant"
@@ -700,6 +707,68 @@ def validate_status_vocabulary(r: Result) -> None:
     r.add_pass(name)
 
 
+def validate_decision_status_vocabulary(r: Result) -> None:
+    """28. decision-status-vocabulary — _vault_walk constants, vault-standards,
+    and the decision template agree on the five-state note vocabulary."""
+    name = "decision-status-vocabulary"
+    expected = ("active", "superseded", "reversed", "implemented", "deferred")
+    if DECISION_STATUS_VALUES != expected:
+        r.add_fail(name, f"_vault_walk.DECISION_STATUS_VALUES is {DECISION_STATUS_VALUES}")
+        return
+    vs_path = REFERENCE / "vault-standards.md"
+    if not vs_path.is_file():
+        r.add_fail(name, "reference/vault-standards.md not found")
+        return
+    vs = vs_path.read_text()
+    missing = [s for s in expected if f"`{s}`" not in vs]
+    if missing:
+        r.add_fail(name, f"vault-standards.md missing states: {missing}")
+        return
+    enum_comment = " | ".join(expected)
+    t = TEMPLATES / "decision.md"
+    if not t.is_file():
+        r.add_fail(name, "templates/decision.md not found")
+        return
+    text = t.read_text()
+    m = re.search(r"^status:\s*(\S+)", text, re.MULTILINE)
+    if not m or m.group(1) not in expected:
+        r.add_fail(name, f"{t.name}: status value missing or off-vocabulary")
+        return
+    if enum_comment not in text:
+        r.add_fail(name, f"{t.name}: enum comment '{enum_comment}' missing")
+        return
+    r.add_pass(name)
+
+
+def validate_template_schema_parity(r: Result) -> None:
+    """29. template-schema-parity — every registered template's frontmatter keys
+    cover its type's required set and stay inside required | optional. The
+    permanent regression guard against retired fields re-entering a template."""
+    name = "template-schema-parity"
+    for ftype, entry in FILE_TYPES_REQUIRING_TEMPLATE.items():
+        spec = FIELD_SCHEMA.get(ftype)
+        if spec is None:
+            r.add_fail(name, f"no FIELD_SCHEMA entry for file type {ftype}")
+            return
+        legal = spec["required"] | spec["optional"]
+        for fname in (entry if isinstance(entry, list) else [entry]):
+            path = TEMPLATES / fname
+            if not path.is_file():
+                r.add_fail(name, f"{fname}: template missing")
+                return
+            fm, _body = parse_frontmatter(path.read_text())
+            keys = set(fm.fields)
+            missing = spec["required"] - keys
+            if missing:
+                r.add_fail(name, f"{fname}: missing required keys {sorted(missing)}")
+                return
+            alien = keys - legal
+            if alien:
+                r.add_fail(name, f"{fname}: keys outside schema {sorted(alien)}")
+                return
+    r.add_pass(name)
+
+
 VOICE_MD = REFERENCE / "voice.md"
 
 
@@ -896,6 +965,8 @@ def main() -> int:
     validate_board_template_markers(r)
     validate_task_status_vocabulary(r)
     validate_hooks_wiring(r)
+    validate_decision_status_vocabulary(r)
+    validate_template_schema_parity(r)
     return r.report()
 
 
