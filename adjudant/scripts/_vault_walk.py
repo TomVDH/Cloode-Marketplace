@@ -703,6 +703,89 @@ PROJECT_ZONES: tuple[str, ...] = ("", "_fridge", "_archive")
 DEFAULT_STALE_DAYS = 30
 FRIDGE_NUDGE_DAYS = 180
 
+
+# ============================================================
+# Note-level frontmatter schema (locked 2026-07-27)
+# ============================================================
+
+DECISION_STATUS_VALUES: tuple[str, ...] = (
+    "active", "superseded", "reversed", "implemented", "deferred")
+TASK_STATUS_VALUES: tuple[str, ...] = (
+    "todo", "doing", "review", "blocked", "done", "icebox")
+ITERATION_STATUS_VALUES: tuple[str, ...] = (
+    "drafting", "on-shelf", "picked", "parked", "rejected", "superseded")
+
+# Types whose `status:` value is an enum. Everything else has no status field.
+STATUS_VALUES_FOR_TYPE: dict[str, tuple[str, ...]] = {
+    "decision": DECISION_STATUS_VALUES,
+    "task": TASK_STATUS_VALUES,
+    "project": PROJECT_STATUS_VALUES,
+    "iteration": ITERATION_STATUS_VALUES,
+}
+
+# Per Bucket-A type: required keys must be present; required | optional is the
+# full legal key set — any other key is an unknown field (drift). `project` is
+# deliberately absent everywhere: membership is the path. `source_session` is
+# optional wherever the stamp hook could historically write it, so old stamps
+# never read as drift.
+FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
+    "decision": {
+        "required": frozenset({"type", "status", "date", "tags"}),
+        "optional": frozenset({"supersedes", "source_session"}),
+    },
+    "session": {
+        "required": frozenset({"type", "date", "started", "session_id", "tags"}),
+        "optional": frozenset(),
+    },
+    "note": {
+        "required": frozenset({"type", "created", "updated", "tags"}),
+        "optional": frozenset({"source_session"}),
+    },
+    "doc": {
+        "required": frozenset({"type", "title", "updated", "tags"}),
+        "optional": frozenset({"source_session"}),
+    },
+    "handoff": {
+        "required": frozenset({"type", "updated", "source", "tags"}),
+        "optional": frozenset({"created"}),
+    },
+    "task": {
+        "required": frozenset({"type", "status", "tags"}),
+        "optional": frozenset({"category", "code", "related", "note", "source_session"}),
+    },
+    "release": {
+        "required": frozenset({"type", "version", "date", "tags"}),
+        "optional": frozenset({"source_session"}),
+    },
+    "source": {
+        "required": frozenset({"type", "title", "tags"}),
+        "optional": frozenset({"author", "url", "medium", "year", "source_session"}),
+    },
+    "iteration": {
+        "required": frozenset({"type", "identifier", "status", "date", "tags"}),
+        "optional": frozenset({"track", "register", "supersedes", "builds_on",
+                               "artefacts", "source_session"}),
+    },
+    "dream-report": {
+        "required": frozenset({"type", "date", "tags"}),
+        "optional": frozenset({"source_session"}),
+    },
+    "project": {
+        "required": frozenset({"type", "project_type", "slug", "aliases",
+                               "status", "created", "updated", "tags"}),
+        "optional": frozenset({"repo", "stack", "marketplace", "extra_folders",
+                               "relations", "codename"}),
+    },
+    "index": {
+        "required": frozenset({"type", "tags"}),
+        "optional": frozenset({"updated"}),
+    },
+    "vault-home": {
+        "required": frozenset({"type", "updated"}),
+        "optional": frozenset(),
+    },
+}
+
 _DATED_STEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 
 

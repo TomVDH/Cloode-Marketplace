@@ -772,5 +772,72 @@ class TestZones(unittest.TestCase):
                              vault / "projects" / "_archive" / "proj")
 
 
+from _vault_walk import (
+    BUCKET_A_TYPES,
+    DECISION_STATUS_VALUES,
+    FIELD_SCHEMA,
+    ITERATION_STATUS_VALUES,
+    STATUS_VALUES_FOR_TYPE,
+    TASK_STATUS_VALUES,
+)
+
+
+class TestFieldSchema(unittest.TestCase):
+
+    def test_decision_status_values_locked(self):
+        self.assertEqual(DECISION_STATUS_VALUES,
+                         ("active", "superseded", "reversed", "implemented", "deferred"))
+
+    def test_task_status_values_locked(self):
+        self.assertEqual(TASK_STATUS_VALUES,
+                         ("todo", "doing", "review", "blocked", "done", "icebox"))
+
+    def test_iteration_status_values_locked(self):
+        self.assertEqual(ITERATION_STATUS_VALUES,
+                         ("drafting", "on-shelf", "picked", "parked", "rejected", "superseded"))
+
+    def test_status_values_for_type_keys(self):
+        self.assertEqual(set(STATUS_VALUES_FOR_TYPE),
+                         {"decision", "task", "project", "iteration"})
+        self.assertIs(STATUS_VALUES_FOR_TYPE["decision"], DECISION_STATUS_VALUES)
+        self.assertIs(STATUS_VALUES_FOR_TYPE["project"], PROJECT_STATUS_VALUES)
+
+    def test_schema_covers_every_bucket_a_type_plus_home(self):
+        self.assertEqual(set(FIELD_SCHEMA), set(BUCKET_A_TYPES) | {"vault-home"})
+
+    def test_every_entry_has_required_and_optional_frozensets(self):
+        for ftype, spec in FIELD_SCHEMA.items():
+            self.assertEqual(set(spec), {"required", "optional"}, ftype)
+            self.assertIsInstance(spec["required"], frozenset, ftype)
+            self.assertIsInstance(spec["optional"], frozenset, ftype)
+            self.assertIn("type", spec["required"], ftype)
+
+    def test_required_and_optional_disjoint(self):
+        for ftype, spec in FIELD_SCHEMA.items():
+            self.assertFalse(spec["required"] & spec["optional"], ftype)
+
+    def test_project_field_absent_everywhere(self):
+        for ftype, spec in FIELD_SCHEMA.items():
+            self.assertNotIn("project", spec["required"], ftype)
+            self.assertNotIn("project", spec["optional"], ftype)
+
+    def test_decision_shape(self):
+        self.assertEqual(FIELD_SCHEMA["decision"]["required"],
+                         frozenset({"type", "status", "date", "tags"}))
+        self.assertEqual(FIELD_SCHEMA["decision"]["optional"],
+                         frozenset({"supersedes", "source_session"}))
+
+    def test_session_requires_session_id(self):
+        self.assertIn("session_id", FIELD_SCHEMA["session"]["required"])
+        self.assertEqual(FIELD_SCHEMA["session"]["optional"], frozenset())
+
+    def test_project_brief_shape(self):
+        self.assertEqual(FIELD_SCHEMA["project"]["required"],
+                         frozenset({"type", "project_type", "slug", "aliases",
+                                    "status", "created", "updated", "tags"}))
+        self.assertIn("codename", FIELD_SCHEMA["project"]["optional"])
+        self.assertIn("marketplace", FIELD_SCHEMA["project"]["optional"])
+
+
 if __name__ == "__main__":
     unittest.main()
