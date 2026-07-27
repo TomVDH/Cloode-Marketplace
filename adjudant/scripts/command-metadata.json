@@ -39,7 +39,7 @@
     },
     {
       "name": "tidy",
-      "description": "Surface mechanical sweep — indexes, tags, wikilink form, updated:. Routine (daily/weekly). Two-phase preview → apply, idempotent; [vault|repo|all] also repairs adopted-plugin harness symlinks in the repo.",
+      "description": "Surface mechanical sweep — indexes, tags, wikilink form, updated:, frontmatter schema strip/migrate. Routine. Two-phase preview → apply, idempotent; [vault|repo|all] also repairs adopted-plugin harness symlinks.",
       "argumentHint": "[vault|repo|all]",
       "reference": "reference/tidy.md",
       "weight": "medium"

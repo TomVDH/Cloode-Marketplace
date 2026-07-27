@@ -36,12 +36,13 @@ Repo ops use `--project-dir` as the repo root directly (no breadcrumb).
 - After `/adjudant dream` flags fixable items
 - After importing/merging vault content
 
-## The 4 features (locked spec)
+## The 5 features (locked spec)
 
 1. **Rebuild `_index.md`** in every project subfolder with ≥2 same-type siblings. Chronological reverse-sort for date-prefixed filenames, alphabetical otherwise. Skip `sessions/`, `images/`, `assets/`, `previews/`, `iterations/`, `_archive/`.
 2. **Bump `updated:` frontmatter** on touched files where applicable (`doc`, `project`, `note` types). Never adds the field if absent.
 3. **Normalise tags** per the locked 2026-05-25 schema in `reference/vault-standards.md` §2 — drop Bucket D (`#ob/*`, vague topicals, project-slug self-tags, crew names, `type/*` tags), migrate Bucket B (`cabinet/decision` → `decision`, etc.). Leave Bucket A + Bucket C untouched.
 4. **Fix wikilink form** — rewrite `[text](path.md)` to `[[stem|text]]` IFF `path` resolves to a vault `.md`. Leave external links + non-vault paths alone.
+5. **Repair frontmatter schema** per `FIELD_SCHEMA` (vault-standards §1/§9) — strip unknown fields (`project:`, stray keys), migrate legacy keys (`node_type` → `type`, `originSessionId` → `source_session`; rename when the target is absent, drop when both exist), normalise decision-status aliases (`accepted`/`locked`/`current` → `active`). Never touches required keys, parse-error files, non-canonical types, or task-status aliases (accepted input; the board normalizes lanes on read). The preview's `summary.md` lists every strip/migrate under `## Schema`.
 
 ## Run
 

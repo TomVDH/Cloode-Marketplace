@@ -482,5 +482,183 @@ class TestTidyCost(unittest.TestCase):
             self.assertGreaterEqual(payload["cost"]["est_read_tokens"], 2000)
 
 
+from tidy import (
+    _drop_frontmatter_keys,
+    _rename_frontmatter_key,
+    _set_frontmatter_scalar,
+)
+
+
+class TestSchemaPrimitives(unittest.TestCase):
+
+    def test_drop_single_line_key(self):
+        text = '---\ntype: note\nproject: "[[projects/x/brief|x]]"\ncreated: 2026-01-01\n---\nB\n'
+        out = _drop_frontmatter_keys(text, {"project"})
+        self.assertNotIn("project:", out)
+        self.assertIn("type: note", out)
+        self.assertIn("created: 2026-01-01", out)
+
+    def test_drop_block_list_key_consumes_items(self):
+        text = "---\ntype: handoff\nsession_id:\n  - aaa\n  - bbb\nupdated: 2026-01-01\n---\nB\n"
+        out = _drop_frontmatter_keys(text, {"session_id"})
+        self.assertNotIn("session_id", out)
+        self.assertNotIn("aaa", out)
+        self.assertIn("updated: 2026-01-01", out)
+
+    def test_drop_nested_map_key_consumes_children(self):
+        text = "---\ntype: note\nmetadata:\n  node_type: memory\n  foo: bar\ntags:\n  - note\n---\nB\n"
+        out = _drop_frontmatter_keys(text, {"metadata"})
+        self.assertNotIn("metadata", out)
+        self.assertNotIn("node_type", out)
+        self.assertIn("tags:", out)
+        self.assertIn("  - note", out)
+
+    def test_drop_never_touches_body(self):
+        text = "---\ntype: note\nfoo: bar\n---\nbody keeps foo: bar mention\n"
+        out = _drop_frontmatter_keys(text, {"foo"})
+        self.assertIn("body keeps foo: bar mention", out)
+
+    def test_drop_quoted_colon_sibling_untouched(self):
+        text = '---\ntype: doc\ntitle: "A: B"\nfoo: bar\n---\nB\n'
+        out = _drop_frontmatter_keys(text, {"foo"})
+        self.assertIn('title: "A: B"', out)
+        self.assertNotIn("foo: bar", out)
+
+    def test_rename_preserves_value(self):
+        text = "---\nnode_type: memory\ntags:\n  - note\n---\nB\n"
+        out = _rename_frontmatter_key(text, "node_type", "type")
+        self.assertIn("type: memory", out)
+        self.assertNotIn("node_type", out)
+
+    def test_set_scalar_preserves_trailing_comment(self):
+        text = "---\ntype: decision\nstatus: accepted   # wild\ndate: 2026-01-01\n---\nB\n"
+        out = _set_frontmatter_scalar(text, "status", "active")
+        self.assertIn("status: active", out)
+        self.assertIn("# wild", out)
+
+
+_SCHEMA_NOTE_DRIFTED = (
+    '---\ntype: note\nproject: "[[projects/t/brief|t]]"\noriginSessionId: abc-123\n'
+    "created: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - note\n---\nN\n")
+
+
+class TestSchemaPhase(unittest.TestCase):
+
+    def _preview(self, root: Path):
+        return build_preview(root, build_vault_index(root), "t")
+
+    def test_strip_project_and_migrate_origin_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["notes/n.md"]["proposed_content"]
+            self.assertNotIn("project:", prop)
+            self.assertNotIn("originSessionId", prop)
+            self.assertIn("source_session: abc-123", prop)
+            self.assertEqual(cs["schema_actions"]["notes/n.md"]["dropped"], ["project"])
+            self.assertIn("originSessionId -> source_session",
+                          cs["schema_actions"]["notes/n.md"]["renamed"])
+
+    def test_origin_session_dropped_when_source_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED.replace(
+                "originSessionId: abc-123\n",
+                "originSessionId: abc-123\nsource_session: def-456\n"))
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["notes/n.md"]["proposed_content"]
+            self.assertNotIn("originSessionId", prop)
+            self.assertIn("source_session: def-456", prop)
+
+    def test_node_type_renamed_when_type_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "m.md", "---\nnode_type: memory\ntags:\n  - note\n---\nM\n")
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["notes/m.md"]["proposed_content"]
+            self.assertIn("type: memory", prop)
+            self.assertNotIn("node_type", prop)
+
+    def test_node_type_dropped_when_both(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED.replace(
+                "type: note\n", "type: note\nnode_type: note\n"))
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["notes/n.md"]["proposed_content"]
+            self.assertIn("type: note", prop)
+            self.assertNotIn("node_type", prop)
+
+    def test_decision_alias_status_migrates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "decisions" / "2026-01-01-d.md",
+               "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\ntags:\n  - decision\n---\nD\n")
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["decisions/2026-01-01-d.md"]["proposed_content"]
+            self.assertIn("status: active", prop)
+
+    def test_task_alias_status_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "tasks" / "t.md", "---\ntype: task\nstatus: wip\ntags:\n  - task\n---\nT\n")
+            cs = self._preview(root)
+            self.assertNotIn("tasks/t.md", cs["file_proposals"])
+
+    def test_required_keys_never_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "sessions" / "2026-01-01.md",
+               "---\ntype: session\ndate: 2026-01-01\nstarted: \"09:00\"\n"
+               "session_id: []\nfoo: bar\ntags:\n  - session\n---\nS\n")
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["sessions/2026-01-01.md"]["proposed_content"]
+            self.assertNotIn("foo: bar", prop)
+            self.assertIn("session_id: []", prop)
+            self.assertIn("date: 2026-01-01", prop)
+
+    def test_parse_error_file_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "broken.md", "---\ntype: note\nno closing fence\n")
+            cs = self._preview(root)
+            self.assertNotIn("notes/broken.md", cs["file_proposals"])
+
+    def test_updated_bumped_on_schema_strip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
+            cs = self._preview(root)
+            prop = cs["file_proposals"]["notes/n.md"]["proposed_content"]
+            self.assertNotIn("updated: 2026-01-01", prop)
+
+    def test_summary_has_schema_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
+            cs = self._preview(root)
+            preview = write_preview_to_disk(root, cs)
+            summary = (preview / "summary.md").read_text()
+            self.assertIn("## Schema", summary)
+            self.assertIn("notes/n.md", summary)
+
+    def test_schema_apply_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
+            _w(root / "_handoff.md",
+               "---\ntype: handoff\nsession_id:\n  - aaa\nupdated: 2026-01-01\n"
+               "source: sync\ntags:\n  - handoff\n---\nH\n")
+            cs = self._preview(root)
+            self.assertIn("_handoff.md", cs["file_proposals"])
+            write_preview_to_disk(root, cs)
+            apply_preview(root)
+            cs2 = self._preview(root)
+            self.assertEqual(cs2["schema_actions"], {})
+            self.assertNotIn("notes/n.md", cs2["file_proposals"])
+            self.assertNotIn("_handoff.md", cs2["file_proposals"])
+
+
 if __name__ == "__main__":
     unittest.main()

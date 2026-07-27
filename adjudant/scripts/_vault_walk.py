@@ -821,13 +821,11 @@ def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Opt
     if enum is not None:
         status = fm.fields.get("status")
         if isinstance(status, str) and status and status not in enum:
-            if ftype == "decision":
-                normalizable = status in DECISION_STATUS_ALIASES
-            elif ftype == "task":
-                normalizable = bool(aliases and status in aliases)
+            if ftype == "task" and aliases and status in aliases:
+                pass  # accepted input per the alias table; the board normalizes lanes on read
             else:
-                normalizable = False
-            out["status_invalid"] = {"value": status, "normalizable": normalizable}
+                normalizable = ftype == "decision" and status in DECISION_STATUS_ALIASES
+                out["status_invalid"] = {"value": status, "normalizable": normalizable}
     if "node_type" in keys and "type" in keys:
         out["type_conflict"] = True
     if not out:

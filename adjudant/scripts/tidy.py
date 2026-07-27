@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Adjudant tidy — mechanical vault sweep.
 
-Four features (locked spec — replaces the old ramasse mechanical surface):
+Five features (locked spec — replaces the old ramasse mechanical surface):
   1. Rebuild `_index.md` in every project subfolder with ≥2 same-type siblings
   2. Bump `updated:` frontmatter on touched files (doc, brief, note types)
   3. Normalise tags per locked 2026-05-25 schema (drop Bucket D, migrate Bucket B)
   4. Rewrite `[text](path.md)` → `[[path-stem|text]]` when path resolves in vault
+  5. Frontmatter schema repair per FIELD_SCHEMA: strip unknown fields, migrate
+     legacy keys (node_type → type, originSessionId → source_session), and
+     normalise decision-status aliases (accepted/locked/current → active).
+     Task-status aliases are accepted input and never rewritten.
 
 Idempotent: a second run with no fresh drift = no changes.
 
@@ -37,6 +41,7 @@ from _cost import cost_block, read_threshold, stat_walk
 from _vault_walk import (
     BUCKET_A_TYPES,
     BUCKET_B_MIGRATIONS,
+    DECISION_STATUS_ALIASES,
     INDEX_EXEMPT_FOLDERS,
     MD_LINK_RE,
     VaultFile,
@@ -46,9 +51,18 @@ from _vault_walk import (
     parse_frontmatter,
     resolve_vault,
     resolve_wikilink,
+    schema_drift_for_file,
     smart_project_dir, VaultUnresolvableError,
     walk_project,
 )
+
+# Task-status alias set for feature 5's drift check (same defensive import
+# as check.py; aliases are accepted input, never rewritten by tidy).
+try:
+    from board import STATUS_TO_COLUMN
+    _TASK_STATUS_ALIASES: set = set(STATUS_TO_COLUMN)
+except Exception:  # pragma: no cover - degraded, schema phase still strips
+    _TASK_STATUS_ALIASES = set()
 
 
 def _migrate_ob_to_bucket_a(tag: str) -> Optional[str]:
@@ -438,6 +452,66 @@ def _bump_updated_field(text: str, today: str) -> str:
     return "\n".join(lines)
 
 
+def _frontmatter_close(lines: list[str]) -> Optional[int]:
+    """Index of the closing --- line, or None when there is no block."""
+    if not lines or lines[0].rstrip() != "---":
+        return None
+    for i in range(1, len(lines)):
+        if lines[i].rstrip() == "---":
+            return i
+    return None
+
+
+def _drop_frontmatter_keys(text: str, keys: set[str]) -> str:
+    """Drop column-0 frontmatter keys plus their indented continuation lines
+    (block lists and nested maps alike). Never touches the body."""
+    lines = text.split("\n")
+    close = _frontmatter_close(lines)
+    if close is None or not keys:
+        return text
+    out = [lines[0]]
+    i = 1
+    while i < close:
+        m = re.match(r"^([A-Za-z_][\w-]*)\s*:", lines[i])
+        if m and m.group(1) in keys:
+            i += 1
+            while i < close and (lines[i].startswith(" ") or lines[i].startswith("\t")):
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out + lines[close:])
+
+
+def _rename_frontmatter_key(text: str, old: str, new: str) -> str:
+    """Rename a column-0 frontmatter key, value untouched."""
+    lines = text.split("\n")
+    close = _frontmatter_close(lines)
+    if close is None:
+        return text
+    pat = re.compile(rf"^{re.escape(old)}(\s*:)")
+    for i in range(1, close):
+        if pat.match(lines[i]):
+            lines[i] = pat.sub(f"{new}\\1", lines[i], count=1)
+            break
+    return "\n".join(lines)
+
+
+def _set_frontmatter_scalar(text: str, key: str, value: str) -> str:
+    """Set a scalar frontmatter value, preserving any trailing # comment.
+    Narrow use: enum values (status), never quoted strings."""
+    lines = text.split("\n")
+    close = _frontmatter_close(lines)
+    if close is None:
+        return text
+    for i in range(1, close):
+        m = re.match(rf"^({re.escape(key)}\s*:\s*)([^#]*?)(\s*#.*)?$", lines[i])
+        if m:
+            lines[i] = f"{m.group(1)}{value}{m.group(3) or ''}"
+            break
+    return "\n".join(lines)
+
+
 # ============================================================
 # Preview build
 # ============================================================
@@ -511,7 +585,8 @@ def build_preview(
                 "proposed_content": proposed,
             }
 
-    # --- Features 2-4: per-file edits ---
+    # --- Features 2-5: per-file edits ---
+    schema_actions: dict[str, dict[str, Any]] = {}
     for f in files:
         try:
             # Strict decode: never round-trip errors="replace" text back to
@@ -534,6 +609,48 @@ def build_preview(
             # Re-assemble: original frontmatter prefix + new body
             modified = _strip_then_prepend_body(modified, new_body)
 
+        # Feature 5: frontmatter schema repair. Legacy-key migrations run on
+        # any parse-clean block; unknown-field strips and decision-status
+        # normalisation additionally need a canonical type (schema_drift).
+        if f.frontmatter.has_block and not f.frontmatter.parse_error:
+            fields = f.frontmatter.fields
+            renames: list[tuple[str, str]] = []
+            drops: set[str] = set()
+            status_fix: Optional[tuple[str, str]] = None
+            if "node_type" in fields:
+                if "type" in fields:
+                    drops.add("node_type")
+                else:
+                    renames.append(("node_type", "type"))
+            if "originSessionId" in fields:
+                if "source_session" in fields:
+                    drops.add("originSessionId")
+                else:
+                    renames.append(("originSessionId", "source_session"))
+            drift = schema_drift_for_file(f, _TASK_STATUS_ALIASES)
+            if drift:
+                for k in drift.get("unknown_fields", ()):
+                    if k not in ("node_type", "originSessionId"):
+                        drops.add(k)
+                si = drift.get("status_invalid")
+                if si and f.file_type == "decision" and si.get("normalizable"):
+                    status_fix = (si["value"], DECISION_STATUS_ALIASES[si["value"]])
+            if renames or drops or status_fix:
+                for old, new in renames:
+                    modified = _rename_frontmatter_key(modified, old, new)
+                if drops:
+                    modified = _drop_frontmatter_keys(modified, drops)
+                if status_fix:
+                    modified = _set_frontmatter_scalar(modified, "status", status_fix[1])
+                act: dict[str, Any] = {}
+                if drops:
+                    act["dropped"] = sorted(drops)
+                if renames:
+                    act["renamed"] = [f"{o} -> {n}" for o, n in renames]
+                if status_fix:
+                    act["status"] = f"{status_fix[0]} -> {status_fix[1]}"
+                schema_actions[str(f.rel_path)] = act
+
         # Feature 2: bump updated (only if other changes happened, and only on eligible types)
         if modified != original and f.file_type in UPDATED_BUMP_TYPES:
             modified = _bump_updated_field(modified, today)
@@ -553,10 +670,12 @@ def build_preview(
         "summary": {
             "files_modified": len(file_proposals),
             "indexes_rebuilt": len(index_proposals),
+            "schema_files": len(schema_actions),
             "total_changes": len(file_proposals) + len(index_proposals),
         },
         "file_proposals": file_proposals,
         "index_proposals": index_proposals,
+        "schema_actions": schema_actions,
     }
 
 
@@ -639,6 +758,19 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
     summary_lines.append("")
     for rel, info in sorted(change_set["file_proposals"].items()):
         summary_lines.append(f"- `{rel}` ({info['original_hash']} → {info['proposed_hash']})")
+    if change_set.get("schema_actions"):
+        summary_lines.append("")
+        summary_lines.append("## Schema")
+        summary_lines.append("")
+        for rel, act in sorted(change_set["schema_actions"].items()):
+            parts = []
+            if act.get("renamed"):
+                parts.append("rename " + ", ".join(act["renamed"]))
+            if act.get("dropped"):
+                parts.append("strip " + ", ".join(act["dropped"]))
+            if act.get("status"):
+                parts.append("status " + act["status"])
+            summary_lines.append(f"- `{rel}`: {'; '.join(parts)}")
     summary_lines.append("")
     summary_lines.append("## Next steps")
     summary_lines.append("")

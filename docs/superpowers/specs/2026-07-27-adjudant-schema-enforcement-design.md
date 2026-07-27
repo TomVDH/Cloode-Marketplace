@@ -76,10 +76,11 @@ Template enum comments stay in place; validators hold them to the constants (the
 
 - `schema_drift_for_file(vf)` / `schema_drift(files)` in `_vault_walk.py`: per parsed, canonically
   typed file report `missing_required`, `unknown_fields`, `status_invalid` (per
-  `STATUS_VALUES_FOR_TYPE`, task aliases from `board.STATUS_TO_COLUMN` count as normalizable), and
-  `type_conflict` (`node_type` beside `type`; a `metadata:`-nested shape surfaces as unknown key
-  `metadata`). Parse-error and untyped files stay ramasse territory (`detect_frontmatter_drift`,
-  `detect_type_drift`); no duplication.
+  `STATUS_VALUES_FOR_TYPE`; task aliases from `board.STATUS_TO_COLUMN` are accepted input and never
+  flagged - the board normalizes lanes on read, and lanes like `next` have no canonical status
+  equivalent), and `type_conflict` (`node_type` beside `type`; a `metadata:`-nested shape surfaces
+  as unknown key `metadata`). Parse-error and untyped files stay ramasse territory
+  (`detect_frontmatter_drift`, `detect_type_drift`); no duplication.
 - `check` gains a schema section: counts plus capped samples, rendered per `reference/check.md`
   with a tidy nudge when drift exists. check's metadata description already promises "schema
   compliance"; this makes it true.
@@ -88,7 +89,8 @@ Template enum comments stay in place; validators hold them to the constants (the
 
 ## Workstream 3: repair (tidy feature 5)
 
-- New tidy feature beside the existing four: strip unknown fields, migrate legacy keys.
+- New tidy feature beside the existing four: strip unknown fields, migrate legacy keys, normalise
+  decision-status aliases (`accepted`/`locked`/`current` to `active`; task aliases untouched).
   Migrations preserve provenance: `node_type` renames to `type` when `type` is absent, drops when
   both exist; `originSessionId` renames to `source_session` on the same rule.
 - Two rewrite primitives modeled on `_rewrite_tags_block`: `_drop_frontmatter_keys` (consumes

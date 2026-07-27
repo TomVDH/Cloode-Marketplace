@@ -892,12 +892,14 @@ class TestSchemaDrift(unittest.TestCase):
         d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace("status: active", "status: banana")))
         self.assertFalse(d["status_invalid"]["normalizable"])
 
-    def test_task_alias_status_normalizable_via_alias_set(self):
+    def test_task_alias_status_accepted_with_alias_set(self):
+        # Aliases are accepted input (vault-standards section 4): with the
+        # alias set supplied a wip task is clean; without it, flagged but
+        # never normalizable (tidy must not rewrite lane information).
         task = "---\ntype: task\nstatus: wip\ntags:\n  - task\n---\n"
-        d = schema_drift_for_file(_vf(task), aliases={"wip", "parked"})
-        self.assertTrue(d["status_invalid"]["normalizable"])
-        d2 = schema_drift_for_file(_vf(task))
-        self.assertFalse(d2["status_invalid"]["normalizable"])
+        self.assertIsNone(schema_drift_for_file(_vf(task), aliases={"wip", "parked"}))
+        d = schema_drift_for_file(_vf(task))
+        self.assertFalse(d["status_invalid"]["normalizable"])
 
     def test_session_with_empty_id_list_clean(self):
         s = ("---\ntype: session\ndate: 2026-07-27\nstarted: \"09:00\"\n"
