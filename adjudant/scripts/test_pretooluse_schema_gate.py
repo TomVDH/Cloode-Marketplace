@@ -143,5 +143,47 @@ class TestFailsOpen(_GateHarness):
             self.assertEqual(rc, 0)
 
 
+class TestSkipList(_GateHarness):
+    """The hook's own exemptions (_SKIP_NAMES and the sessions/ folder) must
+    hold even when the content would otherwise be blocked. Each target here
+    uses the same payload TestBlocks proves is blocking, so a passing test
+    demonstrates the exemption is doing the work, not that the content
+    happens to be clean.
+    """
+
+    BLOCKING = "---\ntype: decision\n---\n\nB\n"
+
+    def test_handoff_file_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(proot / "_handoff.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+    def test_index_file_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(proot / "_index.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+    def test_iteration_file_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(proot / "_iteration.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+    def test_brief_file_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(proot / "brief.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+    def test_sessions_dir_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(
+                proot / "sessions" / "2026-07-28.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
