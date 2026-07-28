@@ -77,6 +77,18 @@ what was written and name a follow-up only if something was skipped.
 - Copy `.adjudant-tidy-preview/files/<rel_path>` to live position
 - Delete `.adjudant-tidy-preview/`
 
+## Stale-preview guard (locked)
+
+`apply` re-checks each file against the `original_hash` recorded at preview
+time. A file edited between the two phases (by you, by another session, or by
+the other machine via sync) is **left alone**, listed in
+`{backup}/SKIPPED-STALE.txt`, and reported on stderr plus the `skipped_stale`
+JSON key. Render that as its own line when non-empty and point at a fresh
+`preview`. Index rebuilds carry no hash (they are regenerated wholesale) and
+are always applied. Targets that resolve outside the project dir are refused
+outright, and each apply gets its own backup dir so a same-second retry can
+never overwrite the first backup.
+
 ## Fail conditions
 
 | Condition | Action |

@@ -386,6 +386,94 @@ class TestBuildPreview(unittest.TestCase):
 # ============================================================
 
 
+class TestApplySafety(unittest.TestCase):
+    """Audit 2026-07-27 findings 8, 12, 17 — the apply path could destroy work.
+
+    The vault is multi-machine synced and the preview window exists precisely
+    so a human or agent can review (and edit) between the two phases.
+    """
+
+    def _dirty(self, root: Path) -> Path:
+        """A project with one file tidy will want to change."""
+        p = root / "decisions" / "2026-01-01-d.md"
+        _w(p, "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+              "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
+        return p
+
+    def test_stale_preview_does_not_clobber_a_fresh_edit(self):
+        # Finding 8: original_hash is recorded in changes.json and never
+        # checked, so an edit made between preview and apply vanished.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live = self._dirty(root)
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            live.write_text(live.read_text() + "\nA paragraph I added after preview.\n")
+            apply_preview(root)
+            self.assertIn("A paragraph I added after preview.", live.read_text(),
+                          "apply must not overwrite a file edited since preview")
+
+    def test_untouched_files_still_apply_when_a_sibling_is_stale(self):
+        # One stale file must not block the rest of the sweep.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stale = self._dirty(root)
+            other = root / "decisions" / "2026-01-02-e.md"
+            _w(other, "---\ntype: decision\nstatus: locked\ndate: 2026-01-02\n"
+                      "tags:\n  - decision\n---\n\nBody.\n")
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            stale.write_text(stale.read_text() + "\nfresh edit\n")
+            apply_preview(root)
+            self.assertIn("fresh edit", stale.read_text())
+            self.assertIn("status: active", other.read_text())
+
+    def test_backup_dir_collision_preserves_the_first_backup(self):
+        # Finding 12: second-granularity dirs + exist_ok=True meant a retry
+        # inside the same second overwrote the ONLY pre-change backup with
+        # already-tidied content.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._dirty(root)
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            first = apply_preview(root)
+            legacy = list(first.rglob("*.legacy"))
+            self.assertTrue(legacy, "first apply must back up the original")
+            self.assertIn("status: accepted", legacy[0].read_text(),
+                          "backup must hold the PRE-tidy content")
+            # Immediately run a second cycle (same wall-clock second).
+            cs2 = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs2)
+            second = apply_preview(root)
+            self.assertNotEqual(first, second, "each apply needs its own backup dir")
+            self.assertIn("status: accepted", legacy[0].read_text(),
+                          "the first backup must survive a same-second retry")
+
+    def test_apply_refuses_paths_outside_the_project(self):
+        # Finding 17: a tampered changes.json wrote outside project_dir,
+        # bypassing both the backup and the skip set.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            root.mkdir()
+            self._dirty(root)
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            preview = root / PREVIEW_DIR_NAME
+            changes = json.loads((preview / "changes.json").read_text())
+            escaped = "../escaped-outside-project.md"
+            changes["file_proposals"][escaped] = {
+                "original_hash": "x", "proposed_hash": "y",
+                "proposed_content": "pwned\n"}
+            (preview / "changes.json").write_text(json.dumps(changes))
+            target = preview / "files" / escaped
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("pwned\n")
+            apply_preview(root)
+            self.assertFalse((Path(tmp) / "escaped-outside-project.md").exists(),
+                             "apply must never write outside the project dir")
+
+
 class TestPreviewApplyRoundTrip(unittest.TestCase):
 
     def test_full_cycle(self):

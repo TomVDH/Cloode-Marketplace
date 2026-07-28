@@ -33,6 +33,7 @@ import json
 import re
 import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -787,8 +788,34 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
 # ============================================================
 
 
+def _contained(root: Path, rel: str) -> Optional[Path]:
+    """`root/rel` resolved, or None when it escapes `root`.
+
+    changes.json is editable by design (the preview window exists so a human
+    or agent can review it), so its keys are untrusted input: a tampered
+    `../escaped.md` used to be written outside the project, bypassing both the
+    backup and the walker's skip set.
+    """
+    try:
+        root_r = root.resolve()
+        target = (root_r / rel).resolve()
+    except (OSError, ValueError):
+        return None
+    if target == root_r or root_r not in target.parents:
+        return None
+    return target
+
+
 def apply_preview(project_dir: Path) -> Path:
-    """Apply .adjudant-tidy-preview/ to live files. Returns backup dir path."""
+    """Apply .adjudant-tidy-preview/ to live files. Returns backup dir path.
+
+    Every proposal is gated three ways before it can touch a live file: the
+    target must stay inside the project, the live file must still hash to the
+    `original_hash` recorded at preview time (otherwise it was edited since,
+    and the stale proposal would silently eat that edit), and the pre-change
+    copy must land in a backup dir that no concurrent or retried apply can
+    overwrite.
+    """
     preview = project_dir / PREVIEW_DIR_NAME
     if not preview.is_dir():
         raise RuntimeError(f"no preview at {preview}")
@@ -797,19 +824,35 @@ def apply_preview(project_dir: Path) -> Path:
         raise RuntimeError(f"corrupt preview: {changes_path} missing")
     change_set = json.loads(changes_path.read_text())
 
+    # Unique per apply: second-granularity dirs with exist_ok=True let a retry
+    # inside the same second overwrite the ONLY pre-change backup with
+    # already-tidied content, making the original unrecoverable.
+    backup_root = project_dir / BACKUP_DIR_NAME
+    backup_root.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_dir = project_dir / BACKUP_DIR_NAME / timestamp
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = Path(tempfile.mkdtemp(prefix=f"{timestamp}-", dir=backup_root))
 
     files_root = preview / "files"
+    skipped_stale: list[str] = []
 
     # Backup + apply
     for rel_set in (change_set["file_proposals"], change_set["index_proposals"]):
-        for rel in rel_set.keys():
-            live = project_dir / rel
-            proposed = files_root / rel
-            if not proposed.is_file():
+        for rel, info in rel_set.items():
+            live = _contained(project_dir, rel)
+            proposed = _contained(files_root, rel)
+            if live is None or proposed is None or not proposed.is_file():
                 continue
+            # Stale-preview guard: only for proposals that carry a recorded
+            # hash (index rebuilds are regenerated wholesale and carry none).
+            original_hash = (info or {}).get("original_hash")
+            if original_hash and live.is_file():
+                try:
+                    if _hash_short(live.read_text()) != original_hash:
+                        skipped_stale.append(rel)
+                        continue
+                except (OSError, UnicodeDecodeError):
+                    skipped_stale.append(rel)
+                    continue
             # Backup live (if exists)
             if live.is_file():
                 backup_target = backup_dir / (rel + ".legacy")
@@ -818,6 +861,12 @@ def apply_preview(project_dir: Path) -> Path:
             # Apply
             live.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(proposed, live)
+
+    if skipped_stale:
+        (backup_dir / "SKIPPED-STALE.txt").write_text(
+            "These files changed between preview and apply and were left alone.\n"
+            "Re-run `tidy preview` to fold the newer content in.\n\n"
+            + "\n".join(sorted(skipped_stale)) + "\n")
 
     # Clean up preview
     shutil.rmtree(preview)
@@ -911,8 +960,18 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"error: no preview at {project_dir / PREVIEW_DIR_NAME}; run 'preview' first", file=sys.stderr)
             return 1
         backup_dir = apply_preview(project_dir)
+        skipped_note = backup_dir / "SKIPPED-STALE.txt"
+        skipped: list[str] = []
+        if skipped_note.is_file():
+            skipped = [ln for ln in skipped_note.read_text().splitlines()
+                       if ln and not ln.startswith(("These files", "Re-run"))]
         print(f"[tidy] applied; backup at {backup_dir}", file=sys.stderr)
-        print(json.dumps({"backup_dir": str(backup_dir)}))
+        if skipped:
+            # Never let a skip be silent: the user asked for these changes.
+            print(f"[tidy] {len(skipped)} file(s) changed since preview and were "
+                  f"LEFT ALONE: {', '.join(skipped)}", file=sys.stderr)
+            print("[tidy] re-run preview to fold the newer content in", file=sys.stderr)
+        print(json.dumps({"backup_dir": str(backup_dir), "skipped_stale": skipped}))
         return 0
 
     return 2  # unreachable
