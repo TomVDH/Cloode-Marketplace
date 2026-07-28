@@ -1063,22 +1063,27 @@ In both `adjudant/.claude-plugin/plugin.json` and the adjudant entry in `.claude
 
 - [ ] **Step 4: Record the measured result in the spec**
 
-In `docs/superpowers/specs/2026-07-28-adjudant-token-discipline-design.md`, append to the "Expected result" section:
+Using the real numbers from Step 1 (do NOT write placeholder text to disk —
+measure first, then write the finished table in a single edit), append to the
+"Expected result" section of
+`docs/superpowers/specs/2026-07-28-adjudant-token-discipline-design.md`:
 
 ```markdown
 ### Measured after implementation (2026-07-28)
 
 | surface | before | after |
 |---|---|---|
-| SKILL.md | ~3050 | (fill from Step 1) |
-| vault-standards.md | ~3539 | (fill from Step 1) |
-| voice.md | ~853 | (fill from Step 1) |
+| SKILL.md | ~3050 | <measured> |
+| reference/vault-standards.md | ~3539 | <measured> |
+| reference/voice.md | ~853 | <measured> |
 
-Replace the parenthetical placeholders with the real numbers from Step 1
-before committing; a spec that predicts without recording is half a document.
+Totals from `token_budget.py`: <total> tokens across <n> surfaces,
+<over_count> over budget.
 ```
 
-Then replace those placeholders with the actual measured values.
+Substitute every `<...>` with the Step 1 output as you write the block. A spec
+that predicts without recording is half a document; a spec containing a
+literal `<measured>` is worse than either.
 
 - [ ] **Step 5: Bump the version**
 
