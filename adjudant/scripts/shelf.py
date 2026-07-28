@@ -224,12 +224,20 @@ def apply_transition(vault: Path, plan: dict[str, Any]) -> dict[str, Any]:
     # 2-4 are atomic from the caller's view: any failure restores from the
     # backup taken above (spec: no half-moved project).
     links_rewritten = 0
+    skipped_undecodable: list[str] = []
     moved = False
     try:
-        # 2. vault-wide wikilink prefix rewrite
+        # 2. vault-wide wikilink prefix rewrite. STRICT decode: reading with
+        # errors="replace" and writing the result back baked a permanent
+        # U+FFFD over every undecodable byte (tidy avoids this same trap).
+        # An unreadable file is reported and left byte-identical.
         for r in plan["link_rewrites"]:
             f = vault / r["file"]
-            text = f.read_text(errors="replace")
+            try:
+                text = f.read_text()
+            except (UnicodeDecodeError, OSError):
+                skipped_undecodable.append(r["file"])
+                continue
             new_text = text.replace(plan["old_link_prefix"], plan["new_link_prefix"])
             if new_text != text:
                 f.write_text(new_text)
@@ -242,9 +250,10 @@ def apply_transition(vault: Path, plan: dict[str, Any]) -> dict[str, Any]:
             moved = True
         final_dir = to_dir if moved else from_dir
 
-        # 4. brief: status + updated + status log
+        # 4. brief: status + updated + status log. Strict decode for the
+        # same reason: this text is written straight back.
         brief = final_dir / "brief.md"
-        text = brief.read_text(errors="replace")
+        text = brief.read_text()
         text = set_brief_status(text, plan["to_state"], plan["today"])
         text = append_status_log(text, plan["from_state"], plan["to_state"],
                                  plan["today"], plan["reason"])
@@ -282,6 +291,7 @@ def apply_transition(vault: Path, plan: dict[str, Any]) -> dict[str, Any]:
         "moved": moved,
         "final_dir": str(final_dir.relative_to(vault)),
         "links_rewritten": links_rewritten,
+        "skipped_undecodable": skipped_undecodable,
         "index_row": row,
         "backup": str(backup_root.relative_to(vault)),
     }
@@ -349,6 +359,11 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     except (RuntimeError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    if result.get("skipped_undecodable"):
+        # Never silent: these files still point at the OLD path.
+        print(f"[shelf] {len(result['skipped_undecodable'])} file(s) are not valid "
+              f"UTF-8 and were left untouched, so their links still point at the "
+              f"old path: {', '.join(result['skipped_undecodable'])}", file=sys.stderr)
     print(json.dumps(result, indent=2))
     return 0
 

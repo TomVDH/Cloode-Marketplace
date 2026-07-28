@@ -32,7 +32,12 @@ confirmation between phases.
   zone dir already exists.
 - Every modified file is backed up under `{vault}/.adjudant-shelf-backup/{timestamp}/`
   with a manifest.json (plan + file list) for manual rollback.
-- Working on a fridged or archived project? Shelf it back to `active` first; session
-  hooks write notes to the living zone only.
 - Transitions land in the brief: `status:` + `updated:` frontmatter, and a dated line
   under `## Status log` (newest first).
+- Files that are not valid UTF-8 are **never rewritten**: reading them leniently and
+  writing the result back would bake a permanent `U+FFFD` over each undecodable byte.
+  They are skipped, left byte-identical, and reported in `skipped_undecodable` (also on
+  stderr). Their wikilinks still point at the OLD path, so render that list as its own
+  line and say the links need a manual fix.
+- Working on a fridged or archived project? Session hooks now write to whichever zone
+  the project actually lives in, so notes land correctly without shelving back first.

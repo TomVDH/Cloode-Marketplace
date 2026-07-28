@@ -215,5 +215,62 @@ class TestTransitionCli(unittest.TestCase):
             self.assertTrue((vault / "projects" / "_archive" / "p" / "brief.md").is_file())
 
 
+class TestNonUtf8Safety(unittest.TestCase):
+    """Audit 2026-07-27 finding 9: apply_transition read with errors='replace'
+    and wrote the replaced text BACK, so one undecodable byte became a
+    permanent U+FFFD. tidy avoids this exact round-trip on purpose."""
+
+    def _vault_with_latin1_link(self, tmp: str) -> tuple[Path, Path]:
+        vault = Path(tmp)
+        _mk_project(vault, "p", sessions=["2026-07-01"])
+        other = vault / "projects" / "other"
+        other.mkdir(parents=True)
+        # A note that BOTH carries the link prefix (so shelf wants to rewrite
+        # it) and holds a latin-1 byte that is not valid UTF-8.
+        (other / "brief.md").write_bytes(
+            "---\ntype: project\nslug: other\nproject_type: coding\nstatus: active\n---\n\n"
+            "# Other\n\nSee [[projects/p/brief|p]].\n\nCaf".encode()
+            + b"\xe9" + " noir\n".encode())
+        return vault, other / "brief.md"
+
+    def test_undecodable_file_is_not_corrupted(self):
+        from shelf import apply_transition, plan_transition
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, note = self._vault_with_latin1_link(tmp)
+            before = note.read_bytes()
+            plan = plan_transition(vault, "p", "fridge", "pause", "2026-07-16")
+            apply_transition(vault, plan)
+            after = note.read_bytes()
+            self.assertNotIn("�".encode(), after,
+                             "shelf must never bake U+FFFD into a vault file")
+            self.assertEqual(before, after,
+                             "an undecodable file must be left byte-identical")
+
+    def test_transition_still_completes_and_reports(self):
+        from shelf import apply_transition, plan_transition
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, _ = self._vault_with_latin1_link(tmp)
+            plan = plan_transition(vault, "p", "fridge", "pause", "2026-07-16")
+            result = apply_transition(vault, plan)
+            self.assertTrue((vault / "projects" / "_fridge" / "p").is_dir(),
+                            "the move must still happen")
+            self.assertIn("skipped_undecodable", result)
+            self.assertIn("projects/other/brief.md", result["skipped_undecodable"])
+
+    def test_utf8_links_still_rewritten(self):
+        from shelf import apply_transition, plan_transition
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            _mk_project(vault, "p", sessions=["2026-07-01"])
+            other = vault / "projects" / "other"
+            other.mkdir(parents=True)
+            (other / "brief.md").write_text(
+                "---\ntype: project\nslug: other\nproject_type: coding\nstatus: active\n---\n\n"
+                "# Other\n\nSee [[projects/p/brief|p]].\n")
+            plan = plan_transition(vault, "p", "fridge", "pause", "2026-07-16")
+            apply_transition(vault, plan)
+            self.assertIn("[[projects/_fridge/p/brief|p]]", (other / "brief.md").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
