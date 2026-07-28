@@ -647,13 +647,19 @@ class TestSchemaPhase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
+            # session_id is LEGAL on handoffs (the sync mirror preserves it);
+            # use a genuinely unknown block-list key so this still exercises
+            # multi-file idempotency, and assert session_id survives.
             _w(root / "_handoff.md",
-               "---\ntype: handoff\nsession_id:\n  - aaa\nupdated: 2026-01-01\n"
-               "source: sync\ntags:\n  - handoff\n---\nH\n")
+               "---\ntype: handoff\nsession_id:\n  - aaa\nbogus_key:\n  - x\n"
+               "updated: 2026-01-01\nsource: sync\ntags:\n  - handoff\n---\nH\n")
             cs = self._preview(root)
             self.assertIn("_handoff.md", cs["file_proposals"])
             write_preview_to_disk(root, cs)
             apply_preview(root)
+            handoff_after = (root / "_handoff.md").read_text()
+            self.assertIn("session_id:", handoff_after)
+            self.assertNotIn("bogus_key", handoff_after)
             cs2 = self._preview(root)
             self.assertEqual(cs2["schema_actions"], {})
             self.assertNotIn("notes/n.md", cs2["file_proposals"])

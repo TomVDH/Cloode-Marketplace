@@ -758,12 +758,18 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
                     | (_CONTENT_OPTIONAL - {"title"}),
     },
     "handoff": {
+        # session_id and future custom keys are legal here: the sync mirror
+        # (_handoff_freshness.preserved_frontmatter) contractually preserves
+        # them, so tidy must not stage them for stripping.
         "required": frozenset({"type", "updated", "source", "tags"}),
-        "optional": frozenset({"created"}),
+        "optional": frozenset({"created", "session_id"}),
     },
     "task": {
+        # `id` is card identity: board.py reads it (cards_from_tasks) and a
+        # reseed re-keys the card to the file stem if it disappears, losing
+        # the user's dragged column. Never strippable.
         "required": frozenset({"type", "status", "tags"}),
-        "optional": frozenset({"category", "code", "note", "source_session"})
+        "optional": frozenset({"category", "code", "id", "note", "source_session"})
                     | _CONTENT_OPTIONAL,
     },
     "release": {

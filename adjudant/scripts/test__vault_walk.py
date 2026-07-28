@@ -829,6 +829,27 @@ class TestFieldSchema(unittest.TestCase):
                                     "source_session", "related", "title", "name",
                                     "description"}))
 
+    def test_board_read_fields_never_strippable(self):
+        # Regression, audit 2026-07-27: board.py cards_from_tasks reads
+        # `code`/`id` for card identity and `title` for the label. If tidy
+        # strips them the next reseed re-keys the card to the file stem and
+        # the user's dragged column is lost.
+        from board import STATUS_TO_COLUMN  # noqa: F401 - import parity w/ tidy
+        task_opt = FIELD_SCHEMA["task"]["optional"]
+        for key in ("id", "code", "title"):
+            self.assertIn(key, task_opt, key)
+        vf = _vf("---\ntype: task\nstatus: doing\nid: LOGIN-7\n"
+                 "title: Fix login\ntags:\n  - task\n---\n")
+        self.assertIsNone(schema_drift_for_file(vf, set(STATUS_TO_COLUMN)))
+
+    def test_handoff_preserved_keys_never_strippable(self):
+        # Regression, audit 2026-07-27: _handoff_freshness.preserved_frontmatter
+        # contractually preserves session_id on handoffs; tidy must agree.
+        self.assertIn("session_id", FIELD_SCHEMA["handoff"]["optional"])
+        vf = _vf("---\ntype: handoff\nupdated: 2026-01-01\nsource: remember\n"
+                 "session_id:\n  - abc\ntags:\n  - handoff\n---\n")
+        self.assertIsNone(schema_drift_for_file(vf))
+
     def test_content_optional_widening(self):
         # 2026-07-27: related/title/name/description legal on every content
         # type; superseded_by on decision/doc/note; implemented_verified on
