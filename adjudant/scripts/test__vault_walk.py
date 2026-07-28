@@ -829,6 +829,41 @@ class TestFieldSchema(unittest.TestCase):
                                     "source_session", "related", "title", "name",
                                     "description"}))
 
+    def test_is_safe_slug_accepts_kebab(self):
+        from _vault_walk import is_safe_slug
+        for good in ("demo", "a", "hubspot-nightly", "proj-2026", "0x"):
+            self.assertTrue(is_safe_slug(good), good)
+
+    def test_is_safe_slug_rejects_traversal_and_metachars(self):
+        # Audit 2026-07-27: the breadcrumb is repo-committed, so these are
+        # attacker-reachable. Each must be refused before any path build.
+        from _vault_walk import is_safe_slug
+        bad = [
+            "../../../escaped", "..", ".", "/abs", "a/b", "a\\b",
+            "-leading", "with space", "UPPER", "back`tick", "semi;colon",
+            "dollar$sign", "new\nline", "tab\t", "emoji-\N{SNOWMAN}",
+            "", "   ", "a" * 65, None, 42, ["demo"],
+        ]
+        for value in bad:
+            self.assertFalse(is_safe_slug(value), repr(value))
+
+    def test_safe_project_root_contains(self):
+        from _vault_walk import safe_project_root
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp) / "vault"
+            (vault / "projects").mkdir(parents=True)
+            got = safe_project_root(vault, "demo")
+            self.assertEqual(got, (vault / "projects" / "demo").resolve())
+            for bad in ("../../../escaped", "/etc", "a/b", "-x", ""):
+                self.assertIsNone(safe_project_root(vault, bad), bad)
+
+    def test_connect_shares_the_slug_rule(self):
+        # port.py calls connect.validate_slug "the single source of the
+        # kebab-case rule"; the hooks now share the same regex object.
+        import connect
+        from _vault_walk import SLUG_RE
+        self.assertIs(connect.SLUG_RE, SLUG_RE)
+
     def test_board_read_fields_never_strippable(self):
         # Regression, audit 2026-07-27: board.py cards_from_tasks reads
         # `code`/`id` for card identity and `title` for the label. If tidy

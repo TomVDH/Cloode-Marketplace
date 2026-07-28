@@ -81,13 +81,22 @@ except Exception:  # pragma: no cover - degrade: mechanical work without freshne
         )
 
 try:
-    from _vault_walk import resolve_vault
+    from _vault_walk import is_safe_slug, resolve_vault
     _RESOLVER = True
 except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
     _RESOLVER = False
 
     def resolve_vault(_project_root, _env_vault=None):  # type: ignore
         return None
+
+    # The slug guard must NOT depend on the import succeeding — a broken or
+    # mid-sync _vault_walk must not reopen the traversal hole. Stdlib-free
+    # on purpose: this block runs when imports are already failing.
+    def is_safe_slug(slug):  # type: ignore
+        if not isinstance(slug, str) or not slug or len(slug) > 64:
+            return False
+        return slug[0] != "-" and all(
+            c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in slug)
 
 
 def read_breadcrumb(project_dir: Path) -> dict:
@@ -190,7 +199,10 @@ def main() -> int:
     project_dir = Path(project_dir_str)
     info = read_breadcrumb(project_dir)
     slug = info.get("slug", "")
-    if not slug:
+    # The breadcrumb is repo-committed: reject any slug that isn't kebab-case
+    # before it reaches a path (this hook write_text's _handoff.md, which
+    # clobbers, so traversal here overwrites files outside the vault).
+    if not slug or not is_safe_slug(slug):
         return 0
 
     # Single source of truth: the same 5-step resolve_vault chain the verbs and

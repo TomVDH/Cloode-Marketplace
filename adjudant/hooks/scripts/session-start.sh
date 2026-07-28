@@ -50,6 +50,19 @@ except Exception:
   slug=$(sed -n 's/^slug[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
 
   [ -z "$slug" ] && return 0
+  # The breadcrumb is a REPO-COMMITTED file: a cloned repo can carry any slug.
+  # Enforce the kebab-case contract connect.py writes before the value reaches
+  # mkdir (path traversal: `slug: ../../../escaped` wrote outside the vault) or
+  # the context block below (SessionStart stdout is injected into the model's
+  # context, so an unvalidated slug is a prompt-injection channel).
+  case "$slug" in
+    [a-z0-9]*) ;;
+    *) return 0 ;;
+  esac
+  case "$slug" in
+    *[!a-z0-9-]*) return 0 ;;
+  esac
+  [ "${#slug}" -gt 64 ] && return 0
   vault_path="${vault_path/#\~/$HOME}"
 
   # Full-chain resolution via the Python layer when available (keeps all five

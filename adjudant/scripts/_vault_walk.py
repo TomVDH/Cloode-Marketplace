@@ -13,6 +13,8 @@ Public API:
     resolve_wikilink(target, index) -> bool
     parse_breadcrumb(project_root) -> Optional[dict]
     resolve_vault(project_root, env_vault=None) -> Optional[Path]
+    is_safe_slug(slug) -> bool
+    safe_project_root(vault, slug) -> Optional[Path]
     is_bucket_d_tag(tag, project_slug=None) -> bool
     schema_drift_for_file(vf, aliases=None) -> Optional[dict]
     schema_drift(files, aliases=None) -> dict
@@ -805,6 +807,46 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
         "optional": frozenset(),
     },
 }
+
+# The kebab-case project-slug rule. Lives here (not in connect.py) because the
+# BREADCRUMB IS A REPO-COMMITTED FILE: a cloned repo can carry any slug, and
+# hooks interpolate it into mkdir/write paths and into SessionStart stdout,
+# which is injected into the model's context. Every consumer of a breadcrumb
+# slug must gate on is_safe_slug before building a path from it.
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+SLUG_MAX_LEN = 64
+
+
+def is_safe_slug(slug: object) -> bool:
+    """True when `slug` is a kebab-case project slug safe to put in a path.
+
+    Rejects traversal (`../`), absolute paths, separators, whitespace, shell
+    and markdown metacharacters, empty values, and anything over
+    SLUG_MAX_LEN. Non-str input is rejected rather than coerced.
+    """
+    if not isinstance(slug, str) or not slug or len(slug) > SLUG_MAX_LEN:
+        return False
+    return SLUG_RE.match(slug) is not None
+
+
+def safe_project_root(vault: Path, slug: str) -> Optional[Path]:
+    """`{vault}/projects/{slug}` only when slug is safe AND the result stays
+    inside the vault. None otherwise, so callers fail closed.
+
+    Zone-unaware by design (active zone only) - callers wanting _fridge /
+    _archive should use find_project_dir. This is the containment guard.
+    """
+    if not is_safe_slug(slug):
+        return None
+    try:
+        vault_r = Path(vault).expanduser().resolve()
+        candidate = (vault_r / "projects" / slug).resolve()
+    except (OSError, ValueError):
+        return None
+    if candidate != vault_r and vault_r not in candidate.parents:
+        return None
+    return candidate
+
 
 # Wild historical decision-status values that are plain synonyms of active.
 # tidy migrates these after preview; anything else off-enum is reported only.

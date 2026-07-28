@@ -42,13 +42,21 @@ except Exception:  # pragma: no cover - degrade: log without stamping
         return False
 
 try:
-    from _vault_walk import resolve_vault
+    from _vault_walk import is_safe_slug, resolve_vault
     _RESOLVER = True
 except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
     _RESOLVER = False
 
     def resolve_vault(_project_root, _env_vault=None):  # type: ignore
         return None
+
+    # Slug guard must not depend on the import succeeding (stdlib-free: this
+    # block runs when imports are already failing).
+    def is_safe_slug(slug):  # type: ignore
+        if not isinstance(slug, str) or not slug or len(slug) > 64:
+            return False
+        return slug[0] != "-" and all(
+            c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in slug)
 
 
 def read_breadcrumb(project_dir: Path) -> dict:
@@ -80,7 +88,10 @@ def main() -> int:
 
     info = read_breadcrumb(Path(project_dir))
     slug = info.get("slug", "")
-    if not slug:
+    # Repo-committed breadcrumb: reject non-kebab slugs before any path build.
+    # (The resolve+relative_to containment check below already fails closed for
+    # writes; this stops a traversal slug from being used at all.)
+    if not slug or not is_safe_slug(slug):
         return 0
 
     # Same 5-step resolve_vault chain as the verbs and the other hooks, so

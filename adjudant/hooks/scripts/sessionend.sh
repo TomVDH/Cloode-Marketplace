@@ -38,6 +38,16 @@ except Exception:
   slug=$(sed -n 's/^slug[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
 
   [ -z "$slug" ] && return 0
+  # Repo-committed breadcrumb: enforce the kebab-case contract before the slug
+  # reaches a path (matches session-start.sh and the Python hooks).
+  case "$slug" in
+    [a-z0-9]*) ;;
+    *) return 0 ;;
+  esac
+  case "$slug" in
+    *[!a-z0-9-]*) return 0 ;;
+  esac
+  [ "${#slug}" -gt 64 ] && return 0
   vault_path="${vault_path/#\~/$HOME}"
 
   # Full-chain resolution via the Python layer when available (same vault as

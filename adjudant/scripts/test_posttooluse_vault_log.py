@@ -242,6 +242,43 @@ class TestSourceSessionStamp(_HookHarness):
             self.assertNotIn("source_session", note.read_text())
 
 
+class TestSlugGuard(_HookHarness):
+    """Audit 2026-07-27: the breadcrumb is repo-committed, so a cloned repo can
+    carry a traversal slug. The hook must refuse it before building a path."""
+
+    def test_traversal_slug_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, proot, session = self._fixture(root)
+            (project / ".claude" / "adjudant").write_text(
+                f"vault_path: {root / 'vault'}\nslug: ../../../escaped\nmode: project\n")
+            note = self._note(proot, "notes/idea.md")
+            rc = self._run(project, self._payload(note))
+            self.assertEqual(rc, 0)
+            self.assertEqual(session.read_text(), "## Log\n")
+            self.assertFalse((root / "escaped").exists())
+
+    def test_metachar_slug_is_refused(self):
+        for bad in ("has space", "UPPER", "back`tick", "-leading", "a/b"):
+            with self.subTest(slug=bad):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    project, proot, session = self._fixture(root)
+                    (project / ".claude" / "adjudant").write_text(
+                        f"vault_path: {root / 'vault'}\nslug: {bad}\nmode: project\n")
+                    note = self._note(proot, "notes/idea.md")
+                    self.assertEqual(self._run(project, self._payload(note)), 0)
+                    self.assertEqual(session.read_text(), "## Log\n")
+
+    def test_valid_slug_still_logs(self):
+        # Guard must not break the happy path.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot, session = self._fixture(Path(tmp))
+            note = self._note(proot, "notes/idea.md")
+            self.assertEqual(self._run(project, self._payload(note)), 0)
+            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+
+
 class TestStampGate(_HookHarness):
     """v0.16.0: stamping is breadcrumb opt-in, default off."""
 

@@ -57,7 +57,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATES = SCRIPT_DIR.parent / "skills" / "adjudant" / "templates"
 
 VALID_PROJECT_TYPES = ("coding", "knowledge", "plugin", "tinkerage")
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+from _vault_walk import SLUG_RE  # single source of the kebab-case rule
 
 
 # ============================================================
