@@ -1043,6 +1043,36 @@ class TestSchemaDrift(unittest.TestCase):
         self.assertEqual(len(agg["samples"]), 1)
         self.assertEqual(agg["samples"][0]["file"], "notes/x.md")
 
+    def test_schema_drift_for_text_matches_file_variant(self):
+        from _vault_walk import schema_drift_for_text
+        text = ("---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+                "tags:\n  - decision\n---\n\nBody.\n")
+        by_text = schema_drift_for_text(text, "decisions/d.md")
+        by_file = schema_drift_for_file(_vf(text, rel="decisions/d.md"))
+        self.assertEqual(by_text, by_file)
+
+    def test_schema_drift_for_text_flags_missing_required(self):
+        from _vault_walk import schema_drift_for_text
+        d = schema_drift_for_text("---\ntype: decision\n---\n\nB\n", "decisions/d.md")
+        self.assertEqual(d["file"], "decisions/d.md")
+        self.assertEqual(d["type"], "decision")
+        self.assertIn("status", d["missing_required"])
+
+    def test_schema_drift_for_text_clean_returns_none(self):
+        from _vault_walk import schema_drift_for_text
+        text = ("---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+                "tags:\n  - note\n---\n\nB\n")
+        self.assertIsNone(schema_drift_for_text(text, "notes/n.md"))
+
+    def test_schema_drift_for_text_ignores_unjudgeable(self):
+        from _vault_walk import schema_drift_for_text
+        # no frontmatter, unknown type, and a parse error are all ramasse
+        # territory, not schema territory
+        self.assertIsNone(schema_drift_for_text("no frontmatter\n", "notes/n.md"))
+        self.assertIsNone(schema_drift_for_text(
+            "---\ntype: unknowntype\n---\n\nB\n", "notes/n.md"))
+        self.assertIsNone(schema_drift_for_text("---\ntype: note\nno close\n", "notes/n.md"))
+
 
 if __name__ == "__main__":
     unittest.main()

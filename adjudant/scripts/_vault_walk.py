@@ -17,6 +17,7 @@ Public API:
     safe_project_root(vault, slug) -> Optional[Path]
     is_bucket_d_tag(tag, project_slug=None) -> bool
     schema_drift_for_file(vf, aliases=None) -> Optional[dict]
+    schema_drift_for_text(text, rel_path, aliases=None) -> Optional[dict]
     schema_drift(files, aliases=None) -> dict
 
 Schema constants (single source of truth, imported by dream + tidy):
@@ -889,21 +890,14 @@ DECISION_STATUS_ALIASES: dict[str, str] = {
 }
 
 
-def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Optional[dict]:
-    """Schema drift for one file per FIELD_SCHEMA, or None when clean.
-
-    Only files with a parsed frontmatter block and a canonical type are
-    checked; everything else is ramasse territory (detect_frontmatter_drift,
-    detect_type_drift) and returns None here. `aliases` is the task-status
-    alias set (board.STATUS_TO_COLUMN keys) used to mark task values as
-    normalizable; decision values normalize via DECISION_STATUS_ALIASES.
-    """
-    fm = vf.frontmatter
-    ftype = vf.file_type
-    if not fm.has_block or fm.parse_error or ftype not in FIELD_SCHEMA:
+def _schema_drift_core(fields: dict, has_block: bool, parse_error: Optional[str],
+                       ftype: Optional[str], rel: str,
+                       aliases: Optional[set] = None) -> Optional[dict]:
+    """Shared schema check. See schema_drift_for_file for the contract."""
+    if not has_block or parse_error or ftype not in FIELD_SCHEMA:
         return None
     spec = FIELD_SCHEMA[ftype]
-    keys = set(fm.fields)
+    keys = set(fields)
     out: dict[str, Any] = {}
     missing = spec["required"] - keys
     if missing:
@@ -913,7 +907,7 @@ def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Opt
         out["unknown_fields"] = sorted(unknown)
     enum = STATUS_VALUES_FOR_TYPE.get(ftype)
     if enum is not None:
-        status = fm.fields.get("status")
+        status = fields.get("status")
         if isinstance(status, str) and status and status not in enum:
             if ftype == "task" and aliases and status in aliases:
                 pass  # accepted input per the alias table; the board normalizes lanes on read
@@ -924,9 +918,37 @@ def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Opt
         out["type_conflict"] = True
     if not out:
         return None
-    out["file"] = str(vf.rel_path)
+    out["file"] = rel
     out["type"] = ftype
     return out
+
+
+def schema_drift_for_text(text: str, rel_path: str,
+                          aliases: Optional[set] = None) -> Optional[dict]:
+    """Schema drift for PROPOSED content that is not on disk yet.
+
+    Used by the PreToolUse write gate so a note is judged before it lands,
+    against the same FIELD_SCHEMA that check reports and tidy repairs.
+    """
+    fm, _ = parse_frontmatter(text)
+    ftype = fm.fields.get("type")
+    return _schema_drift_core(
+        fm.fields, fm.has_block, fm.parse_error,
+        ftype if isinstance(ftype, str) else None, rel_path, aliases)
+
+
+def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Optional[dict]:
+    """Schema drift for one file per FIELD_SCHEMA, or None when clean.
+
+    Only files with a parsed frontmatter block and a canonical type are
+    checked; everything else is ramasse territory (detect_frontmatter_drift,
+    detect_type_drift) and returns None here. `aliases` is the task-status
+    alias set (board.STATUS_TO_COLUMN keys) used to mark task values as
+    normalizable; decision values normalize via DECISION_STATUS_ALIASES.
+    """
+    fm = vf.frontmatter
+    return _schema_drift_core(fm.fields, fm.has_block, fm.parse_error,
+                              vf.file_type, str(vf.rel_path), aliases)
 
 
 def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dict[str, Any]:
