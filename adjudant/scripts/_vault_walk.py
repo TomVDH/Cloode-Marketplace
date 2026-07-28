@@ -589,6 +589,22 @@ class VaultUnresolvableError(RuntimeError):
     """
 
 
+def _looks_like_code_repo(path: Path) -> bool:
+    """True when `path` is evidently a code project, not a vault project.
+
+    Deliberately narrow: a vault project is identified positively (brief.md, or
+    sitting under projects[/zone]/), so anything holding repo furniture without
+    those markers is refused rather than written to.
+    """
+    if (path / "brief.md").is_file():
+        return False
+    parent, grand = path.parent.name, path.parent.parent.name
+    if parent == "projects" or (parent in ("_fridge", "_archive") and grand == "projects"):
+        return False
+    return any((path / m).exists()
+               for m in (".git", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"))
+
+
 def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
     """Resolve `--project-dir` smartly across helpers.
 
@@ -606,6 +622,16 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
     """
     arg_path = Path(project_dir_arg).expanduser().resolve()
     breadcrumb = arg_path / ".claude" / "adjudant"
+    if not breadcrumb.is_file():
+        # Walk up for a breadcrumb above the arg. Running a helper from a
+        # SUBDIRECTORY of a connected repo used to find nothing here, fall
+        # through to "treat the arg as the vault project", and write into the
+        # CODE REPO (board.py scaffolded a deck inside repo/backend/svc).
+        for parent in arg_path.parents:
+            if (parent / ".claude" / "adjudant").is_file():
+                breadcrumb = parent / ".claude" / "adjudant"
+                arg_path = parent
+                break
     if breadcrumb.is_file():
         ctx = resolve_project_from_cwd(arg_path)
         if ctx is not None and ctx.is_connected:
@@ -619,7 +645,15 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
             f"(bad slug or vault_path/vault_name points nowhere on this machine). "
             f"Fix the breadcrumb or re-run /adjudant connect."
         )
-    # Treat as vault project path directly
+    # Treat as vault project path directly — but never accept something that
+    # is plainly a CODE repo. Write verbs (tidy apply, board scaffold) would
+    # rewrite source files, the hazard VaultUnresolvableError exists to stop.
+    if _looks_like_code_repo(arg_path):
+        raise VaultUnresolvableError(
+            f"{arg_path} looks like a code repo, not a vault project, and no "
+            f".claude/adjudant breadcrumb was found there or above it. "
+            f"Run /adjudant connect, or pass the vault project path."
+        )
     return arg_path, None
 
 

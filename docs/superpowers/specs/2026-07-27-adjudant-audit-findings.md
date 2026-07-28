@@ -278,6 +278,25 @@ All five security findings fixed, tested, committed. 780 tests, 29 validators.
   passed only because the hook trusted the payload.
 - Finding 5: `log_safe` neutralizes `[[`/`]]`, flattens newlines, caps at 200.
 
+## Tier 2 status: closed 2026-07-28
+
+Findings 6 and 7 fixed, tested, committed. 792 tests, 30 validators.
+
+- Finding 6: all six hooks resolve zone-aware (python via find_project_dir,
+  bash via a zone_project_dir mirror kept in-shell so degraded mode matches and
+  no extra subprocess runs per session). Each no-ops when the project exists in
+  no zone instead of creating it, which also closes phantom-project-from-an-
+  unconnected-slug; session-start reports the condition rather than going quiet.
+  Reported note paths now name the real zone. commit-log also picked up the
+  tier-1 slug guard it had been missing.
+- Finding 7: smart_project_dir walks up for a breadcrumb before falling back,
+  so a helper run from a subdirectory of a connected repo resolves to the vault
+  project instead of writing into the code repo; a directory holding repo
+  furniture without vault-project markers is refused outright.
+- Validator 30 (hook-zone-awareness) forbids `projects/<slug>` in any hook and
+  requires both guards. Verified by deliberately reintroducing the bug and
+  watching it fail.
+
 ## Parked: archive verb decisions (locked with Tom, 2026-07-27)
 
 Brainstorm paused at the approaches step in favour of hardening first. Decided:

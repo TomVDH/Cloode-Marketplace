@@ -493,6 +493,44 @@ class TestSmartProjectDir(unittest.TestCase):
             with self.assertRaises(VaultUnresolvableError):
                 smart_project_dir(str(code))
 
+    def test_subdirectory_of_connected_repo_follows_the_breadcrumb_above(self):
+        # Audit 2026-07-27 finding 7: running a helper from a SUBDIR of a
+        # connected repo found no breadcrumb there, fell through to
+        # "treat the arg as the vault project", and wrote into the CODE REPO
+        # (board.py created board/board-data.json inside repo/backend/svc).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = root / "code"
+            sub = code / "backend" / "svc"
+            sub.mkdir(parents=True)
+            vault = root / "vault"
+            (vault / "projects" / "p").mkdir(parents=True)
+            (code / ".claude").mkdir()
+            (code / ".claude" / "adjudant").write_text(
+                f"vault_path: {vault}\nvault_name: vault\nslug: p\nmode: project\n")
+            scan_dir, vault_hint = smart_project_dir(str(sub))
+            self.assertEqual(scan_dir.resolve(), (vault / "projects" / "p").resolve())
+            self.assertEqual(vault_hint.resolve(), vault.resolve())
+
+    def test_code_repo_without_any_breadcrumb_is_refused(self):
+        # A git repo is never a vault project: accepting it silently let
+        # write verbs rewrite source files.
+        with tempfile.TemporaryDirectory() as tmp:
+            code = Path(tmp) / "repo"
+            (code / ".git").mkdir(parents=True)
+            (code / "AGENTS.md").write_text("# repo\n")
+            with self.assertRaises(VaultUnresolvableError):
+                smart_project_dir(str(code))
+
+    def test_real_vault_project_still_accepted(self):
+        # Backward compatibility: a genuine vault project path keeps working.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "vault" / "projects" / "p"
+            proj.mkdir(parents=True)
+            (proj / "brief.md").write_text("---\ntype: project\nslug: p\n---\n")
+            scan_dir, _ = smart_project_dir(str(proj))
+            self.assertEqual(scan_dir, proj.resolve())
+
 
 class TestRoundThreeRegressions(unittest.TestCase):
     """v0.11.0 primitives fixes."""
