@@ -261,6 +261,49 @@ External or careless input causing writes outside the vault.
 - FIELD_SCHEMA optional sets widened for descriptive fields (`related`,
   `title`, `name`, `description`, `superseded_by`, `implemented_verified`).
 
+## Tier 1 status: closed 2026-07-28
+
+All five security findings fixed, tested, committed. 780 tests, 29 validators.
+
+- Findings 1+2: `_vault_walk` now owns the slug rule (`SLUG_RE`,
+  `is_safe_slug`, `safe_project_root`); connect.py imports it, making port.py's
+  "single source of the kebab-case rule" claim true. All five slug-consuming
+  hooks gate on it, the Python ones with a stdlib-free fallback so a broken
+  import cannot reopen the hole. Verified: zero artifacts outside the vault
+  across all four hooks; happy path unchanged.
+- Findings 3+4+20: commit-log asks git (`git log -1 --format=%s` must equal the
+  parsed subject) instead of trusting a payload that carries no exit code;
+  refuses `--dry-run`/`--short`/`--porcelain`/`--long`; accepts the `-c`/`-C`
+  global-option forms. Test fixtures are now real git repos - the old ones
+  passed only because the hook trusted the payload.
+- Finding 5: `log_safe` neutralizes `[[`/`]]`, flattens newlines, caps at 200.
+
+## Parked: archive verb decisions (locked with Tom, 2026-07-27)
+
+Brainstorm paused at the approaches step in favour of hardening first. Decided:
+
+- **Perma-memory**: a new per-project `MEMORY.md` (all caps, like `AGENTS.md`),
+  schema-typed, never archived and never staled. The deep-analysis pass appends
+  dated, sourced entries under themed headings; check and sitrep can surface it.
+- **Destination**: project-root `archived-context/` mirroring the original
+  structure (`archived-context/sessions/2026-05-27.md`), added to the walker
+  skip set so check, dream, ramasse, board and the cost estimator stop paying
+  for it. Still greppable and Obsidian-searchable. A manifest `_index.md`
+  records what moved when.
+- **Scope**: `sessions/`, `dreams/`, `notes/` (by `updated:`), and `tasks/` in
+  terminal states (done, icebox) untouched 30+ days. Never `references/`,
+  `specs/`, `releases/`, `decisions/`, `brief.md`, `_handoff.md`, `MEMORY.md`,
+  or board files.
+- **Trigger**: a verb with two-phase preview then apply, plus an ambient nudge
+  from check, sitrep and SessionStart when eligible files pile up. Automatic
+  awareness, human-confirmed action.
+- **Deep analysis**: before anything moves, a judgment pass over the outgoing
+  set proposes durable facts for promotion into `MEMORY.md`, so archiving is
+  lossless in substance even when it is lossy in volume.
+
+Still open: verb name, threshold configurability (breadcrumb knob versus flag),
+and the exact analysis-to-promotion contract.
+
 ## Design constraint for the parked archive verb
 
 The archive verb is a mover, the most destructive shape in the plugin. It must
