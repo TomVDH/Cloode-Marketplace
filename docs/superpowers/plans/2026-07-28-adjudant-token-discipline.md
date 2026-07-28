@@ -506,7 +506,14 @@ Expected: PASS, 11 tests.
 Then the full suite and validators:
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3 && cd .. && python3 scripts/validate.py 2>&1 | tail -1`
-Expected: `OK` and `PASS — 30 validator(s) green`. If `hooks-wiring` fails, it is asserting the old event set — update that validator's expected list to include `PreToolUse`.
+Expected: `OK` and `PASS — 30 validator(s) green`.
+
+Pre-verified 2026-07-28: `hooks-wiring` iterates whatever events exist in
+`hooks.json` and only checks that each command resolves to a real script under
+`hooks/scripts/`. It has no hardcoded event list, so `PreToolUse` needs no
+validator change. **Do not edit any validator in this task.** If a validator
+does fail, that is a real signal — report it rather than adjusting the
+validator to pass.
 
 - [ ] **Step 6: Verify end-to-end against a real fixture**
 
@@ -621,7 +628,13 @@ Delete those three sections from `adjudant/skills/adjudant/SKILL.md`. Add one ro
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3 && cd .. && python3 scripts/validate.py 2>&1 | tail -1`
-Expected: `OK` and `PASS — 30 validator(s) green`. The `reference-doc-links` and `reference-files-exist` validators cover the new file automatically. If `verb-surface-parity` fails on the `_(internals)_` row, exclude non-verb rows in that validator by skipping rows whose first cell starts with `_(`.
+Expected: `OK` and `PASS — 30 validator(s) green`. The `reference-doc-links` and `reference-files-exist` validators cover the new file automatically.
+
+Pre-verified 2026-07-28: `verb-surface-parity` reads the verb list from
+`command-metadata.json` and checks each name appears in plugin.json, README,
+and the marketplace entry. It does not parse the SKILL.md router table, so the
+`_(internals)_` row cannot trip it. **Do not edit any validator in this task.**
+A validator failure here is a real signal, not something to tune away.
 
 - [ ] **Step 6: Commit**
 
