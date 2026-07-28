@@ -60,5 +60,46 @@ class TestRepoTidy(unittest.TestCase):
             self.assertEqual(rt.detect_repairs(root), [])
 
 
+class TestRepoTidyDestructiveGuards(unittest.TestCase):
+    """Audit 2026-07-27 finding 14: a non-symlink at a harness link path was
+    unlinked and symlinked over, while the `.legacy` record held only
+    metadata — so a real file's content was destroyed outright, and a real
+    directory crashed apply mid-loop."""
+
+    def _with_real_file_at_link(self, root: Path) -> Path:
+        _make_plugin(root, "alpha", "1.0.0", skills=True, adopt=True)
+        link = root / "alpha" / ".gemini" / "skills" / "alpha"
+        link.unlink()
+        link.write_text("PRECIOUS hand-written content\n")
+        return link
+
+    def test_real_file_content_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            link = self._with_real_file_at_link(root)
+            rt.write_preview(root, rt.detect_repairs(root))
+            backup = rt.apply_preview(root)
+            saved = list(Path(backup).glob("*.content.legacy"))
+            self.assertTrue(saved, "a real file's CONTENT must be backed up")
+            self.assertIn("PRECIOUS hand-written content", saved[0].read_text())
+            self.assertTrue(link.is_symlink(), "the repair still happens")
+
+    def test_real_directory_is_refused_not_destroyed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_plugin(root, "alpha", "1.0.0", skills=True, adopt=True)
+            link = root / "alpha" / ".gemini" / "skills" / "alpha"
+            link.unlink()
+            link.mkdir()
+            (link / "keep.md").write_text("do not lose me\n")
+            rt.write_preview(root, rt.detect_repairs(root))
+            backup = rt.apply_preview(root)
+            self.assertTrue(link.is_dir() and not link.is_symlink(),
+                            "a real directory must be left alone")
+            self.assertEqual((link / "keep.md").read_text(), "do not lose me\n")
+            self.assertTrue((Path(backup) / "SKIPPED.txt").is_file(),
+                            "the skip must be recorded, never silent")
+
+
 if __name__ == "__main__":
     unittest.main()

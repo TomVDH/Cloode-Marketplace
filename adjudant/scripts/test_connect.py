@@ -161,6 +161,21 @@ class TestWriteBreadcrumb(unittest.TestCase):
             self.assertEqual(mark, "updated")
             self.assertIn("stamp_source_session: true", bc.read_text())
 
+    def test_unknown_keys_survive_reconnect(self):
+        # Audit 2026-07-27 finding 16: preservation was a hardcoded allowlist,
+        # so any hand-added or future key was dropped on every re-connect.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            write_breadcrumb(proj, Path("/v"), "Vault", "my-slug")
+            bc = proj / ".claude" / "adjudant"
+            bc.write_text(bc.read_text()
+                          + "handoff_style: terse\nmy_future_key: 42\n")
+            write_breadcrumb(proj, Path("/other"), "Vault", "my-slug")
+            text = bc.read_text()
+            self.assertIn("handoff_style: terse", text)
+            self.assertIn("my_future_key: 42", text)
+            self.assertIn("vault_path: /other", text)
+
     def test_stamp_key_absent_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             proj = Path(tmp)
@@ -321,6 +336,40 @@ class TestUpsertProjectsIndexRow(unittest.TestCase):
             text = (vault / "projects" / "_index.md").read_text()
             self.assertIn("a/brief", text)
             self.assertIn("b/brief", text)
+
+    def test_hand_maintained_index_is_never_corrupted(self):
+        # Audit 2026-07-27 finding 13: the row was inserted after the FIRST
+        # `|---|` anywhere in the file, so it landed inside an unrelated table
+        # in a hand-curated index. port.py already guarded against this;
+        # connect, sync and shelf all used this unguarded copy.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            idx = vault / "projects" / "_index.md"
+            custom = (
+                "---\ntype: index\ntags:\n  - index\n---\n\n"
+                "# Projects by quarter\n\n"
+                "| Quarter | Theme |\n"
+                "|---------|-------|\n"
+                "| Q1 | Platform |\n"
+            )
+            idx.write_text(custom)
+            r = upsert_projects_index_row(vault, "x", "coding", "active", 0, 0, "—")
+            self.assertEqual(r, "skipped-unknown-format")
+            self.assertEqual(idx.read_text(), custom,
+                             "a custom index must be left byte-identical")
+
+    def test_canonical_index_still_takes_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            idx = vault / "projects" / "_index.md"
+            idx.write_text(
+                "---\ntype: index\ntags:\n  - index\n---\n\n"
+                "# All Projects\n\n"
+                "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
+                "|---------|------|--------|-----------|----------|--------------|\n")
+            r = upsert_projects_index_row(vault, "x", "coding", "active", 0, 0, "—")
+            self.assertEqual(r, "inserted")
+            self.assertIn("x/brief", idx.read_text())
 
     def test_updates_existing_row(self):
         with tempfile.TemporaryDirectory() as tmp:

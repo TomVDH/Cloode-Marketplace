@@ -78,10 +78,18 @@ def apply_preview(root: Path) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_dir = root / BACKUP_DIR_NAME / timestamp
     backup_dir.mkdir(parents=True, exist_ok=True)
+    skipped: list[str] = []
     for r in repairs:
         link = root / r["link_rel"]
+        stem = r["link_rel"].replace("/", "__")
+        # A REAL directory at the link path is never destroyed: unlink() would
+        # raise (swallowed), then os.symlink would crash the loop mid-repair.
+        # Report it and move on (audit 2026-07-27 finding 14).
+        if link.is_dir() and not link.is_symlink():
+            skipped.append(r["link_rel"])
+            continue
         # back up the current state of the link path (dangling target record)
-        rec = backup_dir / (r["link_rel"].replace("/", "__") + ".legacy")
+        rec = backup_dir / (stem + ".legacy")
         prior = ""
         if link.is_symlink():
             try:
@@ -89,14 +97,27 @@ def apply_preview(root: Path) -> Path:
             except OSError:
                 prior = ""
         rec.write_text(f"state-before: {r['state']}\nprior-target: {prior}\n")
+        # A REAL file at the link path holds content the metadata record does
+        # not capture — unlinking it without copying the bytes destroyed it.
+        if link.is_file() and not link.is_symlink():
+            try:
+                shutil.copy2(link, backup_dir / (stem + ".content.legacy"))
+            except OSError:
+                skipped.append(r["link_rel"])
+                continue
         # repair: remove any existing (dangling) link, recreate relative symlink
         link.parent.mkdir(parents=True, exist_ok=True)
         if link.is_symlink() or link.exists():
             try:
                 link.unlink()
             except OSError:
-                pass
+                skipped.append(r["link_rel"])
+                continue
         os.symlink(r["target_rel"], link)
+    if skipped:
+        (backup_dir / "SKIPPED.txt").write_text(
+            "These link paths were left alone (a real directory, or the "
+            "content could not be preserved):\n\n" + "\n".join(skipped) + "\n")
     shutil.rmtree(preview)
     return backup_dir
 

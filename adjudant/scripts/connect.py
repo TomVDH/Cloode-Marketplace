@@ -267,17 +267,22 @@ def write_breadcrumb(
     vault_name: str,
     slug: str,
 ) -> str:
-    """Write the .claude/adjudant breadcrumb (six keys). Existing
-    cost_warn_tokens / stale_after_days overrides are preserved, as is an
-    opt-in stamp_source_session key (written only when present — connect
-    never turns stamping on); a byte-identical rewrite is skipped.
+    """Write the .claude/adjudant breadcrumb (six canonical keys).
+
+    Every other key already in the file is carried through untouched. It used
+    to be a hardcoded allowlist (audit 2026-07-27 finding 16), so a key added
+    by hand or by a future adjudant version was silently deleted on every
+    re-connect. A byte-identical rewrite is skipped.
 
     Returns 'created' | 'updated' | 'already-present'.
     """
     existing = parse_breadcrumb(project_root) or {}
     cwt = existing.get("cost_warn_tokens", "30000")
     sad = existing.get("stale_after_days", "30")
-    sss = existing.get("stamp_source_session")
+    canonical = {"vault_path", "vault_name", "slug", "mode",
+                 "cost_warn_tokens", "stale_after_days"}
+    extra = "".join(f"{k}: {v}\n" for k, v in existing.items()
+                    if k not in canonical)
     content = (
         f"vault_path: {vault_path}\n"
         f"vault_name: {vault_name}\n"
@@ -285,7 +290,7 @@ def write_breadcrumb(
         f"mode: project\n"
         f"cost_warn_tokens: {cwt}\n"
         f"stale_after_days: {sad}\n"
-        + (f"stamp_source_session: {sss}\n" if sss is not None else "")
+        + extra
     )
     bc = project_root / ".claude" / "adjudant"
     if bc.is_file():
@@ -562,6 +567,14 @@ def newest_session_date(sessions_dir: Path) -> str:
     return max(dates) if dates else "—"
 
 
+# The canonical 6-column projects-index header (templates/_index-projects.md).
+# A row is only ever inserted under THIS header — anything else is a
+# hand-maintained or custom index and is left alone.
+_CANONICAL_INDEX_HEADER_RE = re.compile(
+    r"^\|\s*Project\s*\|\s*Type\s*\|\s*Status\s*\|\s*Decisions\s*\|"
+    r"\s*Sessions\s*\|\s*Last Session\s*\|\s*$", re.I)
+
+
 def upsert_projects_index_row(
     vault_path: Path,
     slug: str,
@@ -601,16 +614,26 @@ def upsert_projects_index_row(
         else:
             new_lines.append(line)
     if not found:
-        # Insert after the separator line (`|---|---|...|`)
-        insert_idx = None
+        # Never corrupt a hand-maintained index (audit 2026-07-27 finding 13):
+        # this used to insert after the FIRST `|---|` anywhere in the file,
+        # which landed the canonical 6-column row inside an unrelated table.
+        # port.py has carried this guard for a while; connect, sync and shelf
+        # all called this unguarded copy.
+        header_idx = None
         for i, line in enumerate(new_lines):
-            if re.match(r"^\|[\s\-|]+\|\s*$", line):
+            if _CANONICAL_INDEX_HEADER_RE.match(line):
+                header_idx = i
+                break
+        if header_idx is None:
+            return "skipped-unknown-format"
+        insert_idx = None
+        for i in range(header_idx + 1, len(new_lines)):
+            if re.match(r"^\|[\s\-|:]+\|\s*$", new_lines[i]):
                 insert_idx = i + 1
                 break
-        if insert_idx is not None:
-            new_lines.insert(insert_idx, new_row)
-        else:
-            new_lines.append(new_row)
+        if insert_idx is None:
+            return "skipped-unknown-format"
+        new_lines.insert(insert_idx, new_row)
     idx.write_text("\n".join(new_lines) + "\n")
     return "updated" if found else "inserted"
 
