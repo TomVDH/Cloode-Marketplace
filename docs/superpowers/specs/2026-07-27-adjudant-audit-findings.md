@@ -155,6 +155,33 @@ External or careless input causing writes outside the vault.
     The preview window exists precisely for human and agent editing. Fix:
     resolve and require containment under project_dir.
 
+## Tier 3 status: closed 2026-07-28
+
+All four HIGH findings plus the five MEDIUM/LOW ones fixed, tested,
+committed. 808 tests, 30 validators.
+
+- 8 + 12 + 17 (tidy apply): re-hashes each live file against `original_hash`
+  and leaves changed ones alone, reported in `{backup}/SKIPPED-STALE.txt`,
+  on stderr, and in a `skipped_stale` JSON key - a silent skip would be
+  nearly as bad as the silent clobber it replaces. Each apply gets its own
+  mkdtemp backup dir. Both sides of every copy are resolved and required to
+  stay inside their root.
+- 9 (shelf): both write-back paths decode strictly; undecodable files are
+  skipped byte-identical and reported in `skipped_undecodable`, since their
+  wikilinks still point at the old path.
+- 10 + 15 (port): `validate_vault_changes` pre-flights every line and
+  refuses before any write, shelf-style, leaving the preview intact so a
+  retry works once the conflict is resolved. The staleness guard now hashes
+  CLAUDE.md as well as AGENTS.md.
+- 11 (board): any deck-replacing path backs up first, not just `--force`.
+- 13 (index upsert): rows land only under the canonical 6-column header.
+- 16 (breadcrumb): unknown keys carry through by construction.
+- 14 (repo_tidy): real files get their bytes preserved; real directories are
+  refused and recorded.
+
+Also dropped the now-false shelf.md rule telling users to unshelve before
+working on a fridged project - hooks became zone-aware in tier 2.
+
 ## Tier 4 - concurrency and atomicity
 
 18. **MEDIUM - no atomic writes anywhere.** `_session_stamp.py:94-118`,
