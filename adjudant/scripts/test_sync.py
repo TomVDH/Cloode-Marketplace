@@ -221,7 +221,11 @@ class TestWriterParity(unittest.TestCase):
             r = mirror_handoff(proj_a, handoff_a, "p", "2026-06-01", now=now)
             self.assertEqual(r, "mirrored")
 
-            hook.sync_handoff(proj_b, vault_b, "p", "2026-06-01", "14:00", now)
+            # sync_handoff takes the RESOLVED project root since the
+            # 2026-07-28 zone-awareness fix (main() resolves it via
+            # find_project_dir), not the vault root.
+            hook.sync_handoff(proj_b, vault_b / "projects" / "p", "p",
+                              "2026-06-01", "14:00", now)
             handoff_b = vault_b / "projects" / "p" / "_handoff.md"
             self.assertTrue(handoff_b.is_file())
 

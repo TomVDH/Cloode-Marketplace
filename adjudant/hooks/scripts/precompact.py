@@ -81,12 +81,26 @@ except Exception:  # pragma: no cover - degrade: mechanical work without freshne
         )
 
 try:
-    from _vault_walk import is_safe_slug, resolve_vault
+    from _vault_walk import find_project_dir, is_safe_slug, resolve_vault
     _RESOLVER = True
 except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
     _RESOLVER = False
 
     def resolve_vault(_project_root, _env_vault=None):  # type: ignore
+        return None
+
+    # Zone-aware project resolution must not depend on the import succeeding
+    # (stdlib-free: this block runs when imports are already failing).
+    def find_project_dir(vault, slug):  # type: ignore
+        cands = [vault / "projects" / slug,
+                 vault / "projects" / "_fridge" / slug,
+                 vault / "projects" / "_archive" / slug]
+        for c in cands:
+            if (c / "brief.md").is_file():
+                return c
+        for c in cands:
+            if c.is_dir():
+                return c
         return None
 
     # The slug guard must NOT depend on the import succeeding — a broken or
@@ -137,7 +151,7 @@ def find_remember_source(project_dir: Path) -> Optional[Path]:
     return None
 
 
-def sync_handoff(project_dir: Path, vault: Path, slug: str, today: str, ts: str, now: datetime) -> None:
+def sync_handoff(project_dir: Path, project_root: Path, slug: str, today: str, ts: str, now: datetime) -> None:
     """Mirror the remember source → `_handoff.md` with a freshness header.
 
     Fails closed. Rendered by the SAME `render_handoff` the sync verb uses, so
@@ -155,13 +169,13 @@ def sync_handoff(project_dir: Path, vault: Path, slug: str, today: str, ts: str,
     if not body.strip():
         return
 
-    session_file = latest_session_file(vault / "projects" / slug / "sessions", today)
+    session_file = latest_session_file(project_root / "sessions", today)
     light, age_str, next_line, stale = compute_freshness(project_dir, body, source, session_file, now)
     fresh = freshness_header(light, age_str, next_line, stale)
     fresh_block = f"{fresh}\n\n" if fresh else ""
 
     try:
-        handoff = vault / "projects" / slug / "_handoff.md"
+        handoff = project_root / "_handoff.md"
         frontmatter = preserved_frontmatter(handoff, today) \
             or HANDOFF_FRONTMATTER_TEMPLATE.format(slug=slug, today=today, source_stem=source.stem)
         handoff.parent.mkdir(parents=True, exist_ok=True)
@@ -235,11 +249,18 @@ def main() -> int:
     # (the session ended; it did not pause for compaction).
     sync_only = "--sync-only" in sys.argv[1:]
 
+    # Zone-aware: shelf moves projects to _fridge/ and _archive/ without
+    # touching the breadcrumb. Hardcoding projects/<slug> rewrote a phantom
+    # _handoff.md in the active zone on EVERY compaction (write_text clobbers).
+    project_root = find_project_dir(vault, slug)
+    if project_root is None:
+        return 0  # project exists in no zone: never materialize it
+
     if not sync_only:
-        session_file = latest_session_file(vault / "projects" / slug / "sessions", today)
+        session_file = latest_session_file(project_root / "sessions", today)
         append_pause_marker(project_dir, session_file, ts)
 
-    sync_handoff(project_dir, vault, slug, today, ts, now)
+    sync_handoff(project_dir, project_root, slug, today, ts, now)
     return 0
 
 

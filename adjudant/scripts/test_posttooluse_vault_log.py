@@ -242,6 +242,50 @@ class TestSourceSessionStamp(_HookHarness):
             self.assertNotIn("source_session", note.read_text())
 
 
+class TestZoneAwareness(_HookHarness):
+    """Audit 2026-07-27: shelf moves projects to _fridge/ and _archive/ without
+    touching the breadcrumb, so a hardcoded projects/<slug> silently dropped
+    every write to a shelved project."""
+
+    def _shelved(self, tmp: Path, zone: str = "_fridge"):
+        project = tmp / "code"
+        vault = tmp / "vault"
+        proot = vault / "projects" / zone / "demo"
+        (proot / "sessions").mkdir(parents=True)
+        (proot / "brief.md").write_text(
+            "---\ntype: project\nslug: demo\nstatus: paused\n---\n\n# Demo\n")
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
+        today = datetime.now().strftime("%Y-%m-%d")
+        session = proot / "sessions" / f"{today}.md"
+        session.write_text("## Log\n")
+        return project, proot, session
+
+    def test_write_into_fridge_project_is_logged(self):
+        for zone in ("_fridge", "_archive"):
+            with self.subTest(zone=zone):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, proot, session = self._shelved(Path(tmp), zone)
+                    note = self._note(proot, "notes/idea.md")
+                    rc = self._run(project, self._payload(note))
+                    self.assertEqual(rc, 0)
+                    self.assertIn("notes/idea.md", session.read_text())
+                    self.assertFalse((Path(tmp) / "vault" / "projects" / "demo").exists())
+
+    def test_unknown_project_is_noop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, proot, session = self._fixture(root)
+            (project / ".claude" / "adjudant").write_text(
+                f"vault_path: {root / 'vault'}\nvault_name: vault\n"
+                "slug: ghosttown\nmode: project\n")
+            note = self._note(proot, "notes/idea.md")
+            rc = self._run(project, self._payload(note))
+            self.assertEqual(rc, 0)
+            self.assertFalse((root / "vault" / "projects" / "ghosttown").exists())
+
+
 class TestSlugGuard(_HookHarness):
     """Audit 2026-07-27: the breadcrumb is repo-committed, so a cloned repo can
     carry a traversal slug. The hook must refuse it before building a path."""

@@ -11,6 +11,25 @@
 # locally-valid vault_path.
 set -euo pipefail
 
+# Zone-aware project resolution. Mirrors _vault_walk.find_project_dir: prefer
+# a candidate holding brief.md, else any existing dir, else fail. Kept in bash
+# (not a python shim) so it works identically in degraded pure-bash mode and
+# costs no extra subprocess on a hook that fires every session.
+# Returns non-zero when the project exists in NO zone — callers must no-op
+# rather than create, or an unconnected slug materializes a phantom project.
+zone_project_dir() {
+  local vault="$1" slug="$2" c
+  for c in "$vault/projects/$slug" "$vault/projects/_fridge/$slug" \
+           "$vault/projects/_archive/$slug"; do
+    if [ -f "$c/brief.md" ]; then printf '%s' "$c"; return 0; fi
+  done
+  for c in "$vault/projects/$slug" "$vault/projects/_fridge/$slug" \
+           "$vault/projects/_archive/$slug"; do
+    if [ -d "$c" ]; then printf '%s' "$c"; return 0; fi
+  done
+  return 1
+}
+
 main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
@@ -39,6 +58,7 @@ except Exception:
 
   # --- 1. Read breadcrumb ---
   local breadcrumb="$project_dir/.claude/adjudant"
+  # (zone_project_dir is defined above main; mirrors _vault_walk.find_project_dir)
   [ ! -f "$breadcrumb" ] && return 0
 
   local vault_path slug
@@ -85,6 +105,15 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
   [ -z "$vault_path" ] && return 0
   [ ! -d "$vault_path" ] && return 0
 
+  # Zone-aware project resolution, once, before anything reads or writes under
+  # it. /adjudant shelf moves projects to _fridge/ and _archive/ and never
+  # touches the breadcrumb; hardcoding projects/$slug built a GHOST twin in the
+  # active zone and wrote notes there forever. Empty means the project exists
+  # in no zone — read the vault, but never materialize it.
+  local vault_project rel_project
+  vault_project=$(zone_project_dir "$vault_path" "$slug") || vault_project=""
+  rel_project="${vault_project#"$vault_path"/}"
+
   # --- 2. Inject context block ---
   printf '## Adjudant\n\n'
   printf -- '- Vault: `%s` (linked to project `%s`)\n' "$(basename "$vault_path")" "$slug"
@@ -109,10 +138,10 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
   # feed the todo slot (neither is started work); unknown columns fold into
   # todo so the totals stay honest. Stale flag when any task note is newer
   # than the deck file. Advisory: any failure just drops the line.
-  local deck="$vault_path/projects/$slug/board/board-data.json"
-  if [ -f "$deck" ] && command -v python3 >/dev/null 2>&1; then
+  local deck="$vault_project/board/board-data.json"
+  if [ -n "$vault_project" ] && [ -f "$deck" ] && command -v python3 >/dev/null 2>&1; then
     local board_line
-    board_line=$(python3 - "$deck" "$vault_path/projects/$slug/tasks" <<'PY' 2>/dev/null || true
+    board_line=$(python3 - "$deck" "$vault_project/tasks" <<'PY' 2>/dev/null || true
 import json, os, sys
 try:
     deck_path, tasks_dir = sys.argv[1], sys.argv[2]
@@ -151,10 +180,16 @@ PY
   fi
 
   # --- 3. Session note: create or resume ---
+  # No project dir in any zone: the breadcrumb points at something that was
+  # never connected (or was deleted). Say so; never materialize it.
+  if [ -z "$vault_project" ]; then
+    printf -- '- ⚠️ No vault project `%s` in any zone — run `/adjudant connect` to create it.\n' "$slug"
+    return 0
+  fi
   local today ts session_dir session_file
   # Single clock read so date and time can't straddle midnight between calls.
   read -r today ts <<< "$(date '+%Y-%m-%d %H:%M')"
-  session_dir="$vault_path/projects/$slug/sessions"
+  session_dir="$vault_project/sessions"
   session_file="$session_dir/$today.md"
 
   mkdir -p "$session_dir" 2>/dev/null || true
@@ -189,7 +224,7 @@ EOF
   ) 2>/dev/null; then
     # Only claim creation when the write actually succeeded — a failed write
     # (read-only vault, offline iCloud) must not inject a phantom-file claim.
-    printf -- '- Session note created: `projects/%s/sessions/%s.md`\n' "$slug" "$today"
+    printf -- '- Session note created: `%s/sessions/%s.md`\n' "$rel_project" "$today"
   elif [ -f "$session_file" ]; then
     local resumed_ok=0
     case "$start_source" in
@@ -214,7 +249,7 @@ EOF
         python3 "$CLAUDE_PLUGIN_ROOT/scripts/_session_stamp.py" \
           session-id "$session_file" "$session_id" >/dev/null 2>&1 || true
       fi
-      printf -- '- Session note resumed: `projects/%s/sessions/%s.md`\n' "$slug" "$today"
+      printf -- '- Session note resumed: `%s/sessions/%s.md`\n' "$rel_project" "$today"
     fi
   fi
   # else: write failed and no file exists — stay silent, claim nothing.

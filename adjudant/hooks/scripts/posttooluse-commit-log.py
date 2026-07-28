@@ -33,13 +33,33 @@ except Exception:  # pragma: no cover - defensive
     pass
 
 try:
-    from _vault_walk import resolve_vault
+    from _vault_walk import find_project_dir, is_safe_slug, resolve_vault
     _RESOLVER = True
 except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
     _RESOLVER = False
 
     def resolve_vault(_project_root, _env_vault=None):  # type: ignore
         return None
+
+    # Both guards must survive a failed import (stdlib-free: this block runs
+    # when imports are already failing).
+    def find_project_dir(vault, slug):  # type: ignore
+        cands = [vault / "projects" / slug,
+                 vault / "projects" / "_fridge" / slug,
+                 vault / "projects" / "_archive" / slug]
+        for c in cands:
+            if (c / "brief.md").is_file():
+                return c
+        for c in cands:
+            if c.is_dir():
+                return c
+        return None
+
+    def is_safe_slug(slug):  # type: ignore
+        if not isinstance(slug, str) or not slug or len(slug) > 64:
+            return False
+        return slug[0] != "-" and all(
+            c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in slug)
 
 
 TEMPLATE = Path(__file__).resolve().parents[2] / "skills" / "adjudant" / "templates" / "release.md"
@@ -323,6 +343,9 @@ def main() -> int:
         return 0
     info = read_breadcrumb(Path(project_dir))
     slug = info.get("slug", "")
+    # Repo-committed breadcrumb: reject non-kebab slugs before any path build.
+    if slug and not is_safe_slug(slug):
+        return 0
     if not slug:
         return 0
     vault = resolve_vault(Path(project_dir))
@@ -337,7 +360,11 @@ def main() -> int:
         vault = p if (p is not None and p.is_dir()) else None
     if vault is None or not vault.is_dir():
         return 0  # stale breadcrumb: fail closed, never log to a phantom path
-    project_root = vault / "projects" / slug
+    # Zone-aware: shelf moves projects to _fridge/ and _archive/ without
+    # touching the breadcrumb.
+    project_root = find_project_dir(vault, slug)
+    if project_root is None:
+        return 0  # project exists in no zone: never materialize it
     if not project_root.is_dir():
         return 0  # stale slug: never materialize a phantom project chain
 

@@ -196,5 +196,42 @@ class TestMidnightStraddle(_HookHarness):
             self.assertNotIn("compacted", decoy.read_text())  # digit glob, not ?
 
 
+class TestZoneAwareness(_HookHarness):
+    """Audit 2026-07-27: hooks hardcoded projects/<slug> while shelf moves
+    projects to _fridge/ and _archive/."""
+
+    def test_gist_lands_in_shelved_project(self):
+        for zone in ("_fridge", "_archive"):
+            with self.subTest(zone=zone):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    project = root / "code"
+                    vault = root / "vault"
+                    sessions = vault / "projects" / zone / "demo" / "sessions"
+                    sessions.mkdir(parents=True)
+                    (sessions.parent / "brief.md").write_text(
+                        "---\ntype: project\nslug: demo\n---\n\n# Demo\n")
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    note = sessions / f"{today}.md"
+                    note.write_text("## Log\n")
+                    self._breadcrumb(project, str(vault))
+                    rc = self._run_main(
+                        project, {"compaction_summary": "did the thing"})
+                    self.assertEqual(rc, 0)
+                    self.assertIn("compacted: did the thing", note.read_text())
+                    self.assertFalse((vault / "projects" / "demo").exists())
+
+    def test_unknown_project_is_noop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "code"
+            vault = root / "vault"
+            (vault / "projects").mkdir(parents=True)
+            self._breadcrumb(project, str(vault))
+            rc = self._run_main(project, {"compaction_summary": "orphan"})
+            self.assertEqual(rc, 0)
+            self.assertFalse((vault / "projects" / "demo").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

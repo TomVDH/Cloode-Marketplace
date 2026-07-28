@@ -546,5 +546,106 @@ class TestUserPromptReminder(unittest.TestCase):
             self.assertIn("Vault not linked", r3.stdout)  # new session fires
 
 
+class TestZoneAwareness(unittest.TestCase):
+    """Audit 2026-07-27 (all three agents found this independently).
+
+    `/adjudant shelf` moves a project to projects/_fridge/<slug> or
+    projects/_archive/<slug> and never touches the repo breadcrumb. The hooks
+    hardcoded projects/<slug>, so the next session built a GHOST twin in the
+    active zone and wrote notes there forever while the real project went
+    untouched. Hooks must resolve across zones and no-op when the project
+    does not exist at all.
+    """
+
+    def _shelved(self, tmp: Path, zone: str = "_fridge") -> tuple[Path, Path, Path]:
+        home = tmp / "home"
+        project = tmp / "code"
+        vault = home / "vault"
+        proot = vault / "projects" / zone / "demo"
+        (proot / "sessions").mkdir(parents=True)
+        (proot / "brief.md").write_text(
+            "---\ntype: project\nslug: demo\nstatus: paused\n---\n\n# Demo\n")
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nslug: demo\nmode: project\n")
+        return project, home, proot
+
+    def test_session_start_writes_into_fridge_not_a_ghost(self):
+        for plugin_root in (True, False):
+            with self.subTest(python_shim=plugin_root):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, home, proot = self._shelved(Path(tmp))
+                    r = _run("session-start.sh", project, home,
+                             plugin_root=plugin_root)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    today = date.today().isoformat()
+                    self.assertTrue(
+                        (proot / "sessions" / f"{today}.md").is_file(),
+                        "session note must land in the shelved project")
+                    ghost = home / "vault" / "projects" / "demo"
+                    self.assertFalse(ghost.exists(),
+                                     "no phantom active-zone project may be created")
+
+    def test_session_start_archive_zone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home, proot = self._shelved(Path(tmp), zone="_archive")
+            r = _run("session-start.sh", project, home, plugin_root=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            today = date.today().isoformat()
+            self.assertTrue((proot / "sessions" / f"{today}.md").is_file())
+            self.assertFalse((home / "vault" / "projects" / "demo").exists())
+
+    def test_session_start_unknown_project_creates_nothing(self):
+        # Breadcrumb points at a project that exists in NO zone (never
+        # connected, or deleted): the hook must not materialize it.
+        for plugin_root in (True, False):
+            with self.subTest(python_shim=plugin_root):
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmpp = Path(tmp)
+                    home = tmpp / "home"
+                    project = tmpp / "code"
+                    vault = home / "vault"
+                    (vault / "projects").mkdir(parents=True)
+                    (project / ".claude").mkdir(parents=True)
+                    (project / ".claude" / "adjudant").write_text(
+                        f"vault_path: {vault}\nslug: ghosttown\nmode: project\n")
+                    r = _run("session-start.sh", project, home,
+                             plugin_root=plugin_root)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertFalse((vault / "projects" / "ghosttown").exists(),
+                                     "unconnected project must not be created by a hook")
+
+    def test_session_start_active_zone_still_works(self):
+        # Guard against over-correction: the ordinary case must be untouched.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            home = tmpp / "home"
+            project = tmpp / "code"
+            vault = home / "vault"
+            proot = vault / "projects" / "demo"
+            proot.mkdir(parents=True)
+            (proot / "brief.md").write_text(
+                "---\ntype: project\nslug: demo\nstatus: active\n---\n\n# Demo\n")
+            (project / ".claude").mkdir(parents=True)
+            (project / ".claude" / "adjudant").write_text(
+                f"vault_path: {vault}\nslug: demo\nmode: project\n")
+            r = _run("session-start.sh", project, home, plugin_root=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            today = date.today().isoformat()
+            self.assertTrue((proot / "sessions" / f"{today}.md").is_file())
+
+    def test_sessionend_appends_into_fridge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home, proot = self._shelved(Path(tmp))
+            today = date.today().isoformat()
+            note = proot / "sessions" / f"{today}.md"
+            note.write_text("## Log\n")
+            r = _run("sessionend.sh", project, home, plugin_root=True,
+                     stdin=json.dumps({"reason": "clear"}))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("session ended", note.read_text())
+            self.assertFalse((home / "vault" / "projects" / "demo").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

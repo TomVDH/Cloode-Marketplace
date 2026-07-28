@@ -31,12 +31,26 @@ except Exception:  # pragma: no cover - defensive
     pass
 
 try:
-    from _vault_walk import is_safe_slug, resolve_vault
+    from _vault_walk import find_project_dir, is_safe_slug, resolve_vault
     _RESOLVER = True
 except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
     _RESOLVER = False
 
     def resolve_vault(_project_root, _env_vault=None):  # type: ignore
+        return None
+
+    # Zone-aware project resolution must not depend on the import succeeding
+    # (stdlib-free: this block runs when imports are already failing).
+    def find_project_dir(vault, slug):  # type: ignore
+        cands = [vault / "projects" / slug,
+                 vault / "projects" / "_fridge" / slug,
+                 vault / "projects" / "_archive" / slug]
+        for c in cands:
+            if (c / "brief.md").is_file():
+                return c
+        for c in cands:
+            if c.is_dir():
+                return c
         return None
 
     # Slug guard must not depend on the import succeeding (stdlib-free: this
@@ -133,7 +147,10 @@ def main() -> int:
     today = now.strftime("%Y-%m-%d")
     # Today's note, or the latest existing one when the session straddles
     # midnight (the new day's note appears at the next SessionStart).
-    sessions_dir = vault / "projects" / slug / "sessions"
+    project_root = find_project_dir(vault, slug)
+    if project_root is None:
+        return 0  # zone-aware: never materialize a project that exists nowhere
+    sessions_dir = project_root / "sessions"
     session_file = sessions_dir / f"{today}.md"
     if not session_file.exists():
         try:

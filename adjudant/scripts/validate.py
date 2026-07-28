@@ -33,6 +33,7 @@ Validators:
  27. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
  28. decision-status-vocabulary   : _vault_walk constants, vault-standards, and the decision template agree on the five-state note vocabulary
  29. template-schema-parity       : every registered template's frontmatter keys cover its type's required set and stay inside required | optional
+ 30. hook-zone-awareness         : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
 
 29 validators total.
 """
@@ -707,6 +708,54 @@ def validate_status_vocabulary(r: Result) -> None:
     r.add_pass(name)
 
 
+def validate_hook_zone_awareness(r: Result) -> None:
+    """30. hook-zone-awareness — no hook may hardcode projects/<slug>.
+
+    Audit 2026-07-27: every hook built `{vault}/projects/{slug}` directly while
+    /adjudant shelf moves projects to `_fridge/` and `_archive/` without
+    touching the breadcrumb. A shelved project therefore grew a GHOST twin in
+    the active zone that hooks wrote to forever, while writes to the real
+    project were silently dropped. Hooks must resolve via find_project_dir
+    (python) or zone_project_dir (bash), and gate the slug first.
+    """
+    name = "hook-zone-awareness"
+    scripts = sorted((ROOT / "hooks" / "scripts").glob("*"))
+    offenders: list[str] = []
+    missing_guard: list[str] = []
+    for s in scripts:
+        if s.suffix not in (".py", ".sh"):
+            continue
+        text = s.read_text()
+        body = text
+        if s.suffix == ".py":
+            # The degraded-mode fallback legitimately spells the candidates
+            # out; only flag construction OUTSIDE a find_project_dir def.
+            body = re.sub(r"def find_project_dir\(.*?\n(?=\n{2}|\Z)", "", text, flags=re.S)
+            if re.search(r'"projects"\s*/\s*slug', body):
+                offenders.append(s.name)
+            uses_slug_path = "slug" in body and 'vault' in body
+            if uses_slug_path and "find_project_dir" not in text:
+                offenders.append(s.name)
+            if uses_slug_path and "is_safe_slug" not in text:
+                missing_guard.append(s.name)
+        else:
+            body = re.sub(r"zone_project_dir\(\) \{.*?\n\}\n", "", text, flags=re.S)
+            # Comments describing the fix legitimately name the old shape.
+            body = "\n".join(ln for ln in body.splitlines()
+                             if not ln.lstrip().startswith("#"))
+            if re.search(r'projects/\$slug', body):
+                offenders.append(s.name)
+            if "$slug" in body and "zone_project_dir" not in text:
+                offenders.append(s.name)
+    if offenders:
+        r.add_fail(name, f"hooks hardcode projects/<slug>: {sorted(set(offenders))}")
+        return
+    if missing_guard:
+        r.add_fail(name, f"hooks build paths from an unvalidated slug: {sorted(set(missing_guard))}")
+        return
+    r.add_pass(name)
+
+
 def validate_decision_status_vocabulary(r: Result) -> None:
     """28. decision-status-vocabulary — _vault_walk constants, vault-standards,
     and the decision template agree on the five-state note vocabulary."""
@@ -967,6 +1016,7 @@ def main() -> int:
     validate_hooks_wiring(r)
     validate_decision_status_vocabulary(r)
     validate_template_schema_parity(r)
+    validate_hook_zone_awareness(r)
     return r.report()
 
 

@@ -7,6 +7,22 @@
 # when reachable, OB_VAULT + local vault_path in pure-bash degraded mode.
 set -euo pipefail
 
+# Zone-aware project resolution. Mirrors _vault_walk.find_project_dir (and
+# session-start.sh's copy): prefer a candidate holding brief.md, else any
+# existing dir, else fail so the caller no-ops instead of creating a phantom.
+zone_project_dir() {
+  local vault="$1" slug="$2" c
+  for c in "$vault/projects/$slug" "$vault/projects/_fridge/$slug" \
+           "$vault/projects/_archive/$slug"; do
+    if [ -f "$c/brief.md" ]; then printf '%s' "$c"; return 0; fi
+  done
+  for c in "$vault/projects/$slug" "$vault/projects/_fridge/$slug" \
+           "$vault/projects/_archive/$slug"; do
+    if [ -d "$c" ]; then printf '%s' "$c"; return 0; fi
+  done
+  return 1
+}
+
 main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
@@ -69,10 +85,13 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
   [ -z "$vault_path" ] && return 0
   [ ! -d "$vault_path" ] && return 0  # stale breadcrumb: never write to a phantom path
 
-  local today ts session_dir session_file
+  local today ts session_dir session_file vault_project
+  # Zone-aware: shelf moves projects to _fridge/ and _archive/ without touching
+  # the breadcrumb; hardcoding projects/$slug appended to a phantom twin.
+  vault_project=$(zone_project_dir "$vault_path" "$slug") || return 0
   # Single clock read so date and time can't straddle midnight between calls.
   read -r today ts <<< "$(date '+%Y-%m-%d %H:%M')"
-  session_dir="$vault_path/projects/$slug/sessions"
+  session_dir="$vault_project/sessions"
   session_file="$session_dir/$today.md"
 
   # Midnight straddle: a session started 23:40 and ended 00:10 targets the new
@@ -112,7 +131,6 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
   # is born from a bare session end.
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/board_bridge.py" ] \
      && command -v python3 >/dev/null 2>&1; then
-    local vault_project="$vault_path/projects/$slug"
     local ledger="${TMPDIR:-/tmp}/adjudant-task-ledger-${session_id}.jsonl"
     if [ -n "$session_id" ] && [ -f "$ledger" ]; then
       python3 "$CLAUDE_PLUGIN_ROOT/scripts/board_bridge.py" --bridge "$ledger" \
