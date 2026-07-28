@@ -256,6 +256,34 @@ class TestDryRunNeverLogs(_CommitLogCase):
                 self.assertEqual(self.session_note.read_text(), "## Log\n")
 
 
+class TestLogSafeSubject(_CommitLogCase):
+    """Audit 2026-07-27: subjects are author text landing in a wikilink-bearing
+    markdown file, written verbatim before this."""
+
+    def test_wikilink_in_subject_is_neutralized(self):
+        subject = "feat(demo): see [[projects/other/decisions/secret]] now"
+        self._land(subject)
+        rc = self._run(self._payload(f'git commit -m "{subject}"'))
+        self.assertEqual(rc, 0)
+        text = self.session_note.read_text()
+        self.assertNotIn("[[projects/other", text)
+        self.assertIn("[ [projects/other", text)
+
+    def test_long_subject_capped(self):
+        subject = "feat(demo): " + "x" * 400
+        self._land(subject)
+        self._run(self._payload(f'git commit -m "{subject}"'))
+        line = [ln for ln in self.session_note.read_text().splitlines()
+                if "commit:" in ln][0]
+        self.assertLessEqual(len(line), 240)
+        self.assertTrue(line.endswith("…"))
+
+    def test_log_safe_flattens_newlines(self):
+        self.assertEqual(
+            commit_log.log_safe("feat: a\nforged: line"), "feat: a forged: line")
+        self.assertEqual(commit_log.log_safe("a\r\nb"), "a b")
+
+
 class TestCommitVerification(_CommitLogCase):
     """Audit 2026-07-27: the Bash tool_response carries no exit code, so the
     old payload-only gate failed OPEN and logged commits that never landed."""

@@ -118,6 +118,24 @@ def response_indicates_success(resp) -> bool:
     return True
 
 
+_LOG_SUBJECT_MAX = 200
+
+
+def log_safe(subject: str) -> str:
+    """A commit subject rendered safe to append to a vault session note.
+
+    Subjects are author-controlled text landing in a wikilink-bearing markdown
+    file: an unescaped `[[projects/x/y]]` became a LIVE link that `check` then
+    scored as a broken wikilink. Neutralize the brackets, flatten any newline
+    or carriage return (a forged second log line), and cap the length.
+    """
+    flat = " ".join(str(subject).split())
+    flat = flat.replace("[[", "[ [").replace("]]", "] ]")
+    if len(flat) > _LOG_SUBJECT_MAX:
+        flat = flat[:_LOG_SUBJECT_MAX - 1].rstrip() + "…"
+    return flat
+
+
 def _first_group(m) -> str:
     """First non-None capture of the quoted/bare path alternation."""
     return next((g for g in m.groups() if g), "") if m else ""
@@ -342,7 +360,7 @@ def main() -> int:
     if session_file.exists():
         try:
             with session_file.open("a") as f:
-                f.write(f"- {ts} · commit: {subject}\n")
+                f.write(f"- {ts} · commit: {log_safe(subject)}\n")
         except OSError:
             pass  # log-write failure must not block the release scaffold
 
