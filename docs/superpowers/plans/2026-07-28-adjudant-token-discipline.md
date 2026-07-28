@@ -521,7 +521,9 @@ validator to pass.
 SP="$(mktemp -d)"; mkdir -p "$SP/vault/projects/demo/decisions" "$SP/code/.claude"
 printf -- '---\ntype: project\nslug: demo\n---\n\n# Demo\n' > "$SP/vault/projects/demo/brief.md"
 printf 'vault_path: %s\nvault_name: vault\nslug: demo\nmode: project\n' "$SP/vault" > "$SP/code/.claude/adjudant"
-echo '{"tool_name":"Write","tool_input":{"file_path":"'"$SP"'/vault/projects/demo/decisions/d.md","content":"---\ntype: decision\n---\n\nB\n"}}' \
+# printf, not echo: zsh's builtin echo does not expand \n, which mangles the
+# JSON and makes the hook (correctly) fail open instead of exercising the gate.
+printf '{"tool_name":"Write","tool_input":{"file_path":"%s/vault/projects/demo/decisions/d.md","content":"---\\ntype: decision\\n---\\n\\nB\\n"}}' "$SP" \
   | env -u OB_VAULT CLAUDE_PROJECT_DIR="$SP/code" python3 adjudant/hooks/scripts/pretooluse-schema-gate.py; echo "exit=$?"
 ```
 Expected: stderr names the missing fields, `exit=2`.
