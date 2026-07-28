@@ -888,5 +888,37 @@ class TestTemplateSchemaParity(_PatchedTree):
         self.assertTrue(any("template-schema-parity" in f for f in r.failures))
 
 
+class TestSkillSplit(unittest.TestCase):
+    """v0.17.0 token discipline: background tables live in internals.md, not
+    in the always-loaded router."""
+
+    SKILL = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "SKILL.md"
+    INTERNALS = (Path(__file__).resolve().parent.parent / "skills" / "adjudant"
+                 / "reference" / "internals.md")
+
+    def test_internals_exists_and_holds_the_tables(self):
+        text = self.INTERNALS.read_text()
+        self.assertIn("posttooluse-vault-log.py", text)   # hooks table
+        self.assertIn("board_bridge.py", text)            # helper layer table
+        self.assertIn("suitcase", text)                   # environment awareness
+
+    def test_skill_sheds_the_background_tables(self):
+        text = self.SKILL.read_text()
+        self.assertNotIn("posttooluse-vault-log.py", text)
+        self.assertNotIn("board_bridge.py", text)
+
+    def test_skill_still_routes_and_points_at_internals(self):
+        text = self.SKILL.read_text()
+        for verb in ("connect", "port", "sync", "check", "sitrep", "tidy",
+                     "ramasse", "dream", "draw", "board", "shelf"):
+            self.assertIn(f"`{verb}`", text)
+        self.assertIn("reference/internals.md", text)
+
+    def test_skill_within_token_budget(self):
+        # bytes // 4, the repo's own estimator. Target from the design spec.
+        est = len(self.SKILL.read_text()) // 4
+        self.assertLess(est, 2000, f"SKILL.md is ~{est} tok, budget 2000")
+
+
 if __name__ == "__main__":
     unittest.main()
