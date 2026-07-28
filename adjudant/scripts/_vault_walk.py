@@ -730,10 +730,19 @@ STATUS_VALUES_FOR_TYPE: dict[str, tuple[str, ...]] = {
 # deliberately absent everywhere: membership is the path. `source_session` is
 # optional wherever the stamp hook could historically write it, so old stamps
 # never read as drift.
+# Descriptive fields legal on every content type (not on system shapes:
+# session, handoff, index, project, vault-home). Widened 2026-07-27 so tidy
+# never strips real-world metadata Tom actually writes.
+_CONTENT_OPTIONAL: frozenset[str] = frozenset({
+    "related", "title", "name", "description",
+})
+
 FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     "decision": {
         "required": frozenset({"type", "status", "date", "tags"}),
-        "optional": frozenset({"supersedes", "source_session"}),
+        "optional": frozenset({"supersedes", "superseded_by",
+                               "implemented_verified", "source_session"})
+                    | _CONTENT_OPTIONAL,
     },
     "session": {
         "required": frozenset({"type", "date", "started", "session_id", "tags"}),
@@ -741,11 +750,12 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     },
     "note": {
         "required": frozenset({"type", "created", "updated", "tags"}),
-        "optional": frozenset({"source_session"}),
+        "optional": frozenset({"superseded_by", "source_session"}) | _CONTENT_OPTIONAL,
     },
     "doc": {
         "required": frozenset({"type", "title", "updated", "tags"}),
-        "optional": frozenset({"source_session"}),
+        "optional": frozenset({"superseded_by", "source_session"})
+                    | (_CONTENT_OPTIONAL - {"title"}),
     },
     "handoff": {
         "required": frozenset({"type", "updated", "source", "tags"}),
@@ -753,24 +763,26 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     },
     "task": {
         "required": frozenset({"type", "status", "tags"}),
-        "optional": frozenset({"category", "code", "related", "note", "source_session"}),
+        "optional": frozenset({"category", "code", "note", "source_session"})
+                    | _CONTENT_OPTIONAL,
     },
     "release": {
         "required": frozenset({"type", "version", "date", "tags"}),
-        "optional": frozenset({"source_session"}),
+        "optional": frozenset({"source_session"}) | _CONTENT_OPTIONAL,
     },
     "source": {
         "required": frozenset({"type", "title", "tags"}),
-        "optional": frozenset({"author", "url", "medium", "year", "source_session"}),
+        "optional": frozenset({"author", "url", "medium", "year", "source_session"})
+                    | (_CONTENT_OPTIONAL - {"title"}),
     },
     "iteration": {
         "required": frozenset({"type", "identifier", "status", "date", "tags"}),
         "optional": frozenset({"track", "register", "supersedes", "builds_on",
-                               "artefacts", "source_session"}),
+                               "artefacts", "source_session"}) | _CONTENT_OPTIONAL,
     },
     "dream-report": {
         "required": frozenset({"type", "date", "tags"}),
-        "optional": frozenset({"source_session"}),
+        "optional": frozenset({"source_session"}) | _CONTENT_OPTIONAL,
     },
     "project": {
         "required": frozenset({"type", "project_type", "slug", "aliases",

@@ -12,6 +12,11 @@ Every vault file has YAML frontmatter. No exceptions except `Home.md` (which onl
 - Dates: ISO `YYYY-MM-DD` for date-only; full ISO 8601 for timestamps.
 - Strings with special characters (colons, brackets) must be quoted.
 - Empty optional fields: **omit the key entirely** rather than `null` or empty string.
+- **Descriptive fields** `related:`, `title:`, `name:`, `description:` are legal optional
+  keys on every content type (decision / note / doc / source / task / release / iteration /
+  dream-report; `title:` is required, not optional, on doc and source). `superseded_by:` is
+  legal on decision, doc, note; `implemented_verified:` on decision only. System shapes
+  (session, handoff, index, brief, vault-home) stay narrow on purpose.
 - Arrays use YAML list syntax, not inline `[]` (exception: empty arrays use `[]`).
 
 ### Project membership

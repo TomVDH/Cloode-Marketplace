@@ -825,7 +825,30 @@ class TestFieldSchema(unittest.TestCase):
         self.assertEqual(FIELD_SCHEMA["decision"]["required"],
                          frozenset({"type", "status", "date", "tags"}))
         self.assertEqual(FIELD_SCHEMA["decision"]["optional"],
-                         frozenset({"supersedes", "source_session"}))
+                         frozenset({"supersedes", "superseded_by", "implemented_verified",
+                                    "source_session", "related", "title", "name",
+                                    "description"}))
+
+    def test_content_optional_widening(self):
+        # 2026-07-27: related/title/name/description legal on every content
+        # type; superseded_by on decision/doc/note; implemented_verified on
+        # decision only. System shapes stay narrow.
+        for ftype in ("decision", "note", "task", "release", "source",
+                      "iteration", "dream-report", "doc"):
+            for key in ("related", "name", "description"):
+                self.assertIn(key, FIELD_SCHEMA[ftype]["optional"], (ftype, key))
+        # title is REQUIRED on doc/source, optional elsewhere - never both
+        for ftype in ("decision", "note", "task", "release", "iteration", "dream-report"):
+            self.assertIn("title", FIELD_SCHEMA[ftype]["optional"], ftype)
+        for ftype in ("doc", "source"):
+            self.assertIn("title", FIELD_SCHEMA[ftype]["required"], ftype)
+            self.assertNotIn("title", FIELD_SCHEMA[ftype]["optional"], ftype)
+        for ftype in ("decision", "doc", "note"):
+            self.assertIn("superseded_by", FIELD_SCHEMA[ftype]["optional"], ftype)
+        self.assertIn("implemented_verified", FIELD_SCHEMA["decision"]["optional"])
+        self.assertNotIn("implemented_verified", FIELD_SCHEMA["note"]["optional"])
+        for ftype in ("session", "handoff", "index", "project", "vault-home"):
+            self.assertNotIn("related", FIELD_SCHEMA[ftype]["optional"], ftype)
 
     def test_session_requires_session_id(self):
         self.assertIn("session_id", FIELD_SCHEMA["session"]["required"])
