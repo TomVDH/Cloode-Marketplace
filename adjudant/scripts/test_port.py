@@ -1,6 +1,7 @@
 """Tests for adjudant/scripts/port.py."""
 
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -493,6 +494,78 @@ class TestStalenessGuard(unittest.TestCase):
             (root / ".adjudant-port-preview" / "source-hash.txt").unlink()  # legacy preview
             (root / "AGENTS.md").write_text("# P edited\n")
             apply_preview(root)  # backward compat: no guard, no raise
+
+    def test_apply_aborts_when_claude_md_changed(self):
+        # Audit 2026-07-27 finding 15: the guard hashed AGENTS.md only, so
+        # CLAUDE.md edits between preview and apply were silently clobbered.
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as vault:
+            root = Path(tmp)
+            self._preview(root, vault)
+            (root / "CLAUDE.md").write_text("# EDITED claude after preview\n")
+            with self.assertRaises(RuntimeError) as ctx:
+                apply_preview(root)
+            self.assertIn("re-run the preview", str(ctx.exception))
+            self.assertIn("# EDITED claude after preview",
+                          (root / "CLAUDE.md").read_text())
+
+
+class TestVaultChangePreflight(unittest.TestCase):
+    """Audit 2026-07-27 finding 10: apply wrote project files first, then ran
+    vault changes with no rollback. A colliding RENAME raised mid-loop and the
+    vault stayed half-migrated — permanently, because the staleness guard then
+    blocked retry and re-previewing reported 'Already ported'."""
+
+    def _preview_with_rename(self, root: Path, vault: str) -> Path:
+        (root / ".claude").mkdir()
+        (root / ".claude" / "obsidian-bridge").write_text(f"vault: {vault}\nslug: p\n")
+        (root / "AGENTS.md").write_text("# P original\n")
+        (root / "CLAUDE.md").write_text("# P claude\n")
+        proj = Path(vault) / "projects" / "p"
+        (proj / "refs").mkdir(parents=True)
+        (proj / "refs" / "a.md").write_text("ref\n")
+        generate_preview_y(root, vault_path=Path(vault), project_type="coding",
+                           project_name="P")
+        return proj
+
+    def test_colliding_rename_refuses_before_any_write(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as vault:
+            root = Path(tmp)
+            proj = self._preview_with_rename(root, vault)
+            changes = root / ".adjudant-port-preview" / "vault-changes.txt"
+            if "RENAME" not in changes.read_text():
+                changes.write_text(
+                    changes.read_text()
+                    + f"RENAME:{proj / 'refs'}:{proj / 'references'}\n")
+            (proj / "references").mkdir()
+            (proj / "references" / "existing.md").write_text("do not lose me\n")
+
+            agents_before = (root / "AGENTS.md").read_text()
+            with self.assertRaises(RuntimeError) as ctx:
+                apply_preview(root)
+            self.assertIn("NOTHING was changed", str(ctx.exception))
+            # Nothing touched, on either side.
+            self.assertEqual((root / "AGENTS.md").read_text(), agents_before)
+            self.assertTrue((proj / "refs").is_dir())
+            self.assertEqual((proj / "references" / "existing.md").read_text(),
+                             "do not lose me\n")
+            # And the preview survives, so a retry is possible after fixing.
+            self.assertTrue((root / ".adjudant-port-preview").is_dir())
+
+    def test_retry_succeeds_once_the_conflict_is_resolved(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as vault:
+            root = Path(tmp)
+            proj = self._preview_with_rename(root, vault)
+            changes = root / ".adjudant-port-preview" / "vault-changes.txt"
+            if "RENAME" not in changes.read_text():
+                changes.write_text(
+                    changes.read_text()
+                    + f"RENAME:{proj / 'refs'}:{proj / 'references'}\n")
+            (proj / "references").mkdir()
+            with self.assertRaises(RuntimeError):
+                apply_preview(root)
+            shutil.rmtree(proj / "references")   # resolve the conflict
+            apply_preview(root)                  # no raise
+            self.assertFalse((root / ".adjudant-port-preview").exists())
 
 
 class TestSlugHandling(unittest.TestCase):

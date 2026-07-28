@@ -305,12 +305,19 @@ This file is for **Claude Code-specific overrides only**:
 
 
 def _agents_hash(project_root: Path) -> str:
-    """sha256 of AGENTS.md content, or 'absent'. Basis of the apply-time
-    staleness guard promised by reference/port.md."""
-    agents = project_root / "AGENTS.md"
-    if not agents.is_file():
-        return "absent"
-    return hashlib.sha256(agents.read_bytes()).hexdigest()
+    """sha256 over BOTH context files, or 'absent' per file.
+
+    Basis of the apply-time staleness guard promised by reference/port.md.
+    CLAUDE.md joined AGENTS.md here after the 2026-07-27 audit (finding 15):
+    the guard covered AGENTS.md only, so CLAUDE.md edits made between preview
+    and apply were silently clobbered.
+    """
+    digest = hashlib.sha256()
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        f = project_root / name
+        digest.update(name.encode())
+        digest.update(f.read_bytes() if f.is_file() else b"absent")
+    return digest.hexdigest()
 
 
 def _write_source_hash(preview_dir: Path, project_root: Path) -> None:
@@ -592,6 +599,45 @@ def generate_preview_z_scaffold(
     (preview_dir / "summary.md").write_text(summary)
 
 
+def validate_vault_changes(preview: Path) -> None:
+    """Pre-flight every vault-changes.txt line; raise before ANY write.
+
+    Audit 2026-07-27 finding 10: apply wrote the project-side files first and
+    then ran the vault changes with no rollback. A RENAME whose target already
+    existed raised a raw OSError mid-loop, leaving the vault half-migrated.
+    Retry was then blocked by port's own staleness guard (the recorded hash
+    versus the AGENTS.md the failed apply had just written), and re-previewing
+    reported "Already ported" because compliance only inspects project-side
+    files. The vault stayed unfinished, silently, forever.
+
+    Following shelf's pattern: refuse up front and touch nothing.
+    """
+    changes_file = preview / "vault-changes.txt"
+    if not changes_file.is_file():
+        return
+    conflicts: list[str] = []
+    for line in changes_file.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(":", 3)
+        action = parts[0]
+        if action in ("RENAME", "ARCHIVE") and len(parts) >= 3:
+            src, dst = Path(parts[1]), Path(parts[2])
+            if src.is_dir() and dst.exists():
+                conflicts.append(f"{action}: {dst} already exists")
+        elif action == "REPLACE-FROM-PROPOSED" and len(parts) >= 3:
+            if not (preview / parts[2]).is_file():
+                conflicts.append(f"REPLACE-FROM-PROPOSED: {parts[2]} missing from preview")
+    if conflicts:
+        raise RuntimeError(
+            "vault changes cannot be applied cleanly, so NOTHING was changed:\n  "
+            + "\n  ".join(conflicts)
+            + "\nResolve the conflicts in the vault (or delete "
+              ".adjudant-port-preview/ and re-run preview), then apply again."
+        )
+
+
 def apply_preview(project_root: Path) -> None:
     """Phase 2: apply the .adjudant-port-preview/ to the live project."""
     preview = project_root / ".adjudant-port-preview"
@@ -626,10 +672,14 @@ def apply_preview(project_root: Path) -> None:
         recorded = hash_file.read_text().strip()
         if recorded and recorded != _agents_hash(project_root):
             raise RuntimeError(
-                "AGENTS.md changed since the preview was generated — applying "
-                "would overwrite those edits. Delete .adjudant-port-preview/ "
-                "and re-run the preview phase."
+                "AGENTS.md or CLAUDE.md changed since the preview was "
+                "generated — applying would overwrite those edits. Delete "
+                ".adjudant-port-preview/ and re-run the preview phase."
             )
+
+    # Refuse before touching anything if the vault changes cannot land
+    # cleanly — a half-migrated vault used to be unrecoverable (finding 10).
+    validate_vault_changes(preview)
 
     files_to_backup = [
         Path("AGENTS.md"),

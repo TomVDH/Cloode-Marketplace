@@ -332,12 +332,18 @@ def scaffold_one(
               "the existing board with an empty deck — refusing. "
               "Add --from-tasks to rebuild from tasks/.", file=sys.stderr)
         return 1
-    # Any force-rebuild over an existing deck keeps a one-shot escape hatch.
-    if force and data_path.is_file():
+    # ANY overwrite of an existing deck keeps a one-shot escape hatch, not just
+    # --force: `--data foo.json` used to replace a live deck (cards, custom
+    # lanes, title) with no backup at all, because both this and the refusal
+    # above were gated on `force`. A plain re-seed merges (it never discards),
+    # so only the replacing paths need the .bak.
+    replaces_deck = force or bool(data)
+    if replaces_deck and data_path.is_file():
         try:
             shutil.copy2(data_path, data_path.with_name("board-data.json.bak"))
         except OSError as e:
-            print(f"error: could not back up existing deck before --force: {e}", file=sys.stderr)
+            print(f"error: could not back up the existing deck before replacing it: {e}",
+                  file=sys.stderr)
             return 1
 
     try:

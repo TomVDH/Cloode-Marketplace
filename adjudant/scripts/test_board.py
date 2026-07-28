@@ -429,6 +429,30 @@ class TestForceSafety(unittest.TestCase):
             self.assertIn("refusing", err)
             self.assertEqual((dest / "board-data.json").read_text(), before)  # untouched
 
+    def test_data_overwrite_backs_up_existing_deck(self):
+        # Audit 2026-07-27 finding 11: BOTH the refusal guard and the .bak
+        # escape hatch were gated on `force`, so `scaffold --data foo.json`
+        # replaced a live deck (cards, custom lane, title) with no backup.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            proj, dest = self._seeded_board(tmpp)
+            deck = json.loads((dest / "board-data.json").read_text())
+            deck["cards"][0]["column"] = "done"          # user drag state
+            deck["columns"].append({"id": "waiting", "name": "Waiting"})
+            (dest / "board-data.json").write_text(json.dumps(deck))
+
+            injected = tmpp / "injected.json"
+            injected.write_text(json.dumps({"columns": [], "cards": []}))
+            rc, _ = _scaffold(proj, dest, from_tasks=False, data=str(injected),
+                              force=False, title=None, board_id="proj")
+            self.assertEqual(rc, 0)
+            bak = dest / "board-data.json.bak"
+            self.assertTrue(bak.is_file(),
+                            "--data over an existing deck must back it up")
+            saved = json.loads(bak.read_text())
+            self.assertEqual(saved["cards"][0]["column"], "done")
+            self.assertIn("waiting", [c["id"] for c in saved["columns"]])
+
     def test_force_backs_up_existing_deck(self):
         with tempfile.TemporaryDirectory() as tmp:
             proj, dest = self._seeded_board(Path(tmp))
