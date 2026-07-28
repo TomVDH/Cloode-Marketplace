@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -46,7 +47,16 @@ TEMPLATE = Path(__file__).resolve().parents[2] / "skills" / "adjudant" / "templa
 # Leading `cd ... && ` segments (repeatable); [^&] keeps each strip inside
 # its own segment even for quoted paths with spaces.
 _CD_PREFIX_RE = re.compile(r"^\s*(?:cd\s+[^&]*&&\s*)+")
-_COMMIT_RE = re.compile(r"^git\s+commit\b")
+# Accepts the -c/-C global-option forms too: `git -C /repo commit -m ...` is a
+# real commit and used to be silently dropped.
+_PATH_ARG = r"(?:\"([^\"]+)\"|'([^']+)'|(\S+))"
+_COMMIT_RE = re.compile(
+    r"^git\s+(?:-c\s+\S+\s+|-C\s+(?:\"[^\"]+\"|'[^']+'|\S+)\s+)*commit\b")
+# Flags that make `git commit` NOT commit. Logging these forged real records:
+# `git commit --dry-run -m "release(x): v9.9.9"` scaffolded releases/v9.9.9.md.
+_NO_COMMIT_FLAG_RE = re.compile(r"(?:^|\s)--(?:dry-run|short|porcelain|long)(?:\s|=|$)")
+_CD_CAPTURE_RE = re.compile(r"^\s*cd\s+" + _PATH_ARG + r"\s*&&")
+_GIT_C_RE = re.compile(r"^git\s+(?:-c\s+\S+\s+)*-C\s+" + _PATH_ARG + r"\s")
 _RELEASE_RE = re.compile(r"^release\(([a-z0-9-]+)\): v(\d+\.\d+\.\d+)")
 # Claude Code's own commit style: -m "$(cat <<'EOF' ... EOF\n)"
 _HEREDOC_MSG_RE = re.compile(
@@ -106,6 +116,44 @@ def response_indicates_success(resp) -> bool:
             except (TypeError, ValueError):
                 return False
     return True
+
+
+def _first_group(m) -> str:
+    """First non-None capture of the quoted/bare path alternation."""
+    return next((g for g in m.groups() if g), "") if m else ""
+
+
+def repo_dir_for(command: str, cmd: str, fallback: str) -> str:
+    """Which repo the commit targeted: `cd X &&` prefix, `git -C X`, else cwd."""
+    from_cd = _first_group(_CD_CAPTURE_RE.match(command))
+    if from_cd:
+        return from_cd
+    from_c = _first_group(_GIT_C_RE.match(cmd))
+    if from_c:
+        return from_c
+    return fallback
+
+
+def commit_verified(repo_dir: str, subject: str) -> bool:
+    """True when HEAD's subject equals `subject` — i.e. the commit landed.
+
+    The payload cannot be trusted: the Bash tool_response carries no exit code,
+    so `nothing to commit, working tree clean` used to be logged as a real
+    commit. Ask git instead. Fails closed on any error (no repo, no git, HEAD
+    unborn, timeout) — rule 2: never claim an effect that was not verified.
+    """
+    if not repo_dir or not subject:
+        return False
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_dir), "log", "-1", "--format=%s"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=3, check=False)
+    except Exception:
+        return False
+    if r.returncode != 0:
+        return False
+    return r.stdout.strip() == subject.strip()
 
 
 def _messages_from_tokens(tokens: list) -> list:
@@ -236,11 +284,20 @@ def main() -> int:
     cmd = _CD_PREFIX_RE.sub("", command).lstrip()
     if not _COMMIT_RE.match(cmd):
         return 0
+    # --dry-run and friends print what WOULD happen and commit nothing.
+    if _NO_COMMIT_FLAG_RE.search(cmd):
+        return 0
     if not response_indicates_success(payload.get("tool_response")):
         return 0
     subject, body = split_subject_body(parse_commit_message(cmd))
     if not subject:
         return 0  # editor-driven or amend-no-edit commit: no subject to log
+    # Authoritative gate: ask git whether HEAD is actually this commit. The
+    # payload check above is only a cheap pre-filter.
+    if not commit_verified(
+            repo_dir_for(command, cmd, os.environ.get("CLAUDE_PROJECT_DIR", "")),
+            subject):
+        return 0
 
     # --- Vault resolution, same 5-step chain as the verbs and other hooks ---
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR")

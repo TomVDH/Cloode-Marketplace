@@ -13,6 +13,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -51,6 +52,26 @@ class _CommitLogCase(unittest.TestCase):
             f"vault_path: {self.vault}\n"
             "vault_name: commit-log-test-vault-1f9a\n"
             "slug: demo\nmode: project\n")
+        # The project must be a REAL git repo: since the 2026-07-27 audit the
+        # hook verifies the commit against `git log -1` instead of trusting
+        # the payload (which carries no exit code), so a fixture without a
+        # matching HEAD is correctly treated as "commit did not happen".
+        self._git("init", "-q", "-b", "main")
+        self._git("config", "user.email", "test@example.invalid")
+        self._git("config", "user.name", "Test")
+        self._git("config", "commit.gpgsign", "false")
+
+    def _git(self, *args):
+        return subprocess.run(
+            ["git", "-C", str(self.project), *args],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+
+    def _land(self, subject: str, body: str = "") -> None:
+        """Make HEAD actually be `subject`, so commit_verified passes."""
+        (self.project / "f.txt").write_text(subject)
+        self._git("add", "-A")
+        msg = subject if not body else f"{subject}\n\n{body}"
+        self._git("commit", "-q", "-m", msg)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -119,6 +140,7 @@ class TestGates(_CommitLogCase):
 class TestCommitLogged(_CommitLogCase):
 
     def test_commit_logged(self):
+        self._land("feat(demo): wire the thing")
         rc = self._run(self._payload('git commit -m "feat(demo): wire the thing"'))
         self.assertEqual(rc, 0)
         text = self.session_note.read_text()
@@ -127,6 +149,7 @@ class TestCommitLogged(_CommitLogCase):
     def test_commit_logged_without_exit_key(self):
         # Payload shape without an exit code field (older harness): no failure
         # signal present counts as success.
+        self._land("feat(demo): plain payload")
         rc = self._run(self._payload(
             'git commit -m "feat(demo): plain payload"',
             tool_response={"stdout": "1 file changed", "stderr": "", "interrupted": False}))
@@ -134,8 +157,9 @@ class TestCommitLogged(_CommitLogCase):
         self.assertIn("· commit: feat(demo): plain payload", self.session_note.read_text())
 
     def test_cd_prefix_stripped(self):
+        self._land("fix(demo): after cd")
         rc = self._run(self._payload(
-            'cd "/tmp/some dir" && git commit -m "fix(demo): after cd"'))
+            f'cd "{self.project}" && git commit -m "fix(demo): after cd"'))
         self.assertEqual(rc, 0)
         self.assertIn("· commit: fix(demo): after cd", self.session_note.read_text())
 
@@ -146,6 +170,7 @@ class TestCommitLogged(_CommitLogCase):
                "body line one\n"
                "EOF\n"
                ')"')
+        self._land("feat(demo): heredoc subject", "body line one")
         rc = self._run(self._payload(cmd))
         self.assertEqual(rc, 0)
         text = self.session_note.read_text()
@@ -163,7 +188,12 @@ class TestReleaseScaffold(_CommitLogCase):
                    "EOF\n"
                    ')"')
 
+    def _land_release(self):
+        self._land("release(adjudant): v0.15.0 - ambient board",
+                   "- task schema locked\n- board born on first task")
+
     def test_release_scaffold(self):
+        self._land_release()
         rc = self._run(self._payload(self.RELEASE_CMD))
         self.assertEqual(rc, 0)
         note = self.project_root / "releases" / "v0.15.0.md"
@@ -190,6 +220,7 @@ class TestReleaseScaffold(_CommitLogCase):
                          "an existing release note must never be overwritten")
 
     def test_release_index_upsert_no_duplicate(self):
+        self._land_release()
         self._run(self._payload(self.RELEASE_CMD))
         self._run(self._payload(self.RELEASE_CMD))
         index_text = (self.project_root / "releases" / "_index.md").read_text()
@@ -197,10 +228,70 @@ class TestReleaseScaffold(_CommitLogCase):
                          "upsert must not duplicate the index row")
 
     def test_plain_commit_no_release_files(self):
+        self._land("feat(demo): not a release")
         rc = self._run(self._payload('git commit -m "feat(demo): not a release"'))
         self.assertEqual(rc, 0)
         self.assertFalse((self.project_root / "releases").exists(),
                          "non-release commits must not create releases/")
+
+
+class TestDryRunNeverLogs(_CommitLogCase):
+    """Audit 2026-07-27: --dry-run commits nothing, so logging it forged
+    records. `git commit --dry-run -m "release(x): v9.9.9"` scaffolded a real
+    releases/v9.9.9.md for a release that never existed."""
+
+    def test_dry_run_release_scaffolds_nothing(self):
+        rc = self._run(self._payload(
+            'git commit --dry-run -m "release(adjudant): v9.9.9 - never happened"'))
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.session_note.read_text(), "## Log\n")
+        self.assertFalse((self.project_root / "releases").exists())
+
+    def test_no_commit_flags_are_ignored(self):
+        for flag in ("--dry-run", "--short", "--porcelain", "--long"):
+            with self.subTest(flag=flag):
+                rc = self._run(self._payload(
+                    f'git commit {flag} -m "feat(demo): phantom"'))
+                self.assertEqual(rc, 0)
+                self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+
+class TestCommitVerification(_CommitLogCase):
+    """Audit 2026-07-27: the Bash tool_response carries no exit code, so the
+    old payload-only gate failed OPEN and logged commits that never landed."""
+
+    def test_nothing_to_commit_is_not_logged(self):
+        # The exact real-world case: git prints this and exits non-zero, but
+        # the payload shape carries no exit code to notice it by.
+        rc = self._run(self._payload(
+            'git commit -m "feat(demo): nothing staged"',
+            tool_response={"stdout": "nothing to commit, working tree clean",
+                           "stderr": ""}))
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+    def test_subject_mismatch_is_not_logged(self):
+        # HEAD is a different commit than the command claims: unverifiable.
+        self._land("feat(demo): what actually landed")
+        rc = self._run(self._payload('git commit -m "feat(demo): what was claimed"'))
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+    def test_git_c_form_is_logged(self):
+        # Also finding 20: `git -C <repo> commit` is a real commit form that
+        # used to be dropped entirely.
+        self._land("fix(demo): via dash-C")
+        rc = self._run(self._payload(
+            f'git -C "{self.project}" commit -m "fix(demo): via dash-C"'))
+        self.assertEqual(rc, 0)
+        self.assertIn("· commit: fix(demo): via dash-C", self.session_note.read_text())
+
+    def test_not_a_repo_fails_closed(self):
+        import shutil as _sh
+        _sh.rmtree(self.project / ".git")
+        rc = self._run(self._payload('git commit -m "feat(demo): no repo here"'))
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.session_note.read_text(), "## Log\n")
 
 
 if __name__ == "__main__":
