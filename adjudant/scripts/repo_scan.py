@@ -30,6 +30,7 @@ from repo_walk import (
     plugin_symlink_status,
     walk_plugins,
 )
+from token_budget import report as token_budget_report
 
 
 def detect_version_coherence(root: Path) -> dict:
@@ -116,6 +117,8 @@ def run_scan(root: Path, *, today: date, stale_days: int = 30) -> dict[str, Any]
         "registration": registration,
         "context_files": {"repo_root": context, "per_plugin_informational": per_plugin_context},
         "plan_ages": plans,
+        "token_budget": token_budget_report(
+            Path(__file__).resolve().parent.parent / "skills" / "adjudant"),
     }
 
 

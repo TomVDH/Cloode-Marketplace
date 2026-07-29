@@ -16,6 +16,12 @@ exact back-compat, `/adjudant check` is unchanged).
   a single `drift_items` score. Per-plugin context files are shown
   *informational* (not counted). Repo conventions live in
   `reference/repo-standards.md`. Never writes.
+  - `token_budget`: per-surface context cost (`file`, `tokens`, `budget`,
+    `over`) plus `total` and `over_count`, from `token_budget.py`. Render as
+    one line when `over_count` is 0 (`context: ~{total/1000}k tokens across
+    {n} surfaces`), and list the offenders when it is not. Report only: it
+    never fails a build, and an over-budget surface is a prompt to look, not
+    an error.
 - **`all`** — run the vault check *and* the repo scan; render both blocks.
 
 Repo ops use `--project-dir` as the repo root directly (no breadcrumb — the repo
