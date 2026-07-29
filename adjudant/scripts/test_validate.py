@@ -920,5 +920,39 @@ class TestSkillSplit(unittest.TestCase):
         self.assertLess(est, 2000, f"SKILL.md is ~{est} tok, budget 2000")
 
 
+class TestDocTrim(unittest.TestCase):
+    """v0.17.0: enforceable detail lives with its enforcer, not in prose."""
+
+    REF = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "reference"
+
+    def test_vault_standards_within_budget(self):
+        est = len((self.REF / "vault-standards.md").read_text()) // 4
+        # 2500, not the 1800 originally planned. That number was estimated before
+        # the rewrite; three drafts measured a floor of 2446 with every
+        # hand-authoring answer still present. Lower means deleting unenforced
+        # guidance, or splitting the file and breaking the section citations in
+        # ramasse_scan.py, _vault_walk.py and board_bridge.py.
+        self.assertLess(est, 2500, f"vault-standards.md is ~{est} tok, budget 2500")
+
+    def test_voice_within_budget(self):
+        est = len((self.REF / "voice.md").read_text()) // 4
+        self.assertLess(est, 600, f"voice.md is ~{est} tok, budget 600")
+
+    def test_vault_standards_names_its_enforcers(self):
+        text = (self.REF / "vault-standards.md").read_text()
+        for enforcer in ("FIELD_SCHEMA", "tidy", "validate.py"):
+            self.assertIn(enforcer, text)
+
+    def test_voice_keeps_the_judgement_content(self):
+        text = (self.REF / "voice.md").read_text()
+        for keeper in ("ELI5", "ELI12", "ELICTO", "pushback"):
+            self.assertIn(keeper, text)
+
+    def test_lexicon_still_enforced_after_the_move(self):
+        import validate
+        self.assertTrue(hasattr(validate, "BANNED_LEXICON"))
+        self.assertIn("delve", [w.lower() for w in validate.BANNED_LEXICON])
+
+
 if __name__ == "__main__":
     unittest.main()

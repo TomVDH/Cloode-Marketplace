@@ -820,11 +820,43 @@ def validate_template_schema_parity(r: Result) -> None:
 
 VOICE_MD = REFERENCE / "voice.md"
 
+# The banned lexicon. Lives HERE, not in voice.md: this validator is the
+# mechanical enforcer, so spending the list in model context every session
+# bought nothing. voice.md points at this constant.
+#
+# Terms are matched case-insensitively as whole words (see the pattern build
+# in validate_voice_lexicon). Add a term by adding a tuple entry.
+BANNED_LEXICON: tuple[str, ...] = (
+    "forward-thinking",
+    "load-bearing",
+    "hand-wave",        # figurative
+    "hand-wavy",
+    "hand-waving",      # figurative
+    "leverage",         # as a verb; add inflections as separate entries
+    "deep dive",
+    "delve",
+    "double-click",     # figurative
+    "game-changer",
+    "cutting-edge",
+    "seamless",
+    "journey",          # figurative
+    "empower",
+    "unlock",           # figurative
+    "elevate",          # figurative
+    "circle back",
+    "synergy",
+    "at the end of the day",
+)
+
 
 def _parse_voice_lists() -> tuple[list[str], list[str], list[str]]:
-    """(banned_lexicon, glazing, shape_phrases) bullets parsed from
-    reference/voice.md. A trailing parenthetical on a bullet is a note,
-    stripped before matching."""
+    """(banned_lexicon, glazing, shape_phrases).
+
+    Glazing and shape phrases are still bullets parsed from reference/voice.md;
+    a trailing parenthetical on a bullet is a note, stripped before matching.
+    The banned lexicon comes from BANNED_LEXICON above: it was pure enforceable
+    detail, so it moved to the enforcer rather than being re-read every session.
+    """
     lists: dict[str, list[str]] = {"banned": [], "glazing": [], "shape": []}
     current = None
     for line in VOICE_MD.read_text().splitlines():
@@ -838,7 +870,7 @@ def _parse_voice_lists() -> tuple[list[str], list[str], list[str]]:
         if m and current:
             term = re.sub(r"\s*\([^)]*\)\s*$", "", m.group(1).strip())
             lists[current].append(term)
-    return lists["banned"], lists["glazing"], lists["shape"]
+    return list(BANNED_LEXICON), lists["glazing"], lists["shape"]
 
 
 def validate_voice_lexicon(r: Result) -> None:
@@ -853,6 +885,8 @@ def validate_voice_lexicon(r: Result) -> None:
         r.add_fail(name, "reference/voice.md missing")
         return
     banned, glazing, shape = _parse_voice_lists()
+    # `banned` is the BANNED_LEXICON constant above; glazing and shape phrases
+    # are still bullets in voice.md. The emptiness guard covers all three alike.
     if not banned or not glazing or not shape:
         r.add_fail(name, "voice.md lists are empty")
         return
