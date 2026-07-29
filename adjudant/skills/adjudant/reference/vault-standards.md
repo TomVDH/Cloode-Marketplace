@@ -12,15 +12,15 @@ Each rule states its shape once. Detail enforced mechanically is not restated:
 | tag buckets A, B, D | `BUCKET_A_TYPES` / `BUCKET_B_MIGRATIONS` / `BUCKET_D_TAG_EXACT`; `tidy.normalize_tags`; validator 2 |
 | status vocabularies | validators 23 (project), 26 (task aliases), 28 (decision) |
 | wikilink form | `tidy` feature 4 |
-| folder shape, some file naming | the `ramasse_scan` detectors |
+| folder shape, some file naming | `ramasse_scan` detectors |
 
-Validators 2, 23, 26 and 29 are parity checks: they hold this document, the templates and the `_vault_walk.py` constants to each other. They never read a vault file.
+Validators 2, 23, 26, 28 and 29 are parity checks: they hold this document, the templates and the `_vault_walk.py` constants to each other. They never read a vault file.
 
-One class of error is caught at write time: a `Write` missing a required field is blocked, and an unknown field is warned then stripped later by `tidy`. The gate ignores `Edit`s and status values, and skips `brief.md`, session notes and the `_`-prefixed system files. Everything else below is reported after the fact or is judgment, so hold it in your head.
+Two things are caught at write time: a `Write` missing a required field, or setting both `type:` and `node_type:`, is blocked; an unknown field is warned, then stripped by `tidy`. The gate ignores `Edit`s and status values, and skips `brief.md`, session notes and the `_`-prefixed system files. Everything else is reported after the fact or is judgment, so hold it in your head.
 
 ## 1. Frontmatter
 
-Every file has YAML frontmatter, except `Home.md` (`type` + `updated` only). Which keys are legal on which type is `FIELD_SCHEMA`: a required set, an optional set, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink fields such as a decision's `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key entirely rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
+Every file has YAML frontmatter, except `Home.md` (`type` + `updated` only). Which keys are legal on which type is `FIELD_SCHEMA`: a required set, an optional set, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink fields such as a decision's `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
 
 Project membership is the folder path (`projects/[zone/]slug/…`), never a frontmatter field: the retired `project:` field (dropped v0.16.0) duplicated the path on every note and drifted whenever a project changed zones. The graph backlink flows through each folder's `_index.md` instead.
 
@@ -30,7 +30,7 @@ Project membership is the folder path (`projects/[zone/]slug/…`), never a fron
 
 Bare tags only, no prefix. Every file carries exactly one file-type tag matching its `type:`; `Home.md` is the lone exception (`type: vault-home`, no tag). **Bucket A** (the twelve file-type tags), **B** (custom types migrated from `cabinet/*` by `/adjudant ramasse`) and **D** (deprecated: `ob/*`, leftover `cabinet/*`, project-slug tags, vague topicals, crew names) are enumerated in `_vault_walk.py` and applied by `tidy.normalize_tags`.
 
-**Bucket C**, topical tags, is judgment with no enforcer: optional, queryable, sparing. Established clusters are `#content/` plus one of `seafood-companies`, `blog`, `page`, `hardware`, `personnel`, `videos`, `workflows`, `features`. A new topical needs all three: namespaced (`category/value`), queryable (you would actually filter on it), used across three or more files. Project kind is not a tag: it is `project_type:` on the brief, one of `coding | knowledge | plugin | tinkerage`. `cssclasses:` is an Obsidian CSS class, not a tag, and tag normalization leaves it alone.
+**Bucket C**, topical tags, is judgment with no enforcer: optional, queryable, sparing. Established clusters are `#content/` plus one of `seafood-companies`, `blog`, `page`, `hardware`, `personnel`, `videos`, `workflows`, `features`. A new topical needs all three: namespaced (`category/value`), queryable (you would filter on it), used across three or more files. Project kind is not a tag: it is `project_type:` on the brief, one of `coding | knowledge | plugin | tinkerage`. `cssclasses:` is an Obsidian CSS class, not a tag, and tag normalization leaves it alone.
 
 ## 3. File-type schemas
 
@@ -40,7 +40,7 @@ Doc vs decision, the common mix-up. A decision has a date-prefixed filename, liv
 
 ## 4. Naming rules
 
-Names are strict, but only some are checked: `ramasse_scan` flags doc case and date-prefix, decision date-prefix, session filename, and `.canvas`/`.base` kebab-case. The rest are on you. The ones you choose by hand: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); an iteration is the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
+Names are strict, but only some are checked: `ramasse_scan` flags doc case and date-prefix, decision date-prefix, session filename, and `.canvas`/`.base` kebab-case. The rest are on you. The ones you choose by hand: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); iteration, the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
 
 `status:` on a task note takes exactly one of `todo` | `doing` | `review` | `blocked` | `done` | `icebox`. Aliases are accepted on input and never rewritten; the board maps them to lanes (mirrors `board.py` `STATUS_TO_COLUMN`):
 
