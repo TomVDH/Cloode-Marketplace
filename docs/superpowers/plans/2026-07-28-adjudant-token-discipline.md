@@ -681,8 +681,14 @@ class TestDocTrim(unittest.TestCase):
     REF = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "reference"
 
     def test_vault_standards_within_budget(self):
+        # 2500, not the 1800 this plan originally guessed. The 1800 was an
+        # estimate made before the rewrite; three successive drafts measured a
+        # floor of 2446 with every hand-authoring answer still present. Going
+        # lower means either deleting unenforced guidance (the risk the design
+        # spec warns about) or splitting the file, which breaks the section
+        # citations in ramasse_scan.py, _vault_walk.py and board_bridge.py.
         est = len((self.REF / "vault-standards.md").read_text()) // 4
-        self.assertLess(est, 1800, f"vault-standards.md is ~{est} tok, budget 1800")
+        self.assertLess(est, 2500, f"vault-standards.md is ~{est} tok, budget 2500")
 
     def test_voice_within_budget(self):
         est = len((self.REF / "voice.md").read_text()) // 4

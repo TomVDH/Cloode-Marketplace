@@ -123,7 +123,12 @@ most thoroughly enforced already:
 
 Rewrite so each rule states its shape once and names its enforcer, instead of
 restating enforceable detail. Hand-authoring guidance that has no enforcer
-stays in full. Target **~3539 -> ~1500**.
+stays in full. Target was ~1500; the measured floor with nothing lost is
+**~3539 -> ~2450**. Amended 2026-07-29 after three drafts: the original
+number was estimated before the work and is not reachable without either
+deleting unenforced guidance or splitting the file, and splitting breaks the
+section citations that ramasse_scan.py, _vault_walk.py and board_bridge.py
+make into this document.
 
 `reference/voice.md` keeps the judgment content - tone, the pushback contract,
 the ELI5/ELI12/ELICTO modes, the glazing ban, typography. The banned-lexicon
