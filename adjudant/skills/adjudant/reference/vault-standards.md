@@ -1,10 +1,10 @@
 # Vault Standards
 
-Canonical schema, naming, folder, and wikilink form for any Adjudant-managed vault. Every vault write must conform. `validate.py` enforces at build time, the PreToolUse schema gate at write time, `check` and `dream` report drift.
+Canonical schema, naming, folder, and wikilink form for any Adjudant-managed vault. Every vault write must conform.
 
 ## What enforces what
 
-Each rule below states its shape once. Detail that is enforced mechanically is not restated:
+Each rule states its shape once. Detail enforced mechanically is not restated:
 
 | rule area | enforcer |
 |---|---|
@@ -14,31 +14,33 @@ Each rule below states its shape once. Detail that is enforced mechanically is n
 | wikilink form | `tidy` feature 4 |
 | folder shape, some file naming | the `ramasse_scan` detectors |
 
-A write that violates the schema is blocked before it lands, so what follows is orientation, not a checklist to hold in your head. Where a rule names no enforcer, it is judgment: read it.
+Validators 2, 23, 26 and 29 are parity checks: they hold this document, the templates and the `_vault_walk.py` constants to each other. They never read a vault file.
+
+One class of error is caught at write time: a `Write` missing a required field is blocked, and an unknown field is warned then stripped later by `tidy`. The gate ignores `Edit`s and status values, and skips `brief.md`, session notes and the `_`-prefixed system files. Everything else below is reported after the fact or is judgment, so hold it in your head.
 
 ## 1. Frontmatter
 
-Every file has YAML frontmatter, except `Home.md` (`type` + `updated` only). Which keys are legal on which type is `FIELD_SCHEMA`: a required set, an optional set, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink-valued fields such as a decision's `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key entirely rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
+Every file has YAML frontmatter, except `Home.md` (`type` + `updated` only). Which keys are legal on which type is `FIELD_SCHEMA`: a required set, an optional set, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink fields such as a decision's `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key entirely rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
 
 Project membership is the folder path (`projects/[zone/]slug/…`), never a frontmatter field: the retired `project:` field (dropped v0.16.0) duplicated the path on every note and drifted whenever a project changed zones. The graph backlink flows through each folder's `_index.md` instead.
 
-`session_id:` (session notes) and `source_session:` (optional, content types) hold Claude Code conversation UUIDs so the conversation behind a write is one hop away. Both are hook-stamped, never hand-written, and `source_session` is off by default since v0.16.0. A stored UUID can dangle, since transcripts are ephemeral and `$HOME` varies across machines. That is by design: it still says which session and roughly when. It retraces reasoning and never holds the conclusion, so a decision's content must land in the vault regardless.
+`session_id:` (session notes) and `source_session:` (optional, content types) hold Claude Code conversation UUIDs so the conversation behind a write is one hop away. Both are hook-stamped, never hand-written, and `source_session` is off by default since v0.16.0. A stored UUID can dangle, since transcripts are ephemeral and `$HOME` varies across machines. By design: it still says which session and roughly when. It retraces reasoning, never holds the conclusion, so a decision's content must land in the vault.
 
 ## 2. Tag schema (locked 2026-05-25)
 
-Bare tags only, no prefix. Every file carries exactly one file-type tag matching its `type:`; `Home.md` is the lone exception (`type: vault-home`, no tag). Bucket A (the twelve file-type tags), B (custom types migrated from `cabinet/*` by `/adjudant ramasse`) and D (deprecated: `ob/*`, leftover `cabinet/*`, project-slug tags, vague topicals, crew names) are enumerated in `_vault_walk.py` and applied by `tidy.normalize_tags`.
+Bare tags only, no prefix. Every file carries exactly one file-type tag matching its `type:`; `Home.md` is the lone exception (`type: vault-home`, no tag). **Bucket A** (the twelve file-type tags), **B** (custom types migrated from `cabinet/*` by `/adjudant ramasse`) and **D** (deprecated: `ob/*`, leftover `cabinet/*`, project-slug tags, vague topicals, crew names) are enumerated in `_vault_walk.py` and applied by `tidy.normalize_tags`.
 
-Bucket C, topical tags, is judgment with no enforcer: optional, queryable, sparing. Established clusters are `#content/` plus one of `seafood-companies`, `blog`, `page`, `hardware`, `personnel`, `videos`, `workflows`, `features`. A new topical needs all three of namespaced (`category/value`), queryable (you would actually filter on it), and used across three or more files. Project kind is not a tag: it is `project_type:` on the brief, one of `coding | knowledge | plugin | tinkerage`. `cssclasses:` is an Obsidian CSS class, not a tag, and tag normalization leaves it alone.
+**Bucket C**, topical tags, is judgment with no enforcer: optional, queryable, sparing. Established clusters are `#content/` plus one of `seafood-companies`, `blog`, `page`, `hardware`, `personnel`, `videos`, `workflows`, `features`. A new topical needs all three: namespaced (`category/value`), queryable (you would actually filter on it), used across three or more files. Project kind is not a tag: it is `project_type:` on the brief, one of `coding | knowledge | plugin | tinkerage`. `cssclasses:` is an Obsidian CSS class, not a tag, and tag normalization leaves it alone.
 
 ## 3. File-type schemas
 
-`templates/{type}.md` carries the canonical frontmatter shape (exceptions: four `project-brief-{project_type}.md`, two `_index-*.md`, and `home.md`). Body shape is not machine-checked. Decision: `## Decision` / `## Context` / `## Consequence`. Session: intent quote + append-only `## Log`. Doc: purpose sentence + `## {Section}`. Source: `## Key Points` / `## Notes` / `## Relevance`. Release: `## Changes`. Task: `## Task` / `## Notes`. Index: `# {Collection Name}`, one-line description, then `## Entries` of wikilinks, chronological where filenames carry dates and alphabetical otherwise. Iteration: a **folder** of build artefacts (HTML tryouts, experiments) whose optional `_iteration.md` indexes the contents. Note is free-form, project follows its `project_type` template, and handoff, dream-report and vault-home are machine-written.
+`templates/{type}.md` carries the canonical frontmatter shape (exceptions: four `project-brief-{project_type}.md`, two `_index-*.md`, and `home.md`). Body shape is not machine-checked. Decision: `## Decision` / `## Context` / `## Consequence`. Session: intent quote + append-only `## Log`. Doc: purpose sentence + `## {Section}`. Source: `## Key Points` / `## Notes` / `## Relevance`. Release: `## Changes`. Task: `## Task` / `## Notes`. Index: `# {Collection Name}`, one-line description, then `## Entries` of wikilinks, chronological where filenames carry dates and alphabetical otherwise. Iteration: a **folder** of build artefacts (HTML tryouts, experiments) whose optional `_iteration.md` indexes it. Note is free-form, project follows its `project_type` template, and handoff, dream-report and vault-home are machine-written.
 
-Doc vs decision is the common mix-up. A decision has a date-prefixed filename, lives in `decisions/`, says "we picked X over Y because Z", and is append-only history of a moment. A doc lives at project root or in `docs/`, says "what is true now / how X works", and gets rewritten as understanding evolves. Quick test: "when was this decided?" with a clear answer means decision; "it is just how we do things" means doc.
+Doc vs decision, the common mix-up. A decision has a date-prefixed filename, lives in `decisions/`, says "we picked X over Y because Z", and is append-only history of a moment. A doc lives at project root or in `docs/`, says "what is true now / how X works", and gets rewritten as understanding evolves. Quick test: "when was this decided?" with a clear answer means decision; "it is just how we do things" means doc.
 
 ## 4. Naming rules
 
-Names are strict, and `ramasse_scan` flags violations after the fact. The ones you choose by hand: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); `.canvas` and `.base` artefacts strict kebab-case; an iteration is the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
+Names are strict, but only some are checked: `ramasse_scan` flags doc case and date-prefix, decision date-prefix, session filename, and `.canvas`/`.base` kebab-case. The rest are on you. The ones you choose by hand: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); an iteration is the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
 
 `status:` on a task note takes exactly one of `todo` | `doing` | `review` | `blocked` | `done` | `icebox`. Aliases are accepted on input and never rewritten; the board maps them to lanes (mirrors `board.py` `STATUS_TO_COLUMN`):
 
@@ -53,9 +55,9 @@ Names are strict, and `ramasse_scan` flags violations after the fact. The ones y
 
 ## 5. Folder structure
 
-Defaults per `project_type`. `coding`: `decisions/`, `notes/`, `tasks/`, `references/`, each carrying an `_index.md`, plus `sessions/` and `images/` without one. `plugin`: the coding set plus `releases/`. `knowledge`: `notes/`, `sources/`, `references/` plus `sessions/`. `tinkerage`: `sessions/` only, optional. Anything beyond the defaults must be declared in the brief's `extra_folders:`; an undeclared folder is drift, flagged by `/adjudant dream`. Exempt because auto-created: `dreams/`, `canvases/`, `bases/`, `board/`.
+Defaults per `project_type`. `coding`: `decisions/`, `notes/`, `tasks/`, `references/`, each carrying an `_index.md`, plus `sessions/` and `images/` without one. `plugin`: the coding set plus `releases/`. `knowledge`: `notes/`, `sources/`, `references/` plus `sessions/`. `tinkerage`: `sessions/` only, optional. Anything beyond the defaults must be declared in the brief's `extra_folders:`; an undeclared folder is drift, flagged by `/adjudant dream`. Auto-created, so exempt: `dreams/`, `canvases/`, `bases/`, `board/`.
 
-Every folder under a project, or at vault root, holding two or more sibling `.md` files of the same conceptual type gets an `_index.md`. Exceptions: `sessions/` (chronological ordering is already the index), `images/`, `assets/`, `previews/`, and `iterations/` plus the iteration folders inside it, where build artefacts carry no frontmatter and `_iteration.md` is the only conformant file. `/adjudant tidy` rebuilds indexes mechanically; ramasse only detects the gaps.
+Every folder under a project, or at vault root, holding two or more sibling `.md` files of the same conceptual type gets an `_index.md`. Exceptions: `sessions/` (ordering is the index), `images/`, `assets/`, `previews/`, and `iterations/` plus the iteration folders inside it, where build artefacts carry no frontmatter and `_iteration.md` is the only conformant file. `/adjudant tidy` rebuilds indexes mechanically; ramasse only detects the gaps.
 
 ## 6. Wikilink rules
 
@@ -65,7 +67,7 @@ Body links carry the full path and a display alias: `[[projects/{slug}/brief|{di
 
 ## 7. Content style
 
-Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `/adjudant dream` flags suspected violations for human review. The banned-term list lives in `reference/voice.md` and `validate.py`, not here.
+Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `/adjudant dream` flags suspected violations for review. The banned-term list lives in `reference/voice.md` and `validate.py`.
 
 ## 8. Project status and zones (locked 2026-07-16)
 
