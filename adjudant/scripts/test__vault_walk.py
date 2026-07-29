@@ -532,6 +532,77 @@ class TestSmartProjectDir(unittest.TestCase):
             self.assertEqual(scan_dir, proj.resolve())
 
 
+class TestWalkUpDoesNotOverreach(unittest.TestCase):
+    """Fix wave 1 finding 2: the breadcrumb walk-up ran even when the argument
+    was ALREADY a valid vault project dir, and it climbed every ancestor
+    without bound. A breadcrumb at or above the vault root therefore
+    retargeted an explicitly passed vault-project path at some OTHER project,
+    so every verb silently operated on the wrong one.
+    """
+
+    def _vault_with_breadcrumb_at_root(self, tmp: str) -> tuple[Path, Path]:
+        """Vault whose own root carries a breadcrumb pointing at `other`."""
+        vault = Path(tmp) / "vault"
+        for slug in ("p", "other"):
+            (vault / "projects" / slug).mkdir(parents=True)
+            (vault / "projects" / slug / "brief.md").write_text(
+                f"---\ntype: project\nslug: {slug}\n---\n")
+        (vault / ".claude").mkdir()
+        (vault / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: other\nmode: project\n")
+        return vault, vault / "projects" / "p"
+
+    def test_explicit_vault_project_ignores_an_ancestor_breadcrumb(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, proj = self._vault_with_breadcrumb_at_root(tmp)
+            scan_dir, _ = smart_project_dir(str(proj))
+            self.assertEqual(
+                scan_dir, proj.resolve(),
+                "an explicit vault-project path must resolve to ITSELF, not to "
+                "whatever some ancestor breadcrumb happens to name")
+            self.assertNotEqual(scan_dir, (vault / "projects" / "other").resolve())
+
+    def test_zoned_vault_project_ignores_an_ancestor_breadcrumb(self):
+        # A shelved project has no brief.md requirement to lean on here: the
+        # positive marker is the projects/<zone>/ parent.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, _ = self._vault_with_breadcrumb_at_root(tmp)
+            shelved = vault / "projects" / "_fridge" / "cold"
+            shelved.mkdir(parents=True)
+            scan_dir, _ = smart_project_dir(str(shelved))
+            self.assertEqual(scan_dir, shelved.resolve())
+
+    def test_walk_up_stops_at_the_vault_boundary(self):
+        # A subdir INSIDE a vault project must not climb out of the vault to a
+        # breadcrumb sitting above it and land on a different project.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, proj = self._vault_with_breadcrumb_at_root(tmp)
+            sub = proj / "sessions"
+            sub.mkdir()
+            scan_dir, _ = smart_project_dir(str(sub))
+            self.assertNotEqual(
+                scan_dir.resolve(), (vault / "projects" / "other").resolve(),
+                "the walk must not cross the vault boundary to a foreign breadcrumb")
+
+    def test_connected_repo_subdir_still_follows_its_breadcrumb(self):
+        # Guard against over-correction: finding 7's fix must not regress even
+        # when the repo itself contains a `projects/` directory.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = root / "code"
+            sub = code / "backend" / "svc"
+            sub.mkdir(parents=True)
+            (code / "projects").mkdir()
+            vault = root / "vault"
+            (vault / "projects" / "p").mkdir(parents=True)
+            (code / ".claude").mkdir()
+            (code / ".claude" / "adjudant").write_text(
+                f"vault_path: {vault}\nvault_name: vault\nslug: p\nmode: project\n")
+            scan_dir, vault_hint = smart_project_dir(str(sub))
+            self.assertEqual(scan_dir.resolve(), (vault / "projects" / "p").resolve())
+            self.assertEqual(vault_hint.resolve(), vault.resolve())
+
+
 class TestRoundThreeRegressions(unittest.TestCase):
     """v0.11.0 primitives fixes."""
 

@@ -590,17 +590,26 @@ class VaultUnresolvableError(RuntimeError):
     """
 
 
+def _looks_like_vault_project(path: Path) -> bool:
+    """True when `path` is positively identifiable as a vault project dir.
+
+    Two positive markers: it holds a `brief.md`, or it sits directly under
+    `projects/` (optionally inside a `_fridge`/`_archive` zone).
+    """
+    if (path / "brief.md").is_file():
+        return True
+    parent, grand = path.parent.name, path.parent.parent.name
+    return parent == "projects" or (parent in ("_fridge", "_archive") and grand == "projects")
+
+
 def _looks_like_code_repo(path: Path) -> bool:
     """True when `path` is evidently a code project, not a vault project.
 
-    Deliberately narrow: a vault project is identified positively (brief.md, or
-    sitting under projects[/zone]/), so anything holding repo furniture without
+    Deliberately narrow: a vault project is identified positively (see
+    `_looks_like_vault_project`), so anything holding repo furniture without
     those markers is refused rather than written to.
     """
-    if (path / "brief.md").is_file():
-        return False
-    parent, grand = path.parent.name, path.parent.parent.name
-    if parent == "projects" or (parent in ("_fridge", "_archive") and grand == "projects"):
+    if _looks_like_vault_project(path):
         return False
     return any((path / m).exists()
                for m in (".git", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"))
@@ -623,15 +632,27 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
     """
     arg_path = Path(project_dir_arg).expanduser().resolve()
     breadcrumb = arg_path / ".claude" / "adjudant"
-    if not breadcrumb.is_file():
+    if not breadcrumb.is_file() and not _looks_like_vault_project(arg_path):
         # Walk up for a breadcrumb above the arg. Running a helper from a
         # SUBDIRECTORY of a connected repo used to find nothing here, fall
         # through to "treat the arg as the vault project", and write into the
         # CODE REPO (board.py scaffolded a deck inside repo/backend/svc).
+        #
+        # Skipped entirely when the arg ALREADY looks like a vault project: a
+        # breadcrumb at or above the vault root would otherwise retarget an
+        # explicitly passed project path at whatever slug it happens to name,
+        # so every verb would operate on the wrong project.
         for parent in arg_path.parents:
             if (parent / ".claude" / "adjudant").is_file():
                 breadcrumb = parent / ".claude" / "adjudant"
                 arg_path = parent
+                break
+            # Bounded: a breadcrumb is only ever ours while we are still
+            # climbing inside the code repo. Once the walk crosses a vault
+            # project or the vault root, anything higher belongs to something
+            # else. Checked AFTER the breadcrumb test above so a repo that
+            # merely happens to contain `projects/` still resolves.
+            if _looks_like_vault_project(parent) or (parent / "projects").is_dir():
                 break
     if breadcrumb.is_file():
         ctx = resolve_project_from_cwd(arg_path)
