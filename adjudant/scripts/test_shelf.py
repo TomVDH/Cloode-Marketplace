@@ -272,5 +272,69 @@ class TestNonUtf8Safety(unittest.TestCase):
             self.assertIn("[[projects/_fridge/p/brief|p]]", (other / "brief.md").read_text())
 
 
+class TestUndecodableBrief(unittest.TestCase):
+    """Fix wave 1 finding 1: step 4 read the brief with a STRICT
+    `brief.read_text()`. UnicodeDecodeError subclasses ValueError, so it was
+    caught by NEITHER the rollback handler (OSError, RuntimeError) NOR
+    cli_main's handler: the traceback escaped past the safety net, leaving the
+    folder MOVED to _fridge with the brief still declaring `status: active`,
+    no index row, and the preview never cleared. Every retry died identically.
+    """
+
+    def _vault_with_undecodable_brief(self, tmp: str) -> tuple[Path, Path]:
+        vault = Path(tmp)
+        pdir = vault / "projects" / "p"
+        (pdir / "sessions").mkdir(parents=True)
+        (pdir / "sessions" / "2026-07-01.md").write_text("---\ntype: session\n---\n")
+        (pdir / "brief.md").write_bytes(
+            "---\ntype: project\nslug: p\nproject_type: coding\nstatus: active\n"
+            "created: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - project\n---\n\n"
+            "# p\n\nCaf".encode() + b"\xe9" + " noir\n".encode())
+        return vault, pdir / "brief.md"
+
+    def test_undecodable_brief_leaves_no_half_moved_project(self):
+        from shelf import apply_transition, plan_transition
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, brief = self._vault_with_undecodable_brief(tmp)
+            before = brief.read_bytes()
+            plan = plan_transition(vault, "p", "fridge", "pause", "2026-07-16")
+            # Reported as a rolled-back failure, never a raw UnicodeDecodeError.
+            with self.assertRaises(RuntimeError) as ctx:
+                apply_transition(vault, plan)
+            self.assertNotIsInstance(ctx.exception, UnicodeDecodeError)
+            self.assertIn("brief.md", str(ctx.exception))
+            self.assertTrue(
+                (vault / "projects" / "p" / "brief.md").is_file(),
+                "rollback must return the project to its original zone")
+            self.assertFalse(
+                (vault / "projects" / "_fridge" / "p").exists(),
+                "a half-moved project is the exact corruption being prevented")
+            self.assertEqual(before, brief.read_bytes(),
+                             "the brief must be restored byte-identical")
+            self.assertFalse(
+                (vault / "projects" / "_index.md").is_file(),
+                "no index row may claim a transition that was rolled back")
+
+    def test_cli_apply_reports_undecodable_brief_and_keeps_the_preview(self):
+        from shelf import PREVIEW_DIR
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, _ = self._vault_with_undecodable_brief(tmp)
+            buf, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = shelf_cli(["preview", "--vault-dir", str(vault),
+                                "--slug", "p", "--to", "fridge",
+                                "--today", "2026-07-16"])
+            self.assertEqual(rc, 0)
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+                rc = shelf_cli(["apply", "--vault-dir", str(vault),
+                                "--slug", "p", "--to", "fridge",
+                                "--today", "2026-07-16"])
+            self.assertEqual(rc, 1, "an undecodable brief must be a clean failure")
+            self.assertIn("brief", err.getvalue().lower())
+            self.assertTrue((vault / PREVIEW_DIR / "changes.json").is_file(),
+                            "an aborted apply must leave the preview to retry")
+            self.assertFalse((vault / "projects" / "_fridge" / "p").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

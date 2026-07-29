@@ -251,14 +251,29 @@ def apply_transition(vault: Path, plan: dict[str, Any]) -> dict[str, Any]:
         final_dir = to_dir if moved else from_dir
 
         # 4. brief: status + updated + status log. Strict decode for the
-        # same reason: this text is written straight back.
+        # same reason: this text is written straight back. Unlike a link
+        # rewrite, this one cannot be skipped and carried on from: the brief's
+        # `status:` field IS the transition, so a move with an unrewritten
+        # brief is the "stuck in _fridge while declaring itself active" state
+        # this whole block exists to prevent. Convert to RuntimeError so the
+        # rollback below actually runs (UnicodeDecodeError is a ValueError and
+        # escaped both this handler and cli_main's).
         brief = final_dir / "brief.md"
-        text = brief.read_text()
+        try:
+            text = brief.read_text()
+        except UnicodeDecodeError as exc:
+            raise RuntimeError(
+                f"brief.md is not valid UTF-8 so its status could not be "
+                f"rewritten ({exc.reason} at byte {exc.start}); fix the file's "
+                f"encoding and re-run apply") from exc
         text = set_brief_status(text, plan["to_state"], plan["today"])
         text = append_status_log(text, plan["from_state"], plan["to_state"],
                                  plan["today"], plan["reason"])
         brief.write_text(text)
-    except (OSError, RuntimeError) as exc:
+    # UnicodeDecodeError is listed explicitly: it subclasses ValueError, not
+    # OSError, so a strict read added inside the try above would otherwise
+    # abort PAST this rollback and leave the project half-moved.
+    except (OSError, RuntimeError, UnicodeDecodeError) as exc:
         if moved and to_dir.exists() and not from_dir.exists():
             shutil.move(str(to_dir), str(from_dir))
         for rel in to_back_up:
