@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from _cost import breadcrumb_int, cost_block, read_threshold, stat_walk
+from _handoff_freshness import compute_freshness, latest_session_file
 from _vault_walk import (
     DEFAULT_STALE_DAYS, parse_frontmatter, resolve_vault, schema_drift,
     smart_project_dir, suggest_status, walk_project, zone_matches_status,
@@ -90,8 +91,20 @@ def _most_recent_dated(folder: Path, *, pattern: re.Pattern = re.compile(r"^(\d{
     return max(dates) if dates else None
 
 
-def _handoff_info(project_dir: Path) -> dict[str, Any]:
-    """Read _handoff.md frontmatter for `updated:`."""
+def _handoff_info(project_dir: Path, code_root: Optional[Path] = None,
+                  now: Optional[datetime] = None) -> dict[str, Any]:
+    """Read _handoff.md and report BOTH clocks — they answer different questions.
+
+    `updated:` / `mirror_hours` is when the handoff was last WRITTEN. Every
+    SessionEnd and PreCompact stamps it to today, so a mirror of an empty
+    buffer still reads fresh. On its own it made check report hours-fresh
+    against a handoff whose own banner said days-stale.
+
+    `light` / `age` / `next` / `stale` come from _handoff_freshness — real
+    activity (remember dailies, session-note markers), the same sensor the
+    hooks and /adjudant sync already render into the handoff banner. This is
+    the one to trust; keep them in agreement.
+    """
     handoff = project_dir / "_handoff.md"
     if not handoff.is_file():
         return {"present": False}
@@ -99,6 +112,22 @@ def _handoff_info(project_dir: Path) -> dict[str, Any]:
     fm, _ = parse_frontmatter(text)
     updated = fm.fields.get("updated")
     info: dict[str, Any] = {"present": True, "updated": updated}
+
+    # Activity-derived freshness — the honest sensor.
+    now = now or datetime.now()
+    try:
+        session_file = latest_session_file(
+            project_dir / "sessions", now.strftime("%Y-%m-%d"))
+        light, age_str, next_line, stale = compute_freshness(
+            code_root or project_dir, text, handoff, session_file, now)
+        info["light"] = light
+        info["age"] = age_str
+        info["next"] = next_line
+        info["stale"] = stale
+    except Exception:  # pragma: no cover - degraded, check still renders
+        info["light"] = info["age"] = info["next"] = None
+        info["stale"] = None
+
     if updated:
         try:
             # Accept YYYY-MM-DD or full ISO. `updated:` is written with local
@@ -214,7 +243,7 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
         "last_decision": _most_recent_dated(project_dir / "decisions"),
         "last_dream": _most_recent_dated(project_dir / "dreams"),
     }
-    handoff = _handoff_info(project_dir)
+    handoff = _handoff_info(project_dir, code_root)
     drift_signal = _latest_dream_signal(project_dir)
     stale_days = breadcrumb_int(code_root, "stale_after_days", DEFAULT_STALE_DAYS)
     sug = suggest_status(
