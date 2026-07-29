@@ -318,5 +318,69 @@ class TestStatusVocabularyGuard(unittest.TestCase):
             self.assertNotEqual(summary["steps"]["projects_index_row"], "project-missing")
 
 
+class TestNonUtf8BriefSafety(unittest.TestCase):
+    """Fix wave 1 finding 3: the strict-decode remediation applied to shelf and
+    tidy missed sync, on the SAME file shelf was fixed for.
+    refresh_brief_updated read brief.md with errors="replace" and wrote the
+    decoded text straight back, so one latin-1 byte became a permanent U+FFFD
+    on the next sync.
+    """
+
+    _BRIEF = ("---\ntype: project\nslug: p\nproject_type: coding\n"
+              "status: active\nupdated: 2026-05-01\n---\n\n# P\n\nCaf")
+
+    def _latin1_brief(self, path: Path) -> bytes:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        raw = self._BRIEF.encode() + b"\xe9" + " noir\n".encode()
+        path.write_bytes(raw)
+        return raw
+
+    def test_undecodable_brief_is_left_byte_identical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            brief = Path(tmp) / "brief.md"
+            before = self._latin1_brief(brief)
+            result = refresh_brief_updated(brief, "2026-05-27")
+            after = brief.read_bytes()
+            self.assertNotIn("�".encode(), after,
+                             "sync must never bake U+FFFD into a vault brief")
+            self.assertEqual(before, after,
+                             "an undecodable brief must survive byte-identical")
+            self.assertEqual(result, "skipped-undecodable",
+                             "the skip must be reported, never silent")
+
+    def test_utf8_brief_still_bumps(self):
+        # Guard against over-correction: an ordinary accented brief is valid
+        # UTF-8 and must still be rewritten.
+        with tempfile.TemporaryDirectory() as tmp:
+            brief = Path(tmp) / "brief.md"
+            brief.write_text(self._BRIEF + "é noir\n", encoding="utf-8")
+            self.assertEqual(refresh_brief_updated(brief, "2026-05-27"), "bumped")
+            text = brief.read_text()
+            self.assertIn("updated: 2026-05-27", text)
+            self.assertIn("Café noir", text)
+
+    def test_full_sync_reports_the_skip_and_preserves_the_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            brief = vault / "projects" / "p" / "brief.md"
+            before = self._latin1_brief(brief)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "adjudant").write_text(
+                f"vault_path: {vault}\nvault_name: vault\nslug: p\nmode: project\n")
+            buf, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+                rc = sync_cli(["--project-dir", str(code)])
+            self.assertEqual(rc, 0)
+            summary = json.loads(buf.getvalue())
+            self.assertEqual(summary["steps"]["brief_refresh"], "skipped-undecodable")
+            self.assertEqual(brief.read_bytes(), before,
+                             "a whole sync must leave the undecodable brief intact")
+            self.assertTrue(
+                any("UTF-8" in w for w in summary.get("warnings", [])),
+                f"the un-bumped `updated:` field must warn: {summary}")
+
+
 if __name__ == "__main__":
     unittest.main()

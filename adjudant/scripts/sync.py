@@ -55,10 +55,21 @@ from connect import (
 
 
 def refresh_brief_updated(brief_path: Path, today: str) -> str:
-    """Update brief.md frontmatter `updated:` field. Returns 'bumped' / 'unchanged' / 'missing'."""
+    """Update brief.md frontmatter `updated:` field.
+
+    Returns 'bumped' / 'unchanged' / 'missing' / 'skipped-undecodable'.
+
+    Strict decode: this text is written straight back at the end, so reading
+    with errors="replace" baked a permanent U+FFFD over every undecodable byte
+    (shelf and tidy avoid this same trap). An undecodable brief is reported and
+    left byte-identical rather than corrupted.
+    """
     if not brief_path.is_file():
         return "missing"
-    text = brief_path.read_text(errors="replace")
+    try:
+        text = brief_path.read_text()
+    except UnicodeDecodeError:
+        return "skipped-undecodable"
     lines = text.split("\n")
     if not lines or lines[0].rstrip() != "---":
         return "no-frontmatter"
@@ -131,6 +142,11 @@ def mirror_handoff(
     if not source:
         return "no-source"
 
+    # errors="replace" is deliberate here, unlike the brief refresh above. This
+    # is a one-way copy out of a repo file into a derived vault artifact that
+    # every sync regenerates: the source of truth is never written, so no bytes
+    # are lost. Decoding strictly would throw the whole handoff away over a
+    # single byte, which is the worse failure.
     body = source.read_text(errors="replace")
     if not body.strip():
         return "source-empty"
@@ -205,6 +221,11 @@ def run_sync(project_root: Path) -> dict[str, Any]:
     handoff_path = ctx.vault_project_dir / "_handoff.md"
 
     summary["steps"]["brief_refresh"] = refresh_brief_updated(brief_path, today)
+    if summary["steps"]["brief_refresh"] == "skipped-undecodable":
+        # Never silent: the requested `updated:` bump did not happen.
+        summary.setdefault("warnings", []).append(
+            f"{brief_path.name} is not valid UTF-8; it was left byte-identical "
+            f"and its `updated:` field was NOT bumped. Fix the file's encoding.")
     summary["steps"]["handoff_mirror"] = mirror_handoff(
         project_root, handoff_path, ctx.slug, today
     )
