@@ -166,6 +166,32 @@ Compliance is expected to improve, not regress: the write gate catches at
 write time what the prose only reminded about and tidy only repaired
 afterwards.
 
+### Measured after implementation (2026-07-29)
+
+Before figures are `len(text) // 4` (the same estimator `token_budget.py`
+uses) taken from the parent commit of each trim: `98fc870~1` for `SKILL.md`,
+`dd39674~1` for `vault-standards.md` and `voice.md`. After figures are
+`token_budget.py`'s live output on this tree.
+
+| surface | before | after | cut |
+|---|---|---|---|
+| `SKILL.md` | 3035 | 1735 | 43% |
+| `reference/vault-standards.md` | 3522 | 2496 | 29% |
+| `reference/voice.md` | 853 | 597 | 30% |
+
+`token_budget.py` totals: 34577 tokens across 24 surfaces, 0 over budget.
+
+The write-flow cut landed below the 47% predicted above. Recomputing that
+same flow with the measured numbers here, and the spec's own unchanged ~400
+verb-doc term: ~7810 -> 5228, a 33% cut, not 47%. Nearly all of the gap is
+`vault-standards.md`: it settled at 2496 tokens, not the 1500 first targeted,
+per the budget ruling in commit `0a27fb6` (raised to 2500 after three drafts
+measured a floor of 2446 with no rules lost - see the "Amended 2026-07-29"
+note above). That 996-token difference between the targeted and actual size
+is most of the shortfall. The floor was a deliberate stop, not a miss to
+chase further: the alternative was deleting unenforced guidance or splitting
+the file, both rejected above.
+
 ## Testing
 
 - **Gate**: unit tests per branch - blocks on missing required, blocks on

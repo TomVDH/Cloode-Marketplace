@@ -36,12 +36,13 @@ Every file-touching verb is backed by a Python helper. Helpers follow the `.clau
 
 ## Hooks
 
-This plugin registers 9 hook entries across 8 events (vault-aware only):
+This plugin registers 10 hook entries across 9 events (vault-aware only):
 
 | Event | Script | Purpose |
 |---|---|---|
 | SessionStart | `hooks/scripts/session-start.sh` | Discover vault, detect AGENTS.md+CLAUDE.md, init/resume session note; stamp the Claude Code conversation UUID into `session_id:` (list, idempotent on resume); no resumed marker on `compact`/`clear` sources; nudges the model to replace the intent placeholder until it's filled; renders a board status line when a board exists, plus a suitcase pointer on `startup` when `suitcase-brief` is on PATH |
 | UserPromptSubmit | `hooks/scripts/user-prompt-reminder.sh` | Smart-fire vault reminder when project isn't linked and prompt has vault-y keywords (at most once per session) |
+| PreToolUse (Write) | `hooks/scripts/pretooluse-schema-gate.py` | Validates the proposed frontmatter of a Write landing under the resolved vault project against `FIELD_SCHEMA`, via the same detector `check` reports and `tidy` phase 5 repairs; blocks (exit 2, stderr naming the expected shape) on a missing required field or on both `type:` and `node_type:` being set, so the model corrects within the same turn; warns (stderr) and allows unknown fields, since `tidy` strips those safely after the fact; fails open on anything infrastructural (no breadcrumb, unresolvable vault, unparseable payload, import failure); skips `brief.md`, session notes, and the `_`-prefixed system files (`_handoff.md`, `_index.md`, `_iteration.md`). Does not check status values. Write-only: an Edit payload carries no resulting file to judge |
 | PostToolUse (Write\|Edit) | `hooks/scripts/posttooluse-vault-log.py` | Append vault file creation entries to today's session log; stamp `source_session: <uuid>` into the new file's frontmatter only when the breadcrumb opts in via `stamp_source_session: true` (default off — the session log already records the mapping; skips session notes / `_handoff` / `_index*` / `_iteration`); matcher widened to `Write\|Edit` so a task-note change under `tasks/` nudges the board via `board_bridge.py --ensure-only` (log + stamp jobs stay Write-only) |
 | PostToolUse (Bash) | `hooks/scripts/posttooluse-commit-log.py` | Self-gated commit logging (async; the `if: Bash(git commit *)` filter is defense in depth): append `- HH:MM · commit: {subject}` to today's session log; on `release(<plugin>): vX.Y.Z` subjects also scaffold `releases/v{X.Y.Z}.md` + an index row, never overwriting an existing note |
 | PreCompact | `hooks/scripts/precompact.py` | Mechanical, no model calls (5s budget): append enriched pause tombstone (`· next: …`) + mirror handoff with a freshness header (traffic light · age · NEXT · stale flag); a blank `.remember` source is never mirrored over a populated handoff |
