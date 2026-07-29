@@ -384,6 +384,84 @@ class TestUpsertProjectsIndexRow(unittest.TestCase):
             self.assertNotIn("active | 0 | 0 | —", text)
 
 
+class TestUpsertReplacementIsConfinedToTheCanonicalTable(unittest.TestCase):
+    """Fix wave 1 finding 4: finding 13's remediation guarded only the INSERT
+    path. The row-REPLACEMENT path still matched `| [[slug/brief\\|` on ANY
+    line, so a row for that slug living inside the user's own hand-maintained
+    table was overwritten with the canonical 6-column row.
+    """
+
+    _HAND_ROW = "| [[demo/brief\\|demo]] | my own annotation |"
+
+    def test_hand_maintained_row_is_not_overwritten(self):
+        # No canonical table anywhere: nothing may be written at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            idx = vault / "projects" / "_index.md"
+            custom = (
+                "---\ntype: index\ntags:\n  - index\n---\n\n"
+                "# Reading notes\n\n"
+                "| Source | Note |\n"
+                "|--------|------|\n"
+                + self._HAND_ROW + "\n"
+            )
+            idx.write_text(custom)
+            r = upsert_projects_index_row(vault, "demo", "coding", "done", 3, 4, "2026-07-01")
+            self.assertEqual(r, "skipped-unknown-format")
+            self.assertEqual(idx.read_text(), custom,
+                             "a hand-maintained table must be left byte-identical")
+
+    def test_canonical_row_updates_while_hand_row_survives(self):
+        # Both tables in one file: the canonical row must still be refreshed,
+        # and only that one.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            idx = vault / "projects" / "_index.md"
+            idx.write_text(
+                "---\ntype: index\ntags:\n  - index\n---\n\n"
+                "# Reading notes\n\n"
+                "| Source | Note |\n"
+                "|--------|------|\n"
+                + self._HAND_ROW + "\n\n"
+                "# All Projects\n\n"
+                "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
+                "|---------|------|--------|-----------|----------|--------------|\n"
+                "| [[demo/brief\\|demo]] | coding | active | 0 | 0 | — |\n")
+            r = upsert_projects_index_row(vault, "demo", "coding", "done", 3, 4, "2026-07-01")
+            self.assertEqual(r, "updated")
+            text = idx.read_text()
+            self.assertIn(self._HAND_ROW, text,
+                          "the user's own row must survive verbatim")
+            self.assertIn("coding | done | 3 | 4 | 2026-07-01", text,
+                          "the canonical row must still be refreshed")
+            self.assertNotIn("active | 0 | 0 | —", text)
+            self.assertEqual(text.count("my own annotation"), 1)
+
+    def test_row_below_the_canonical_table_is_not_touched(self):
+        # A second table AFTER the canonical one: the span must end at the
+        # canonical table's last row, not run to end of file.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            idx = vault / "projects" / "_index.md"
+            idx.write_text(
+                "---\ntype: index\ntags:\n  - index\n---\n\n"
+                "# All Projects\n\n"
+                "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
+                "|---------|------|--------|-----------|----------|--------------|\n"
+                "| [[other/brief\\|other]] | coding | active | 0 | 0 | — |\n\n"
+                "# Reading notes\n\n"
+                "| Source | Note |\n"
+                "|--------|------|\n"
+                + self._HAND_ROW + "\n")
+            r = upsert_projects_index_row(vault, "demo", "coding", "done", 3, 4, "2026-07-01")
+            self.assertEqual(r, "inserted",
+                             "the slug is absent from the canonical table, so insert")
+            text = idx.read_text()
+            self.assertIn(self._HAND_ROW, text,
+                          "the trailing hand-maintained row must survive verbatim")
+            self.assertIn("| [[demo/brief\\|demo]] | coding | done | 3 | 4 | 2026-07-01 |", text)
+
+
 # ============================================================
 # End-to-end run_connect
 # ============================================================

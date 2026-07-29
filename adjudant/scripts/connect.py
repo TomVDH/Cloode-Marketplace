@@ -575,6 +575,32 @@ _CANONICAL_INDEX_HEADER_RE = re.compile(
     r"\s*Sessions\s*\|\s*Last Session\s*\|\s*$", re.I)
 
 
+_TABLE_SEPARATOR_RE = re.compile(r"^\|[\s\-|:]+\|\s*$")
+
+
+def _canonical_table_body(lines: list[str]) -> Optional[tuple[int, int]]:
+    """`(start, end)` line range of the canonical projects table's row body.
+
+    `start` is the first line after the header's `|---|` separator; `end` is
+    one past its last row, stopping at the first line that is not a table row.
+    None when there is no canonical header, or no separator beneath it.
+
+    Both the insert AND the replace path go through this: a row for our slug
+    that happens to live in the user's own table is not ours to rewrite.
+    """
+    for i, line in enumerate(lines):
+        if not _CANONICAL_INDEX_HEADER_RE.match(line):
+            continue
+        # Markdown requires the delimiter row directly beneath the header.
+        if i + 1 >= len(lines) or not _TABLE_SEPARATOR_RE.match(lines[i + 1]):
+            return None
+        start = end = i + 2
+        while end < len(lines) and lines[end].lstrip().startswith("|"):
+            end += 1
+        return start, end
+    return None
+
+
 def upsert_projects_index_row(
     vault_path: Path,
     slug: str,
@@ -601,40 +627,28 @@ def upsert_projects_index_row(
 
     text = idx.read_text()
     lines = text.splitlines()
-    # Find existing row by slug
+    # Never corrupt a hand-maintained index (audit 2026-07-27 finding 13, and
+    # fix wave 1 finding 4). Insert used to land after the FIRST `|---|`
+    # anywhere in the file; replace used to match `| [[slug/brief\|` on ANY
+    # line, so a row for this slug inside the user's own table was overwritten
+    # with the canonical 6-column form. Both paths are now confined to the
+    # canonical table's own row body.
+    body = _canonical_table_body(lines)
+    if body is None:
+        return "skipped-unknown-format"
+    start, end = body
+
     target_pattern = re.compile(
         r"^\|\s*\[\[" + re.escape(slug) + r"/brief\\?\|"
     )
-    new_lines = []
     found = False
-    for line in lines:
-        if target_pattern.search(line):
-            new_lines.append(new_row)
+    for i in range(start, end):
+        if target_pattern.search(lines[i]):
+            lines[i] = new_row
             found = True
-        else:
-            new_lines.append(line)
     if not found:
-        # Never corrupt a hand-maintained index (audit 2026-07-27 finding 13):
-        # this used to insert after the FIRST `|---|` anywhere in the file,
-        # which landed the canonical 6-column row inside an unrelated table.
-        # port.py has carried this guard for a while; connect, sync and shelf
-        # all called this unguarded copy.
-        header_idx = None
-        for i, line in enumerate(new_lines):
-            if _CANONICAL_INDEX_HEADER_RE.match(line):
-                header_idx = i
-                break
-        if header_idx is None:
-            return "skipped-unknown-format"
-        insert_idx = None
-        for i in range(header_idx + 1, len(new_lines)):
-            if re.match(r"^\|[\s\-|:]+\|\s*$", new_lines[i]):
-                insert_idx = i + 1
-                break
-        if insert_idx is None:
-            return "skipped-unknown-format"
-        new_lines.insert(insert_idx, new_row)
-    idx.write_text("\n".join(new_lines) + "\n")
+        lines.insert(start, new_row)
+    idx.write_text("\n".join(lines) + "\n")
     return "updated" if found else "inserted"
 
 
