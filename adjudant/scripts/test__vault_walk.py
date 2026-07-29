@@ -865,7 +865,7 @@ class TestFieldSchema(unittest.TestCase):
         self.assertEqual(FIELD_SCHEMA["decision"]["optional"],
                          frozenset({"supersedes", "superseded_by", "implemented_verified",
                                     "source_session", "related", "title", "name",
-                                    "description"}))
+                                    "description", "cssclasses"}))
 
     def test_is_safe_slug_accepts_kebab(self):
         from _vault_walk import is_safe_slug
@@ -922,6 +922,32 @@ class TestFieldSchema(unittest.TestCase):
         vf = _vf("---\ntype: handoff\nupdated: 2026-01-01\nsource: remember\n"
                  "session_id:\n  - abc\ntags:\n  - handoff\n---\n")
         self.assertIsNone(schema_drift_for_file(vf))
+
+    def test_cssclasses_never_strippable(self):
+        # Regression: vault-standards.md section 2 documents `cssclasses:` as
+        # an Obsidian CSS class that "tag normalization leaves alone" - legal
+        # on any note a human authors. It was in no FIELD_SCHEMA optional
+        # set, so tidy feature 5 (the schema strip) flagged it as unknown and
+        # stripped it, breaking the document's own promise. A brief and an
+        # index are equally human-styled notes, so they get it too; session,
+        # handoff and vault-home stay narrow since they are machine-written.
+        for ftype in ("note", "decision", "project", "index"):
+            self.assertIn("cssclasses", FIELD_SCHEMA[ftype]["optional"], ftype)
+        for ftype in ("session", "handoff", "vault-home"):
+            self.assertNotIn("cssclasses", FIELD_SCHEMA[ftype]["optional"], ftype)
+        note = ("---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+                "cssclasses: wide-page\ntags:\n  - note\n---\n")
+        self.assertIsNone(schema_drift_for_file(_vf(note)))
+        decision = ("---\ntype: decision\nstatus: active\ndate: 2026-07-27\n"
+                    "cssclasses: wide-page\ntags:\n  - decision\n---\n")
+        self.assertIsNone(schema_drift_for_file(_vf(decision)))
+        project = ("---\ntype: project\nproject_type: coding\nslug: demo\n"
+                   "aliases:\n  - demo\nstatus: active\ncreated: 2026-01-01\n"
+                   "updated: 2026-01-01\ncssclasses: wide-page\ntags:\n"
+                   "  - project\n---\n")
+        self.assertIsNone(schema_drift_for_file(_vf(project, rel="projects/demo/brief.md")))
+        index = "---\ntype: index\ncssclasses: wide-page\ntags:\n  - index\n---\n"
+        self.assertIsNone(schema_drift_for_file(_vf(index, rel="notes/_index.md")))
 
     def test_content_optional_widening(self):
         # 2026-07-27: related/title/name/description legal on every content

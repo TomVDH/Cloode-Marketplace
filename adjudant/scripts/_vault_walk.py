@@ -768,10 +768,16 @@ STATUS_VALUES_FOR_TYPE: dict[str, tuple[str, ...]] = {
 # optional wherever the stamp hook could historically write it, so old stamps
 # never read as drift.
 # Descriptive fields legal on every content type (not on system shapes:
-# session, handoff, index, project, vault-home). Widened 2026-07-27 so tidy
-# never strips real-world metadata Tom actually writes.
+# session, handoff, vault-home). Widened 2026-07-27 so tidy never strips
+# real-world metadata Tom actually writes. `cssclasses` joined 2026-07-29:
+# vault-standards.md section 2 documents it as an Obsidian CSS class that
+# "tag normalization leaves alone", but it was absent from every
+# FIELD_SCHEMA optional set, so tidy feature 5 (the schema strip) flagged it
+# as unknown and stripped it out from under the human who set it. `project`
+# and `index` also get it directly below, since a brief or an index is
+# equally a rendered note a human may style.
 _CONTENT_OPTIONAL: frozenset[str] = frozenset({
-    "related", "title", "name", "description",
+    "related", "title", "name", "description", "cssclasses",
 })
 
 FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
@@ -831,11 +837,11 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
         "required": frozenset({"type", "project_type", "slug", "aliases",
                                "status", "created", "updated", "tags"}),
         "optional": frozenset({"repo", "stack", "marketplace", "extra_folders",
-                               "relations", "codename"}),
+                               "relations", "codename", "cssclasses"}),
     },
     "index": {
         "required": frozenset({"type", "tags"}),
-        "optional": frozenset({"updated"}),
+        "optional": frozenset({"updated", "cssclasses"}),
     },
     "vault-home": {
         "required": frozenset({"type", "updated"}),
