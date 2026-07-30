@@ -84,21 +84,46 @@ class TestRepoTidyDestructiveGuards(unittest.TestCase):
             self.assertIn("PRECIOUS hand-written content", saved[0].read_text())
             self.assertTrue(link.is_symlink(), "the repair still happens")
 
+    def _with_real_dir_at_link(self, root: Path) -> Path:
+        _make_plugin(root, "alpha", "1.0.0", skills=True, adopt=True)
+        link = root / "alpha" / ".gemini" / "skills" / "alpha"
+        link.unlink()
+        link.mkdir()
+        (link / "keep.md").write_text("do not lose me\n")
+        return link
+
     def test_real_directory_is_refused_not_destroyed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _make_plugin(root, "alpha", "1.0.0", skills=True, adopt=True)
-            link = root / "alpha" / ".gemini" / "skills" / "alpha"
-            link.unlink()
-            link.mkdir()
-            (link / "keep.md").write_text("do not lose me\n")
+            link = self._with_real_dir_at_link(root)
             rt.write_preview(root, rt.detect_repairs(root))
-            backup = rt.apply_preview(root)
+            backup = Path(rt.apply_preview(root))
             self.assertTrue(link.is_dir() and not link.is_symlink(),
                             "a real directory must be left alone")
             self.assertEqual((link / "keep.md").read_text(), "do not lose me\n")
-            self.assertTrue((Path(backup) / "SKIPPED.txt").is_file(),
+            self.assertTrue((backup / "SKIPPED.txt").is_file(),
                             "the skip must be recorded, never silent")
+            self.assertIn("alpha/.gemini/skills/alpha",
+                          (backup / "SKIPPED.txt").read_text())
+
+    def test_directory_is_refused_up_front_not_by_a_failing_unlink(self):
+        # The outcome above survives the guard's deletion: unlink() on a
+        # directory raises OSError, that except branch also appends to
+        # `skipped`, and the directory ends up intact either way. So the test
+        # above cannot pin the guard on its own.
+        #
+        # What only the EXPLICIT guard does is refuse BEFORE the backup record
+        # is written. Delete `if link.is_dir() and not link.is_symlink()` and a
+        # stray `<stem>.legacy` appears in the backup for a link that was never
+        # touched: a repair receipt for a repair that did not happen.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._with_real_dir_at_link(root)
+            rt.write_preview(root, rt.detect_repairs(root))
+            backup = Path(rt.apply_preview(root))
+            self.assertEqual(
+                sorted(p.name for p in backup.iterdir()), ["SKIPPED.txt"],
+                "a refused link must leave no backup record behind")
 
 
 if __name__ == "__main__":
