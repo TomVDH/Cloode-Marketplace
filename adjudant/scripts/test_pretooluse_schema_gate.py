@@ -6,6 +6,7 @@ else - unknown fields, writes outside the project, any infrastructural
 problem - must let the write through.
 """
 
+import contextlib
 import importlib.util
 import io
 import json
@@ -48,12 +49,21 @@ class _GateHarness(unittest.TestCase):
         return project, proot
 
     def _run(self, project: Path, payload) -> int:
+        return self._run_capturing(project, payload)[0]
+
+    def _run_capturing(self, project: Path, payload) -> tuple[int, str]:
+        """(exit code, stderr). stderr matters because it is the ONLY channel
+        a PreToolUse hook has, and the harness reads it on a non-zero exit
+        only: anything printed alongside an exit 0 is written to nobody."""
         os.environ["CLAUDE_PROJECT_DIR"] = str(project)
         before = sys.stdin
         sys.stdin = io.StringIO(payload if isinstance(payload, str)
                                 else json.dumps(payload))
+        err = io.StringIO()
         try:
-            return gate.main()
+            with contextlib.redirect_stderr(err):
+                rc = gate.main()
+            return rc, err.getvalue()
         finally:
             sys.stdin = before
             del os.environ["CLAUDE_PROJECT_DIR"]
@@ -88,12 +98,30 @@ class TestAllows(_GateHarness):
             rc = self._run(project, self._payload(proot / "notes" / "n.md", GOOD_NOTE))
             self.assertEqual(rc, 0)
 
-    def test_unknown_field_warns_but_allows(self):
+    def test_unknown_field_allowed_silently(self):
+        # The gate used to print a warning here. On an exit 0 a PreToolUse
+        # hook's stderr reaches nobody, so the "warns on unknown fields"
+        # behaviour never happened; check reports them and tidy strips them.
+        # Assert the silence, so the docs and the code cannot drift apart
+        # again without a test noticing.
         with tempfile.TemporaryDirectory() as tmp:
             project, proot = self._fixture(Path(tmp))
             bad = GOOD_NOTE.replace("type: note\n", "type: note\nbogus: x\n")
-            rc = self._run(project, self._payload(proot / "notes" / "n.md", bad))
+            rc, err = self._run_capturing(
+                project, self._payload(proot / "notes" / "n.md", bad))
             self.assertEqual(rc, 0)
+            self.assertEqual(err, "",
+                             "an allowed write must print nothing at all")
+
+    def test_block_still_explains_itself_on_stderr(self):
+        # Control for the silence above: the one path the harness DOES read
+        # still says what is wrong.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc, err = self._run_capturing(project, self._payload(
+                proot / "decisions" / "d.md", "---\ntype: decision\n---\n\nB\n"))
+            self.assertEqual(rc, 2)
+            self.assertIn("missing required field(s)", err)
 
     def test_write_outside_project_allowed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -277,6 +305,37 @@ class TestSkipList(_GateHarness):
             rc = self._run(project, self._payload(
                 proot / "sessions" / "2026-07-28.md", self.BLOCKING))
             self.assertEqual(rc, 0)
+
+    def test_legacy_dir_exempt(self):
+        # `_legacy/` holds files that are non-conformant BY DESIGN. Every other
+        # component exempts it (walk_project drops it from the walk, _cost and
+        # shelf add it to their skip sets); the gate used to be the one place
+        # that blocked writes to it.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(
+                proot / "_legacy" / "old.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+    def test_nested_legacy_dir_exempt(self):
+        # walk_project matches `_legacy` against every part of the relative
+        # path, not just the first, so the gate must too. Exempting only the
+        # project root would leave notes/_legacy/ blocked by the gate and
+        # invisible to check and tidy at the same time.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(
+                proot / "notes" / "_legacy" / "old.md", self.BLOCKING))
+            self.assertEqual(rc, 0)
+
+    def test_legacy_lookalike_is_still_gated(self):
+        # Control: the exemption is the exact folder name, not a prefix. A
+        # folder called `_legacy-notes/` is an ordinary folder.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            rc = self._run(project, self._payload(
+                proot / "_legacy-notes" / "old.md", self.BLOCKING))
+            self.assertEqual(rc, 2)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ Each rule states its shape once. Detail enforced mechanically is not restated:
 
 Validators 2, 23, 26, 28 and 29 are parity checks: they hold this document, the templates and the `_vault_walk.py` constants to each other. They never read a vault file.
 
-Two things are caught at write time: a `Write` missing a required field, or setting both `type:` and `node_type:`, is blocked; an unknown field is warned, then stripped by `tidy`. The gate ignores `Edit`s and status values, and skips `brief.md`, session notes and the `_`-prefixed system files. Everything else is reported after the fact or is judgment, so hold it in your head.
+Two things are caught at write time: a `Write` missing a required field, or setting both `type:` and `node_type:`, is blocked; an unknown field passes, for `tidy` to strip. The gate ignores `Edit`s and status values, skips `brief.md`, session notes, `_legacy/` and the `_`-prefixed system files. Everything else is reported after the fact or is judgment, so hold it in your head.
 
 ## 1. Frontmatter
 
