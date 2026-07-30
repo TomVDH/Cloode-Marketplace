@@ -1,11 +1,17 @@
 """Tests for adjudant/scripts/_vault_walk.py."""
 
+import json
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from _vault_walk import (
     Frontmatter,
+    atomic_write_text,
+    file_lock,
+    lock_path_for,
     Wikilink,
     ProjectContext,
     parse_frontmatter,
@@ -1347,6 +1353,196 @@ class TestSchemaDrift(unittest.TestCase):
         self.assertIsNone(schema_drift_for_text(
             "---\ntype: unknowntype\n---\n\nB\n", "notes/n.md"))
         self.assertIsNone(schema_drift_for_text("---\ntype: note\nno close\n", "notes/n.md"))
+
+
+class TestAtomicWriteText(unittest.TestCase):
+    """Audit 2026-07-30 finding 5. There was no atomic-write helper anywhere in
+    the codebase; every writer truncated in place, which is how a concurrent
+    reader lands on a zero-byte file."""
+
+    def test_writes_the_content_and_leaves_no_temp_behind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "deck.json"
+            atomic_write_text(p, '{"a": 1}\n')
+            self.assertEqual(p.read_text(), '{"a": 1}\n')
+            self.assertEqual([q.name for q in Path(tmp).iterdir()], ["deck.json"])
+
+    def test_the_temp_file_is_a_sibling_so_os_replace_stays_atomic(self):
+        # A temp in $TMPDIR is usually another filesystem, where os.replace
+        # degrades to copy-then-delete and stops being atomic.
+        seen = []
+        real = tempfile.mkstemp
+
+        def spy(*a, **kw):
+            seen.append(kw.get("dir"))
+            return real(*a, **kw)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "sub" / "deck.json"
+            p.parent.mkdir()
+            with unittest.mock.patch.object(tempfile, "mkstemp", spy):
+                atomic_write_text(p, "x")
+            self.assertEqual(seen, [str(p.parent)])
+
+    def test_a_failed_write_leaves_the_original_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "deck.json"
+            p.write_text("original\n")
+            with self.assertRaises(UnicodeEncodeError):
+                atomic_write_text(p, "caf\ud800")     # lone surrogate
+            self.assertEqual(p.read_text(), "original\n")
+            self.assertEqual([q.name for q in Path(tmp).iterdir()], ["deck.json"])
+
+    def test_preserves_the_destination_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "deck.json"
+            p.write_text("old")
+            p.chmod(0o640)
+            atomic_write_text(p, "new")
+            self.assertEqual(p.stat().st_mode & 0o777, 0o640)
+
+    def test_a_reader_never_sees_a_partial_file(self):
+        # Real processes: a writer looping over a large payload while this
+        # process reads. Every read must be one whole version.
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            target = tmpp / "big.txt"
+            target.write_text("A" * 400_000 + "\n")
+            runner = tmpp / "w.py"
+            runner.write_text(
+                "import sys\n"
+                f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+                "from pathlib import Path\n"
+                "from _vault_walk import atomic_write_text\n"
+                "t = Path(sys.argv[1])\n"
+                "for i in range(40):\n"
+                "    c = 'AB'[i % 2]\n"
+                "    atomic_write_text(t, c * 400_000 + '\\n')\n")
+            procs = [subprocess.Popen([sys.executable, str(runner), str(target)])
+                     for _ in range(2)]
+            bad, ok = [], 0
+            while any(p.poll() is None for p in procs):
+                raw = target.read_text()
+                body = raw.strip()
+                if len(body) != 400_000 or len(set(body)) != 1:
+                    bad.append(f"{len(body)} bytes, {sorted(set(body))[:3]}")
+                else:
+                    ok += 1
+            for p in procs:
+                p.wait()
+            self.assertEqual(bad, [], f"{len(bad)} partial reads: {bad[:3]}")
+            self.assertGreater(ok, 20)
+
+
+class TestFileLock(unittest.TestCase):
+    """The lock exists for LOST UPDATES, which atomicity does not touch. It
+    must also degrade rather than hang or crash: adjudant vaults live on
+    OneDrive, iCloud Drive and SMB shares, where flock may be refused."""
+
+    def test_serialises_concurrent_read_modify_write_cycles(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            target = tmpp / "counter.json"
+            target.write_text(json.dumps({"ids": []}))
+            runner = tmpp / "rmw.py"
+            runner.write_text(
+                "import json, os, sys, time\n"
+                f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+                "from pathlib import Path\n"
+                "from _vault_walk import atomic_write_text, file_lock\n"
+                "t, tag, go = Path(sys.argv[1]), sys.argv[2], sys.argv[3]\n"
+                "while not os.path.exists(go):\n"
+                "    time.sleep(0.001)\n"
+                "for i in range(12):\n"
+                "    with file_lock(t) as locked:\n"
+                "        d = json.loads(t.read_text())\n"
+                "        d['ids'].append(f'{tag}-{i}')\n"
+                "        atomic_write_text(t, json.dumps(d))\n")
+            go = tmpp / "go"
+            procs = [subprocess.Popen([sys.executable, str(runner), str(target), f"p{n}", str(go)])
+                     for n in range(4)]
+            go.write_text("")
+            for p in procs:
+                self.assertEqual(p.wait(), 0)
+            ids = json.loads(target.read_text())["ids"]
+            self.assertEqual(len(ids), 48, f"{48 - len(ids)} updates lost")
+            self.assertEqual(len(set(ids)), 48)
+
+    def test_a_contended_lock_times_out_instead_of_hanging(self):
+        import subprocess
+        import time as _time
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            target = tmpp / "held.json"
+            target.write_text("{}")
+            holder = tmpp / "hold.py"
+            holder.write_text(
+                "import sys, time\n"
+                f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+                "from pathlib import Path\n"
+                "from _vault_walk import file_lock\n"
+                "t = Path(sys.argv[1])\n"
+                "with file_lock(t) as locked:\n"
+                "    assert locked\n"
+                "    Path(sys.argv[2]).write_text('held')\n"
+                "    time.sleep(5)\n")
+            ready = tmpp / "ready"
+            proc = subprocess.Popen([sys.executable, str(holder), str(target), str(ready)])
+            try:
+                # Bounded: if the holder never takes the lock this test must
+                # fail, not hang (that is the failure mode it exists to catch).
+                waited = _time.monotonic() + 10.0
+                while not ready.exists():
+                    if proc.poll() is not None or _time.monotonic() > waited:
+                        self.fail("the holder process never acquired the lock")
+                    _time.sleep(0.005)
+                start = _time.monotonic()
+                with file_lock(target, timeout=0.2) as locked:
+                    elapsed = _time.monotonic() - start
+                    self.assertFalse(locked, "the lock is held elsewhere")
+                self.assertLess(elapsed, 2.0, "a contended lock must never hang")
+            finally:
+                proc.kill()
+                proc.wait()
+
+    def test_falls_back_to_unlocked_when_the_platform_refuses(self):
+        import errno
+        import fcntl
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "deck.json"
+            target.write_text("{}")
+
+            def refuse(*_a, **_kw):
+                raise OSError(errno.ENOLCK, "no locks available")
+
+            with unittest.mock.patch.object(fcntl, "flock", refuse):
+                with file_lock(target) as locked:
+                    self.assertFalse(locked)   # no crash, no hang, caller proceeds
+
+    def test_an_unwritable_directory_does_not_raise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "ro"
+            d.mkdir()
+            target = d / "deck.json"
+            target.write_text("{}")
+            d.chmod(0o500)
+            try:
+                with file_lock(target) as locked:
+                    self.assertFalse(locked)
+            finally:
+                d.chmod(0o700)
+
+    def test_lock_sidecar_is_hidden_and_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "board-data.json"
+            self.assertEqual(lock_path_for(target).name, ".board-data.json.lock")
+            target.write_text("{}")
+            with file_lock(target) as locked:
+                self.assertTrue(locked)
+            # Never unlinked: deleting it races another holder onto a new inode.
+            self.assertTrue(lock_path_for(target).exists())
 
 
 if __name__ == "__main__":

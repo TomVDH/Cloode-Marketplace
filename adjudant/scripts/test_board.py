@@ -3,8 +3,10 @@
 import contextlib
 import io
 import json
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from board import (
@@ -1069,6 +1071,127 @@ class TestScaffoldContainment(unittest.TestCase):
                                "--dest", str(repo_dest), "--from-tasks"])
             self.assertEqual(rc, 0)
             self.assertTrue((repo_dest / "board-data.json").is_file())
+
+
+class TestConcurrentDeckWrites(unittest.TestCase):
+    """Audit 2026-07-30 finding 5 (tier 4). scaffold_one reads the deck, merges,
+    renders, then blind-writes: an unlocked read-modify-write ending in a
+    truncating write_text. A prior audit MEASURED 35 torn or empty deck reads
+    in 20 seconds with two writers. The deck is written by the verb, by
+    `board_bridge --ensure-only` on every task-note Write/Edit, and by
+    SessionEnd, so concurrent writers are the normal case.
+
+    Real processes, no sleeps: children spin on a barrier file so they are
+    already warm and hit the window together."""
+
+    SCRIPTS = str(Path(__file__).resolve().parent)
+
+    def _runner(self, tmp: Path) -> Path:
+        runner = tmp / "runner.py"
+        runner.write_text(
+            "import os, sys, time\n"
+            f"sys.path.insert(0, {self.SCRIPTS!r})\n"
+            "import board\n"
+            "mode, proj, go = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+            "while not os.path.exists(go):\n"
+            "    time.sleep(0.001)\n"
+            "if mode == 'ensure':\n"
+            "    sys.exit(board.cli_main(['--ensure', '--project-dir', proj]))\n"
+            "if mode == 'replace':\n"
+            "    sys.exit(board.cli_main(['scaffold', '--project-dir', proj,\n"
+            "                             '--data', sys.argv[4]]))\n"
+            "rc = 0\n"
+            "for _ in range(int(sys.argv[4])):\n"
+            "    rc |= board.cli_main(['scaffold', '--project-dir', proj, '--data', sys.argv[5]])\n"
+            "sys.exit(rc)\n")
+        return runner
+
+    def _project(self, tmp: Path, *, tasks: int) -> Path:
+        proj = tmp / "proj"
+        for n in range(tasks):
+            _write(proj / "tasks" / f"t{n:04d}.md",
+                   f"---\ncode: T-{n:04d}\nstatus: todo\n---\n# Task {n} "
+                   f"{'padding ' * 12}\n")
+        return proj
+
+    def test_a_reader_never_sees_a_torn_deck(self):
+        # Atomicity: a reader must see the whole old file or the whole new one.
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            proj = self._project(tmpp, tasks=400)
+            dest = proj / "board"
+            _ensure(proj)
+            data_path = dest / "board-data.json"
+            big = tmpp / "big.json"
+            big.write_text(data_path.read_text())
+            self.assertGreater(big.stat().st_size, 100_000, "window must be wide enough to sample")
+
+            go = tmpp / "go"
+            runner = self._runner(tmpp)
+            procs = [subprocess.Popen(
+                [sys.executable, str(runner), "loop", str(proj), str(go), "12", str(big)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(2)]
+            go.write_text("")
+            torn, ok = [], 0
+            while any(p.poll() is None for p in procs):
+                try:
+                    raw = data_path.read_bytes()
+                except FileNotFoundError:
+                    torn.append("missing")
+                    continue
+                try:
+                    json.loads(raw)
+                    ok += 1
+                except json.JSONDecodeError:
+                    torn.append(f"{len(raw)} bytes")
+            for p in procs:
+                p.wait()
+            self.assertEqual(torn, [], f"{len(torn)} torn/empty reads: {torn[:5]}")
+            self.assertGreater(ok, 20, "the reader must actually have sampled the window")
+
+    def test_the_whole_read_merge_write_runs_under_one_lock(self):
+        # Lost updates: atomicity alone does not serialise two read-modify-write
+        # cycles, and locking only the write serialises nothing. Probed the way
+        # the audit reproduced the bug: from inside the window, since
+        # render_template is called after the deck read and before the write.
+        # No timing, no sleeps — the probe runs synchronously in the window.
+        import subprocess
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            proj = self._project(tmpp, tasks=3)
+            dest = proj / "board"
+            _ensure(proj)
+            data_path = dest / "board-data.json"
+            probe = tmpp / "probe.py"
+            probe.write_text(
+                "import fcntl, sys\n"
+                f"sys.path.insert(0, {self.SCRIPTS!r})\n"
+                "from pathlib import Path\n"
+                "from _vault_walk import lock_path_for\n"
+                "fh = open(lock_path_for(Path(sys.argv[1])), 'a+')\n"
+                "try:\n"
+                "    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                "    print('free')\n"
+                "except BlockingIOError:\n"
+                "    print('held')\n")
+
+            real = board.render_template
+            seen = []
+
+            def spy(deck):
+                seen.append(subprocess.run([sys.executable, str(probe), str(data_path)],
+                                           capture_output=True, text=True).stdout.strip())
+                return real(deck)
+
+            _write(proj / "tasks" / "t9999.md", "---\ncode: T-9999\nstatus: todo\n---\n# Late\n")
+            with unittest.mock.patch.object(board, "render_template", spy):
+                rc, _ = _scaffold(proj, dest, from_tasks=True, data=None, force=False,
+                                  title=None, board_id="proj")
+            self.assertEqual(rc, 0)
+            self.assertEqual(seen, ["held"],
+                             "another process could enter the read-merge-write window")
 
 
 if __name__ == "__main__":

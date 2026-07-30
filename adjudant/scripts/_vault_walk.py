@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Adjudant vault-walk primitives.
 
-Shared module for dream/check/tidy. Stdlib-only. Read-only.
+Shared module for dream/check/tidy. Stdlib-only. The walk itself is read-only;
+the durable-write primitives at the bottom are the module's only write path,
+and they only ever touch the file a caller hands them.
 
 Public API:
+    atomic_write_text(path, text) -> None
+    file_lock(target, timeout=5.0) -> context manager yielding bool
+    lock_path_for(target) -> Path
     parse_frontmatter(text) -> (Frontmatter, body)
     extract_wikilinks(body) -> list[Wikilink]
     extract_inline_tags(body) -> list[str]
@@ -36,7 +41,10 @@ import json
 import os
 import re
 import sys
+import tempfile
+import time
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -897,6 +905,129 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
         "optional": frozenset(),
     },
 }
+
+# ============================================================
+#  Durable writes: atomicity + advisory locking
+# ============================================================
+# Two separate problems, two separate primitives; a caller that mutates a file
+# other processes also write needs BOTH.
+#
+#   atomic_write_text  kills TORN READS. A reader sees the whole old file or
+#                      the whole new one, never a truncated middle.
+#   file_lock          kills LOST UPDATES. Atomicity says nothing about two
+#                      read-modify-write cycles interleaving; only mutual
+#                      exclusion does.
+#
+# Shared because they are needed in more than one place: board.py's deck write
+# is the first caller, _session_stamp.py is the next.
+
+
+def lock_path_for(target: Path) -> Path:
+    """The advisory lock sidecar for `target`.
+
+    Dot-prefixed, so it stays invisible in Obsidian and Finder, and the vault
+    walkers never see it either (they glob `*.md`). Deliberately never
+    unlinked: deleting a lock file races another holder onto a fresh inode,
+    which is how a lock silently stops locking.
+    """
+    target = Path(target)
+    return target.with_name(f".{target.name}.lock")
+
+
+@contextmanager
+def file_lock(target: Path, timeout: float = 5.0, poll: float = 0.005) -> Iterator[bool]:
+    """Best-effort exclusive lock around a read-modify-write of `target`.
+
+    Yields True when the lock is held, False when it could not be taken. It
+    NEVER hangs and NEVER raises: adjudant writes into vaults that live on
+    OneDrive, iCloud Drive and SMB shares, where `flock` may be unimplemented,
+    silently broken, or refused (ENOLCK/EOPNOTSUPP/EINVAL). On any of those the
+    caller proceeds unlocked, which is exactly the behaviour it had before this
+    existed, so a lock that cannot work costs correctness nowhere it was not
+    already lost. `timeout` bounds the wait for a contended lock: a hook-time
+    writer that blocked forever would be worse than one that races.
+
+    Callers must do the whole read-modify-write inside the block; locking only
+    the write serialises nothing.
+    """
+    try:
+        import fcntl
+    except ImportError:                      # non-POSIX
+        yield False
+        return
+    lock = lock_path_for(target)
+    handle = None
+    acquired = False
+    try:
+        try:
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(lock, "a+")
+        except OSError:
+            yield False                      # unwritable dir: proceed unlocked
+            return
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:          # held by someone else, wait it out
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(poll)
+            except OSError:                  # locking unsupported on this mount
+                break
+        yield acquired
+    finally:
+        if handle is not None:
+            if acquired:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            try:
+                handle.close()
+            except OSError:
+                pass
+
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Write `text` to `path` via a same-directory temp file + `os.replace`.
+
+    `os.replace` is atomic within a filesystem, so a concurrent reader gets the
+    whole old file or the whole new one. A plain `write_text` truncates first,
+    which is how a reader lands on a zero-byte or half-written deck.
+
+    Same directory on purpose: a temp file in $TMPDIR is usually on another
+    filesystem, where `os.replace` degrades to copy-then-delete and stops being
+    atomic. The temp name is dot-prefixed so a crashed run leaves nothing the
+    vault walkers or Obsidian will show. The destination's mode is preserved
+    when it already exists (mkstemp creates 0600).
+    """
+    path = Path(path)
+    directory = path.parent
+    try:
+        mode = os.stat(path).st_mode & 0o777
+    except OSError:
+        mode = 0o644
+    fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding=encoding, newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        # Leave the destination byte-identical: a failed write must not be a
+        # half-written file, and must not leave the temp behind either.
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
+
 
 # The kebab-case project-slug rule. Lives here (not in connect.py) because the
 # BREADCRUMB IS A REPO-COMMITTED FILE: a cloned repo can carry any slug, and

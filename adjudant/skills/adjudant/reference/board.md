@@ -166,6 +166,12 @@ keep the board current without being asked:
   --bridge` (survivors become `tasks/` notes, deduped by slug) or runs
   `--ensure-only` when no ledger exists; either path ends in `ensure_board`.
 
+Because three surfaces write the deck, the whole read-merge-write runs under an
+advisory lock and both files land via a temp file plus `os.replace`, so a
+concurrent reader never sees a half-written deck and two writers cannot lose
+each other's work. On a mount where locking does not work the write is still
+atomic.
+
 Read-only views: `check` renders a board section, `sitrep` one board line.
 
 `scripts/board_bridge.py` is the ledger-to-vault bridge: TaskCreated and

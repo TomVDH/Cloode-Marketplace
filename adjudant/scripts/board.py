@@ -47,8 +47,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from _vault_walk import (
-    enumerate_projects_all_zones, find_project_dir, is_safe_slug, parse_frontmatter,
-    resolve_vault, smart_project_dir, SLUG_MAX_LEN, VaultUnresolvableError,
+    atomic_write_text, enumerate_projects_all_zones, file_lock, find_project_dir,
+    is_safe_slug, parse_frontmatter, resolve_vault, smart_project_dir, SLUG_MAX_LEN,
+    VaultUnresolvableError,
 )
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "templates" / "board.html"
@@ -344,7 +345,7 @@ def render_template(deck: dict[str, Any]) -> str:
 
 
 def emit_html(deck: dict[str, Any], dest_html: Path) -> None:
-    dest_html.write_text(render_template(deck))
+    atomic_write_text(dest_html, render_template(deck))
 
 
 def backup_deck(data_path: Path, keep: int = BACKUP_KEEP) -> Path:
@@ -477,54 +478,67 @@ def scaffold_one(
     # rendered: a run that fails and writes nothing must not spend the backup.
     replaces_deck = force or bool(data)
 
-    try:
-        if data:
-            deck = json.loads(Path(data).expanduser().read_text())
-            if not isinstance(deck, dict):
-                raise ValueError("deck root must be a JSON object")
-        elif data_path.is_file() and not force:
-            existing = json.loads(data_path.read_text())
-            if not isinstance(existing, dict):
-                raise ValueError("deck root must be a JSON object")
-        else:
-            existing = None
-    except (OSError, json.JSONDecodeError, ValueError) as e:
-        src = data if data else str(data_path)
-        print(f"error: could not read deck {src}: {e}", file=sys.stderr)
-        return 1
-
-    if data:
-        deck.setdefault("version", DECK_VERSION)
-        deck.setdefault("boardId", bid)
-        deck.setdefault("subtitle", DEFAULT_SUBTITLE)
-        deck.setdefault("columns", DEFAULT_COLUMNS)
-        deck.setdefault("categories", list(DEFAULT_CATEGORIES))
-        deck.setdefault("cards", [])
-        if title:
-            deck["title"] = title
-    elif data_path.is_file() and not force:
-        if from_tasks:
-            # refresh-without-clobber: merge current task state into the deck
-            fresh = build_deck(project_dir, from_tasks=True, title=resolved_title, board_id=bid)
-            deck = merge_deck(existing, fresh)
-        else:
-            deck = existing            # keep the user's deck untouched
-            deck.setdefault("boardId", bid)   # backfill id for pre-0.9 decks
-    else:
-        deck = build_deck(project_dir, from_tasks=from_tasks, title=resolved_title, board_id=bid)
-
-    # Render FIRST: a missing/markerless template must fail before any write,
-    # never leaving board-data.json and board.html out of sync.
-    html = render_template(deck)
-    if replaces_deck and data_path.is_file():
+    # ONE lock over the whole read-merge-render-write cycle. Locking only the
+    # write serialises nothing: the deck is read here, merged, and written back,
+    # so a second writer landing anywhere in that window used to be overwritten
+    # silently. The deck has three routine writers (the verb, `board_bridge
+    # --ensure-only` on every task-note Write/Edit, and SessionEnd), so this is
+    # the normal case, not an edge case. `locked` may be False on a mount where
+    # flock does not work; the write below is still atomic, so the worst case is
+    # exactly the old behaviour rather than a hang or a crash.
+    with file_lock(data_path):
         try:
-            backup_deck(data_path)
-        except OSError as e:
-            print(f"error: could not back up the existing deck before replacing it: {e}",
-                  file=sys.stderr)
+            if data:
+                deck = json.loads(Path(data).expanduser().read_text())
+                if not isinstance(deck, dict):
+                    raise ValueError("deck root must be a JSON object")
+            elif data_path.is_file() and not force:
+                existing = json.loads(data_path.read_text())
+                if not isinstance(existing, dict):
+                    raise ValueError("deck root must be a JSON object")
+            else:
+                existing = None
+        except (OSError, json.JSONDecodeError, ValueError) as e:
+            src = data if data else str(data_path)
+            print(f"error: could not read deck {src}: {e}", file=sys.stderr)
             return 1
-    data_path.write_text(json.dumps(deck, indent=2) + "\n")
-    (dest / "board.html").write_text(html)
+
+        if data:
+            deck.setdefault("version", DECK_VERSION)
+            deck.setdefault("boardId", bid)
+            deck.setdefault("subtitle", DEFAULT_SUBTITLE)
+            deck.setdefault("columns", DEFAULT_COLUMNS)
+            deck.setdefault("categories", list(DEFAULT_CATEGORIES))
+            deck.setdefault("cards", [])
+            if title:
+                deck["title"] = title
+        elif data_path.is_file() and not force:
+            if from_tasks:
+                # refresh-without-clobber: merge current task state into the deck
+                fresh = build_deck(project_dir, from_tasks=True, title=resolved_title, board_id=bid)
+                deck = merge_deck(existing, fresh)
+            else:
+                deck = existing            # keep the user's deck untouched
+                deck.setdefault("boardId", bid)   # backfill id for pre-0.9 decks
+        else:
+            deck = build_deck(project_dir, from_tasks=from_tasks, title=resolved_title, board_id=bid)
+
+        # Render FIRST: a missing/markerless template must fail before any write,
+        # never leaving board-data.json and board.html out of sync.
+        html = render_template(deck)
+        if replaces_deck and data_path.is_file():
+            try:
+                backup_deck(data_path)
+            except OSError as e:
+                print(f"error: could not back up the existing deck before replacing it: {e}",
+                      file=sys.stderr)
+                return 1
+        # Atomic, so a reader (status, graph, the browser, the next ensure)
+        # sees the whole old deck or the whole new one, never the truncated
+        # middle a plain write_text leaves. Both files under the same lock, so
+        # the deck and the board that embeds it cannot diverge.
+        atomic_write_text(data_path, json.dumps(deck, indent=2) + "\n")
+        atomic_write_text(dest / "board.html", html)
     print(f"[board] {dest}/board.html  ({len(deck.get('cards', []))} cards, {len(deck.get('columns', []))} stages)", file=sys.stderr)
     print(str(dest / "board.html"))
     return 0
