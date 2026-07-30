@@ -318,6 +318,72 @@ class TestStatusVocabularyGuard(unittest.TestCase):
             self.assertNotEqual(summary["steps"]["projects_index_row"], "project-missing")
 
 
+class TestTraversalSlugBreadcrumb(unittest.TestCase):
+    """Verb-level proof for the repo-committed-slug hole. A primitive-only test
+    is exactly what let the hole survive the v0.18.0 hardening pass: hooks were
+    gated, verbs were not. sync is a WRITE verb reached through
+    resolve_project_from_cwd, so it demonstrates the actual damage: before the
+    gate it bumped `updated:` inside a brief that lived outside the vault.
+    """
+
+    @staticmethod
+    def _snapshot(root: Path, skip: Path) -> dict[str, bytes]:
+        """Byte-exact census of everything under `root` except the `skip`
+        subtree. Any file created, deleted, or rewritten shows up as a diff."""
+        out: dict[str, bytes] = {}
+        for p in sorted(root.rglob("*")):
+            if p == skip or skip in p.parents:
+                continue
+            out[str(p)] = p.read_bytes() if p.is_file() else b"<dir>"
+        return out
+
+    def _fixture(self, root: Path) -> tuple[Path, Path, Path]:
+        vault = root / "vault"
+        (vault / "projects").mkdir(parents=True)
+        (vault / "Home.md").write_text("---\ntype: vault-home\n---\n")
+        # `{vault}/projects/../../escaped`, a real project-shaped dir that is
+        # a SIBLING of the vault, not inside it.
+        escaped = root / "escaped"
+        _w(escaped / "brief.md",
+           "---\ntype: project\nproject_type: coding\nslug: escaped\n"
+           "status: active\nupdated: 2026-01-01\n---\n\n# Not the vault's\n")
+        code = root / "code"
+        _w(code / ".claude" / "adjudant",
+           f"vault_path: {vault}\nvault_name: vault\n"
+           f"slug: ../../escaped\nmode: project\n")
+        return code, vault, escaped
+
+    def test_sync_writes_nothing_outside_the_vault(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code, vault, escaped = self._fixture(root)
+            before = self._snapshot(root, skip=vault)
+
+            buf, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+                rc = sync_cli(["--project-dir", str(code)])
+
+            self.assertNotEqual(rc, 0, "sync accepted a traversal slug")
+            self.assertEqual(self._snapshot(root, skip=vault), before,
+                             "sync wrote outside the vault")
+            self.assertIn("updated: 2026-01-01",
+                          (escaped / "brief.md").read_text(),
+                          "the out-of-vault brief was rewritten")
+
+    def test_sync_refusal_explains_itself(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _vault, _escaped = self._fixture(Path(tmp))
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(err):
+                rc = sync_cli(["--project-dir", str(code)])
+            self.assertEqual(rc, 1)
+            msg = err.getvalue()
+            self.assertIn("error:", msg)
+            self.assertIn("../../escaped", msg)
+            self.assertIn("connect", msg)
+
+
 class TestNonUtf8BriefSafety(unittest.TestCase):
     """Fix wave 1 finding 3: the strict-decode remediation applied to shelf and
     tidy missed sync, on the SAME file shelf was fixed for.

@@ -589,6 +589,48 @@ class TestSlugHandling(unittest.TestCase):
             self.assertIn("new-slug", summary)
             self.assertNotIn("old-slug", summary)
 
+    def _legacy_repo(self, root: Path, slug: str) -> tuple[Path, Path]:
+        vault = root / "vault"
+        (vault / "projects").mkdir(parents=True)
+        repo = root / "repo"
+        (repo / ".claude").mkdir(parents=True)
+        (repo / ".claude" / "obsidian-bridge").write_text(
+            f"vault: {vault}\nslug: {slug}\n")
+        (repo / "AGENTS.md").write_text("# P\n\n## Stack\n\nNode\n")
+        return repo, vault
+
+    def test_traversal_slug_in_the_legacy_breadcrumb_is_refused(self):
+        """The `--slug` CLI arg is validated but the LEGACY `obsidian-bridge`
+        breadcrumb's slug was not, and it is the fallback when --slug is
+        omitted. Unfixed, `slug: ../../escaped` made the preview emit CREATE
+        and REGEN operations pointing outside the vault, and apply executed
+        them with mkdir(parents=True) + write_text.
+        """
+        from port import main as port_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, vault = self._legacy_repo(root, "../../escaped")
+            rc = port_main(["preview", "--project-root", str(repo),
+                            "--vault-path", str(vault)])
+            if rc == 0:
+                port_main(["apply", "--project-root", str(repo)])
+            self.assertFalse(
+                (root / "escaped").exists(),
+                "port created a directory outside the vault")
+            self.assertEqual(rc, 1, "port accepted a traversal slug")
+
+    def test_a_safe_legacy_slug_still_previews(self):
+        from port import main as port_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, vault = self._legacy_repo(root, "legacy-proj")
+            rc = port_main(["preview", "--project-root", str(repo),
+                            "--vault-path", str(vault)])
+            self.assertEqual(rc, 0)
+            self.assertIn(
+                "legacy-proj",
+                (repo / ".adjudant-port-preview" / "summary.md").read_text())
+
 
 class TestApplyPreviewGuards(unittest.TestCase):
     """Bug 2 regression: apply_preview must reject corrupt/unfilled previews."""

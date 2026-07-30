@@ -564,20 +564,48 @@ def resolve_project_from_cwd(cwd: Optional[Path] = None) -> Optional[ProjectCont
 
     Used by check/tidy/ramasse_scan/sync to auto-follow the breadcrumb
     when invoked from the code-side project root.
+
+    Raises VaultUnresolvableError when the breadcrumb's slug is not a safe
+    kebab-case slug, or when `{vault}/projects/{slug}` would land outside the
+    vault. NOT None: None already means "no breadcrumb here", a benign state
+    that every caller reports as "run /adjudant connect", which misdirects on
+    a poisoned slug. This is the verb path, and verbs fail closed.
     """
     root = Path(cwd) if cwd else Path.cwd()
     root = root.expanduser().resolve()
     bc = parse_breadcrumb(root)
     if not bc or "slug" not in bc:
         return None
+    slug = bc["slug"]
+    # The breadcrumb is a REPO-COMMITTED file, so a cloned repo carries
+    # whatever slug its author wrote. v0.18.0 gated this in every hook and
+    # missed the verb path: `slug: ../../escaped` handed sync and every verb
+    # behind smart_project_dir a project dir OUTSIDE the vault, which the
+    # write verbs then rewrote. Same single rule the hooks use.
+    if not is_safe_slug(slug):
+        raise VaultUnresolvableError(
+            f"breadcrumb at {root / '.claude' / 'adjudant'} carries an unsafe "
+            f"slug {slug!r}. A project slug is lowercase kebab-case "
+            f"(a-z, 0-9, hyphen; no leading hyphen; {SLUG_MAX_LEN} chars max); "
+            f"this one would resolve outside the vault. "
+            f"Fix the breadcrumb or re-run /adjudant connect."
+        )
     vault = resolve_vault(root)
     if not vault:
         return None
-    vpd = find_project_dir(vault, bc["slug"]) or (vault / "projects" / bc["slug"])
+    # safe_project_root is the containment guard (slug rule + stays-inside
+    # check). Use it for the fallback rather than rebuilding the path here.
+    vpd = find_project_dir(vault, slug) or safe_project_root(vault, slug)
+    if vpd is None:
+        raise VaultUnresolvableError(
+            f"slug {slug!r} from {root / '.claude' / 'adjudant'} does not "
+            f"resolve to a path inside vault {vault}. "
+            f"Fix the vault layout or re-run /adjudant connect."
+        )
     return ProjectContext(
         code_root=root,
         vault_path=vault,
-        slug=bc["slug"],
+        slug=slug,
         vault_project_dir=vpd,
     )
 

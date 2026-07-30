@@ -57,7 +57,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATES = SCRIPT_DIR.parent / "skills" / "adjudant" / "templates"
 
 VALID_PROJECT_TYPES = ("coding", "knowledge", "plugin", "tinkerage")
-from _vault_walk import SLUG_RE  # single source of the kebab-case rule
+# Single source of the kebab-case rule: the same predicate the hooks and
+# resolve_project_from_cwd gate on, so a slug connect accepts is never one a
+# later consumer silently refuses.
+from _vault_walk import SLUG_MAX_LEN, is_safe_slug
 
 
 # ============================================================
@@ -66,13 +69,15 @@ from _vault_walk import SLUG_RE  # single source of the kebab-case rule
 
 
 def validate_slug(slug: str) -> Optional[str]:
-    """Return None if valid, else an error message."""
+    """Return None if valid, else an error message. Thin message-carrying
+    wrapper over is_safe_slug: one rule, two shapes."""
     if not slug:
         return "slug must not be empty"
-    if not SLUG_RE.match(slug):
+    if not is_safe_slug(slug):
         return (
             f"slug {slug!r} must be lowercase kebab-case "
-            f"(letters, digits, hyphens; no leading hyphen)"
+            f"(letters, digits, hyphens; no leading hyphen; "
+            f"{SLUG_MAX_LEN} chars max)"
         )
     return None
 

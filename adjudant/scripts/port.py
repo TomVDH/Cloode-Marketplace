@@ -369,12 +369,28 @@ def generate_preview_y(
 
     Slug precedence: explicit `slug` arg (CLI --slug) → legacy OB breadcrumb's
     slug field → project_root.name.
+
+    Raises ValueError when the resolved slug is not kebab-case. Only the
+    `--slug` arg is validated by the caller; the LEGACY `obsidian-bridge`
+    breadcrumb is a repo-committed file too, and its slug feeds
+    `{vault}/projects/{slug}` in _y_vault_changes, whose CREATE/REGEN lines
+    apply executes with mkdir(parents=True) and write_text. Validated BEFORE
+    the preview dir is created, so a refusal leaves no half-written preview
+    to jam detect_flavor at "preview".
     """
+    slug = slug or _parse_breadcrumb_field(project_root / ".claude" / "obsidian-bridge", "slug") or project_root.name
+    slug_error = validate_slug(slug)
+    if slug_error:
+        raise ValueError(
+            f"{slug_error}. It came from .claude/obsidian-bridge or the "
+            f"directory name and would resolve outside the vault; "
+            f"pass --slug with a kebab-case name."
+        )
+
     preview_dir = project_root / ".adjudant-port-preview"
     preview_dir.mkdir(exist_ok=True)
     _write_source_hash(preview_dir, project_root)
 
-    slug = slug or _parse_breadcrumb_field(project_root / ".claude" / "obsidian-bridge", "slug") or project_root.name
     vault_name = vault_path.name
 
     agents_legacy = project_root / "AGENTS.md"
@@ -923,16 +939,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     project_type = args.project_type or "coding"
     project_name = args.project_name or slug.replace("-", " ").title()
 
-    if flavor == "Y":
-        # Only an explicit --slug overrides the legacy OB breadcrumb's slug
-        generate_preview_y(root, vault_path=vault_path, project_type=project_type,
-                           project_name=project_name, slug=args.slug)
-    elif flavor == "Z":
-        generate_preview_z_scaffold(root, vault_path=vault_path, slug=slug, project_type=project_type, project_name=project_name)
-    elif flavor == "X":
-        generate_preview_x(root, vault_path=vault_path, slug=slug, project_type=project_type, project_name=project_name)
-    else:
-        print(f"[port] Unexpected flavor for preview phase: {flavor}", file=sys.stderr)
+    try:
+        if flavor == "Y":
+            # Only an explicit --slug overrides the legacy OB breadcrumb's slug,
+            # so flavor Y validates its own resolved slug and raises.
+            generate_preview_y(root, vault_path=vault_path, project_type=project_type,
+                               project_name=project_name, slug=args.slug)
+        elif flavor == "Z":
+            generate_preview_z_scaffold(root, vault_path=vault_path, slug=slug, project_type=project_type, project_name=project_name)
+        elif flavor == "X":
+            generate_preview_x(root, vault_path=vault_path, slug=slug, project_type=project_type, project_name=project_name)
+        else:
+            print(f"[port] Unexpected flavor for preview phase: {flavor}", file=sys.stderr)
+            return 1
+    except ValueError as e:
+        print(f"[port] ERROR: {e}", file=sys.stderr)
         return 1
 
     print(f"[port] Preview written to {root}/.adjudant-port-preview/")

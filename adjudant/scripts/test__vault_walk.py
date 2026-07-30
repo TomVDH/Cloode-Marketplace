@@ -679,6 +679,144 @@ class TestResolveProjectFromCwd(unittest.TestCase):
             self.assertIsNone(resolve_project_from_cwd(Path(tmp)))
 
 
+class TestBreadcrumbSlugIsGatedOnTheVerbPath(unittest.TestCase):
+    """`.claude/adjudant` is a REPO-COMMITTED file, so a cloned repo carries
+    whatever slug its author wrote. v0.18.0 gated the slug in every HOOK and
+    left the VERB path open: resolve_project_from_cwd fed bc["slug"] straight
+    into `{vault}/projects/{slug}`, so `slug: ../../escaped` handed every verb
+    behind smart_project_dir a project dir outside the vault.
+    """
+
+    HOSTILE = (
+        "../../escaped", "..", "../sibling", "sub/../../../out",
+        "a/b", "/etc", "./.", "%2e%2e/x",
+    )
+
+    @staticmethod
+    def _setup(tmp: Path, slug: str) -> tuple[Path, Path]:
+        vault = tmp / "vault"
+        (vault / "projects").mkdir(parents=True)
+        (vault / "Home.md").write_text(
+            "---\ntype: vault-home\nupdated: 2026-01-01\n---\n")
+        code = tmp / "code"
+        (code / ".claude").mkdir(parents=True)
+        (code / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: {slug}\nmode: project\n")
+        return code, vault
+
+    def _assert_under_projects(self, vault: Path, path: Path) -> None:
+        """A real project dir always sits UNDER `{vault}/projects`. Asserting
+        that, rather than 'inside the vault', also rejects the `..` slug that
+        resolves to the vault root itself (which tidy apply would rewrite
+        wholesale)."""
+        projects = (vault / "projects").resolve()
+        p = Path(path).resolve()
+        self.assertIn(projects, p.parents,
+                      f"{p} is not under {projects}")
+
+    def test_no_hostile_slug_yields_a_path_outside_the_vault(self):
+        # Asserts the OUTCOME (containment), not the mechanism: returning None,
+        # raising, or clamping the path all pass here. Only an absent guard
+        # cannot.
+        for slug in self.HOSTILE:
+            with self.subTest(slug=slug), tempfile.TemporaryDirectory() as tmp:
+                code, vault = self._setup(Path(tmp), slug)
+                try:
+                    ctx = resolve_project_from_cwd(code)
+                except VaultUnresolvableError:
+                    continue
+                if ctx is not None:
+                    self._assert_under_projects(vault, ctx.vault_project_dir)
+
+    def test_a_traversal_target_that_exists_is_still_refused(self):
+        # find_project_dir returns the FIRST candidate that exists, so a
+        # traversal slug pointing at a real directory took the zone-aware
+        # branch rather than the `or (vault / "projects" / slug)` fallback.
+        # Both branches have to be gated.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code, vault = self._setup(root, "../../escaped")
+            escaped = root / "escaped"
+            escaped.mkdir()
+            (escaped / "brief.md").write_text(
+                "---\ntype: project\nslug: escaped\n---\n")
+            try:
+                ctx = resolve_project_from_cwd(code)
+            except VaultUnresolvableError:
+                return
+            self.assertIsNotNone(ctx)
+            self._assert_under_projects(vault, ctx.vault_project_dir)
+
+    def test_the_refusal_names_the_slug_and_points_at_the_fix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _vault = self._setup(Path(tmp), "../../escaped")
+            with self.assertRaises(VaultUnresolvableError) as cm:
+                resolve_project_from_cwd(code)
+            msg = str(cm.exception)
+            self.assertIn("../../escaped", msg)
+            self.assertIn("connect", msg)
+
+    def test_smart_project_dir_never_hands_a_verb_a_path_outside_the_vault(self):
+        # The shared resolver behind check/tidy/dream/ramasse/sitrep/board.
+        for slug in self.HOSTILE:
+            with self.subTest(slug=slug), tempfile.TemporaryDirectory() as tmp:
+                code, vault = self._setup(Path(tmp), slug)
+                try:
+                    scan_dir, _hint = smart_project_dir(str(code))
+                except VaultUnresolvableError:
+                    continue
+                self._assert_under_projects(vault, scan_dir)
+
+    def test_a_safe_slug_is_unaffected(self):
+        # The guard must not be over-broad: ordinary kebab slugs still resolve,
+        # connected or not.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, vault = self._setup(Path(tmp), "good-slug-1")
+            (vault / "projects" / "good-slug-1").mkdir()
+            ctx = resolve_project_from_cwd(code)
+            self.assertIsNotNone(ctx)
+            self.assertTrue(ctx.is_connected)
+            self._assert_under_projects(vault, ctx.vault_project_dir)
+
+    def test_a_safe_slug_with_no_vault_dir_yet_still_reports_the_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, vault = self._setup(Path(tmp), "not-created-yet")
+            ctx = resolve_project_from_cwd(code)
+            self.assertIsNotNone(ctx)
+            self.assertFalse(ctx.is_connected)
+            self._assert_under_projects(vault, ctx.vault_project_dir)
+
+    def test_a_symlinked_projects_dir_cannot_place_a_new_project_outside(self):
+        """The slug rule alone is lexical: `{vault}/projects/good-slug` is
+        inside the vault by spelling but outside it on disk when `projects`
+        is a symlink. safe_project_root is the containment half of the guard,
+        and the fallback branch is the one that SCAFFOLDS a project that does
+        not exist yet, so it must refuse to scaffold outside the vault.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside = root / "outside"
+            outside.mkdir()
+            vault = root / "vault"
+            vault.mkdir()
+            (vault / "Home.md").write_text(
+                "---\ntype: vault-home\nupdated: 2026-01-01\n---\n")
+            (vault / "projects").symlink_to(outside, target_is_directory=True)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "adjudant").write_text(
+                f"vault_path: {vault}\nvault_name: vault\n"
+                f"slug: not-created-yet\nmode: project\n")
+            try:
+                ctx = resolve_project_from_cwd(code)
+            except VaultUnresolvableError:
+                return
+            self.assertIsNotNone(ctx)
+            self.assertIn(vault.resolve(),
+                          Path(ctx.vault_project_dir).resolve().parents,
+                          f"{ctx.vault_project_dir} is outside {vault}")
+
+
 # ============================================================
 # Vault-name cross-machine resolution
 # ============================================================
@@ -968,10 +1106,19 @@ class TestFieldSchema(unittest.TestCase):
 
     def test_connect_shares_the_slug_rule(self):
         # port.py calls connect.validate_slug "the single source of the
-        # kebab-case rule"; the hooks now share the same regex object.
+        # kebab-case rule"; the hooks and resolve_project_from_cwd gate on
+        # is_safe_slug. Asserted as behavioural agreement rather than shared
+        # identity: validate_slug used to match SLUG_RE without the length
+        # bound, so connect accepted a 100-char slug that every hook then
+        # silently refused.
         import connect
-        from _vault_walk import SLUG_RE
-        self.assertIs(connect.SLUG_RE, SLUG_RE)
+        from _vault_walk import SLUG_MAX_LEN, is_safe_slug
+        cases = ("demo", "a", "a-b-1", "", "-x", "A", "a_b", "a b", "a/b",
+                 "../../escaped", "/etc", "..", "x" * SLUG_MAX_LEN,
+                 "x" * (SLUG_MAX_LEN + 1))
+        for value in cases:
+            self.assertEqual(connect.validate_slug(value) is None,
+                             is_safe_slug(value), repr(value))
 
     def test_board_read_fields_never_strippable(self):
         # Regression, audit 2026-07-27: board.py cards_from_tasks reads
