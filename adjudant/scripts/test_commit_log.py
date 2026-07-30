@@ -66,12 +66,31 @@ class _CommitLogCase(unittest.TestCase):
             ["git", "-C", str(self.project), *args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
 
+    RELEASE_CMD = ('git commit -m "$(cat <<\'EOF\'\n'
+                   "release(adjudant): v0.15.0 - ambient board\n"
+                   "\n"
+                   "- task schema locked\n"
+                   "- board born on first task\n"
+                   "EOF\n"
+                   ')"')
+
     def _land(self, subject: str, body: str = "") -> None:
-        """Make HEAD actually be `subject`, so commit_verified passes."""
+        """Make HEAD actually be `subject`, so commit_verified passes.
+
+        Every test that expects the hook to get PAST commit verification must
+        call this (or _land_release). A fixture without a matching HEAD stops
+        at the verification gate, and any guard the test is named for never
+        runs — the test then passes with that guard deleted.
+        """
         (self.project / "f.txt").write_text(subject)
         self._git("add", "-A")
         msg = subject if not body else f"{subject}\n\n{body}"
         self._git("commit", "-q", "-m", msg)
+
+    def _land_release(self) -> None:
+        """HEAD becomes the RELEASE_CMD commit."""
+        self._land("release(adjudant): v0.15.0 - ambient board",
+                   "- task schema locked\n- board born on first task")
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -180,18 +199,6 @@ class TestCommitLogged(_CommitLogCase):
 
 class TestReleaseScaffold(_CommitLogCase):
 
-    RELEASE_CMD = ('git commit -m "$(cat <<\'EOF\'\n'
-                   "release(adjudant): v0.15.0 - ambient board\n"
-                   "\n"
-                   "- task schema locked\n"
-                   "- board born on first task\n"
-                   "EOF\n"
-                   ')"')
-
-    def _land_release(self):
-        self._land("release(adjudant): v0.15.0 - ambient board",
-                   "- task schema locked\n- board born on first task")
-
     def test_release_scaffold(self):
         self._land_release()
         rc = self._run(self._payload(self.RELEASE_CMD))
@@ -210,14 +217,25 @@ class TestReleaseScaffold(_CommitLogCase):
         self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]", index.read_text())
 
     def test_release_no_clobber(self):
+        # The release must actually LAND: without _land_release the hook stops
+        # at commit verification and the no-clobber branch is never reached,
+        # which is how this test used to pass with `if not note.exists()`
+        # deleted from the hook.
+        self._land_release()
         releases = self.project_root / "releases"
         releases.mkdir()
         note = releases / "v0.15.0.md"
         note.write_text("hand-written release history\n")
         rc = self._run(self._payload(self.RELEASE_CMD))
         self.assertEqual(rc, 0)
+        self.assertIn("· commit: release(adjudant): v0.15.0",
+                      self.session_note.read_text(),
+                      "the hook must have got past commit verification")
         self.assertEqual(note.read_text(), "hand-written release history\n",
                          "an existing release note must never be overwritten")
+        self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]",
+                      (releases / "_index.md").read_text(),
+                      "the index row is still upserted around the kept note")
 
     def test_release_index_upsert_no_duplicate(self):
         self._land_release()
@@ -238,9 +256,17 @@ class TestReleaseScaffold(_CommitLogCase):
 class TestDryRunNeverLogs(_CommitLogCase):
     """Audit 2026-07-27: --dry-run commits nothing, so logging it forged
     records. `git commit --dry-run -m "release(x): v9.9.9"` scaffolded a real
-    releases/v9.9.9.md for a release that never existed."""
+    releases/v9.9.9.md for a release that never existed.
+
+    Each test LANDS the matching commit first, so `commit_verified` passes and
+    the no-commit-flag guard is the only gate left. That is the realistic
+    shape too: a dry run is usually a repeat of a subject that already exists
+    at HEAD. Without the landed commit these tests stopped at verification and
+    stayed green with `_NO_COMMIT_FLAG_RE` deleted from the hook.
+    """
 
     def test_dry_run_release_scaffolds_nothing(self):
+        self._land("release(adjudant): v9.9.9 - never happened")
         rc = self._run(self._payload(
             'git commit --dry-run -m "release(adjudant): v9.9.9 - never happened"'))
         self.assertEqual(rc, 0)
@@ -248,12 +274,22 @@ class TestDryRunNeverLogs(_CommitLogCase):
         self.assertFalse((self.project_root / "releases").exists())
 
     def test_no_commit_flags_are_ignored(self):
+        self._land("feat(demo): phantom")
         for flag in ("--dry-run", "--short", "--porcelain", "--long"):
             with self.subTest(flag=flag):
                 rc = self._run(self._payload(
                     f'git commit {flag} -m "feat(demo): phantom"'))
                 self.assertEqual(rc, 0)
                 self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+    def test_same_fixture_logs_once_the_flag_is_gone(self):
+        # Control: identical fixture, identical subject, no no-commit flag.
+        # It logs. So the two tests above are green because of the flag guard,
+        # not because the fixture never reached the write.
+        self._land("feat(demo): phantom")
+        rc = self._run(self._payload('git commit -m "feat(demo): phantom"'))
+        self.assertEqual(rc, 0)
+        self.assertIn("· commit: feat(demo): phantom", self.session_note.read_text())
 
 
 class TestLogSafeSubject(_CommitLogCase):

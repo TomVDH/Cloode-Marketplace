@@ -288,31 +288,72 @@ class TestZoneAwareness(_HookHarness):
 
 class TestSlugGuard(_HookHarness):
     """Audit 2026-07-27: the breadcrumb is repo-committed, so a cloned repo can
-    carry a traversal slug. The hook must refuse it before building a path."""
+    carry a traversal slug. The hook must refuse it before building a path.
+
+    Every fixture here MATERIALIZES the directory the bad slug resolves to and
+    fills it with a shape find_project_dir accepts (brief.md plus today's
+    session note). The zone check therefore succeeds and everything downstream
+    of the slug guard is live, so the guard is the only thing standing between
+    the hook and a write outside the vault. Neuter it and these tests fail,
+    which is the whole point: an earlier version of this class pointed the
+    traversal at a path that did not exist, so the hook bailed at the zone
+    check and the tests passed with the guard removed.
+    """
+
+    def _decoy(self, tmp: Path, slug: str):
+        """Breadcrumb carrying `slug`, plus a real project dir where it lands.
+
+        Returns (project, vault_session, decoy_session, decoy_note). The decoy
+        path is built by the same `vault/projects/<slug>` join the hook would
+        perform, so `..` segments resolve exactly where a neutered guard would
+        send the write.
+        """
+        project, proot, vault_session = self._fixture(tmp)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {tmp / 'vault'}\nslug: {slug}\nmode: project\n")
+        decoy = tmp / "vault" / "projects" / slug
+        (decoy / "sessions").mkdir(parents=True)
+        (decoy / "brief.md").write_text(
+            "---\ntype: project\nslug: decoy\nstatus: active\n---\n\n# Decoy\n")
+        today = datetime.now().strftime("%Y-%m-%d")
+        decoy_session = decoy / "sessions" / f"{today}.md"
+        decoy_session.write_text("## Log\n")
+        return project, vault_session, decoy_session, self._note(decoy, "notes/idea.md")
 
     def test_traversal_slug_is_refused(self):
+        # `../../escaped` climbs out of projects/ AND out of the vault: the
+        # decoy lands next to the vault, in the tmp root.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            project, proot, session = self._fixture(root)
-            (project / ".claude" / "adjudant").write_text(
-                f"vault_path: {root / 'vault'}\nslug: ../../../escaped\nmode: project\n")
-            note = self._note(proot, "notes/idea.md")
-            rc = self._run(project, self._payload(note))
-            self.assertEqual(rc, 0)
-            self.assertEqual(session.read_text(), "## Log\n")
-            self.assertFalse((root / "escaped").exists())
+            project, vault_session, decoy_session, note = self._decoy(
+                root, "../../escaped")
+            self.assertTrue((root / "escaped" / "brief.md").is_file(),
+                            "fixture must place a live project OUTSIDE the vault")
+            self.assertEqual(self._run(project, self._payload(note)), 0)
+            self.assertEqual(decoy_session.read_text(), "## Log\n",
+                             "a traversal slug must never reach a write")
+            self.assertEqual(vault_session.read_text(), "## Log\n")
 
     def test_metachar_slug_is_refused(self):
         for bad in ("has space", "UPPER", "back`tick", "-leading", "a/b"):
             with self.subTest(slug=bad):
                 with tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    project, proot, session = self._fixture(root)
-                    (project / ".claude" / "adjudant").write_text(
-                        f"vault_path: {root / 'vault'}\nslug: {bad}\nmode: project\n")
-                    note = self._note(proot, "notes/idea.md")
+                    project, vault_session, decoy_session, note = self._decoy(
+                        Path(tmp), bad)
                     self.assertEqual(self._run(project, self._payload(note)), 0)
-                    self.assertEqual(session.read_text(), "## Log\n")
+                    self.assertEqual(decoy_session.read_text(), "## Log\n")
+                    self.assertEqual(vault_session.read_text(), "## Log\n")
+
+    def test_decoy_fixture_is_live_for_a_safe_slug(self):
+        # Control: the same fixture with a kebab-case slug DOES get written to.
+        # Without it, a decoy that silently failed to resolve would make the
+        # two tests above pass for the wrong reason all over again.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, vault_session, decoy_session, note = self._decoy(
+                Path(tmp), "decoy-project")
+            self.assertEqual(self._run(project, self._payload(note)), 0)
+            self.assertIn("[[projects/decoy-project/notes/idea.md]]",
+                          decoy_session.read_text())
 
     def test_valid_slug_still_logs(self):
         # Guard must not break the happy path.
