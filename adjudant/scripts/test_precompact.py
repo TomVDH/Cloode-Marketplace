@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks" / "scripts"))
@@ -259,6 +260,77 @@ class TestPauseMarkerVoice(_EnvHygiene):
             text = note.read_text()
             self.assertIn("paused (compaction) · next: ship it", text)
             self.assertNotIn("—", text)
+
+
+class TestZoneAwareness(_EnvHygiene):
+    """Audit 2026-07-27: the hook hardcoded projects/<slug> while shelf moves
+    projects to _fridge/ and _archive/ without touching the breadcrumb.
+
+    This one clobbers: `_handoff.md` is written with write_text, so a shelved
+    project grew a phantom active-zone twin that was rewritten on EVERY
+    compaction while the real handoff went stale in the fridge.
+    """
+
+    def _shelved(self, tmp: Path, zone: str):
+        project = tmp / "code"
+        vault = tmp / "vault"
+        proot = vault / "projects" / zone / "demo"
+        (proot / "sessions").mkdir(parents=True)
+        (proot / "brief.md").write_text(
+            "---\ntype: project\nslug: demo\nstatus: fridge\n---\n\n# Demo\n")
+        note = proot / "sessions" / f"{datetime.now():%Y-%m-%d}.md"
+        note.write_text("## Log\n")
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
+        (project / ".remember").mkdir()
+        (project / ".remember" / "remember.md").write_text("body\n\nNEXT: thaw it\n")
+        return project, proot, note
+
+    def _run(self, project: Path, *args: str) -> int:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(project)
+        argv_before = sys.argv
+        sys.argv = ["precompact.py", *args]
+        try:
+            return precompact.main()
+        finally:
+            sys.argv = argv_before
+            del os.environ["CLAUDE_PROJECT_DIR"]
+
+    def test_pause_marker_and_handoff_land_in_the_shelved_project(self):
+        for zone in ("_fridge", "_archive"):
+            with self.subTest(zone=zone):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    project, proot, note = self._shelved(root, zone)
+                    self.assertEqual(self._run(project), 0)
+                    self.assertIn("paused (compaction) · next: thaw it",
+                                  note.read_text())
+                    handoff = proot / "_handoff.md"
+                    self.assertTrue(handoff.is_file(),
+                                    "the handoff must mirror into the shelved project")
+                    self.assertIn("NEXT: thaw it", handoff.read_text())
+                    self.assertFalse((root / "vault" / "projects" / "demo").exists(),
+                                     "no phantom active-zone twin may be created")
+
+    def test_sync_only_also_follows_the_zone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, proot, note = self._shelved(root, "_fridge")
+            self.assertEqual(self._run(project, "--sync-only"), 0)
+            self.assertTrue((proot / "_handoff.md").is_file())
+            self.assertNotIn("paused", note.read_text())  # SessionEnd, not a pause
+            self.assertFalse((root / "vault" / "projects" / "demo").exists())
+
+    def test_unknown_project_is_noop(self):
+        # No project in any zone: never materialize one.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, proot, note = self._shelved(root, "_fridge")
+            shutil.rmtree(proot)
+            self.assertEqual(self._run(project), 0)
+            self.assertFalse((root / "vault" / "projects" / "demo").exists())
+            self.assertFalse((root / "vault" / "projects" / "_fridge" / "demo").exists())
 
 
 class TestImportDegradation(_EnvHygiene):

@@ -888,6 +888,138 @@ class TestTemplateSchemaParity(_PatchedTree):
         self.assertTrue(any("template-schema-parity" in f for f in r.failures))
 
 
+_ZONE_PY_OK = '''#!/usr/bin/env python3
+"""A zone-aware python hook."""
+from _vault_walk import find_project_dir, is_safe_slug, resolve_vault
+
+
+def main():
+    slug = read_breadcrumb(project_dir).get("slug", "")
+    if not slug or not is_safe_slug(slug):
+        return 0
+    vault = resolve_vault(project_dir)
+    project_root = find_project_dir(vault, slug)
+    return 0
+'''
+
+# Hardcodes the active zone. find_project_dir stays in the import line, so the
+# "never resolved zone-aware" rule cannot be what fires: this pins the
+# projects/<slug> construction rule on its own.
+_ZONE_PY_HARDCODED = _ZONE_PY_OK.replace(
+    "project_root = find_project_dir(vault, slug)",
+    'project_root = vault / "projects" / slug')
+
+# Builds a path from the slug without ever calling find_project_dir.
+_ZONE_PY_NO_RESOLVER = _ZONE_PY_OK.replace(
+    "from _vault_walk import find_project_dir, is_safe_slug, resolve_vault",
+    "from _vault_walk import is_safe_slug, resolve_vault, safe_project_root").replace(
+    "project_root = find_project_dir(vault, slug)",
+    "project_root = safe_project_root(vault, slug)")
+
+# Zone-aware, but the repo-committed slug reaches the path unvalidated.
+_ZONE_PY_NO_SLUG_GUARD = _ZONE_PY_OK.replace(
+    "from _vault_walk import find_project_dir, is_safe_slug, resolve_vault",
+    "from _vault_walk import find_project_dir, resolve_vault").replace(
+    "    if not slug or not is_safe_slug(slug):\n        return 0\n", "")
+
+_ZONE_SH_OK = '''#!/usr/bin/env bash
+zone_project_dir() {
+  local vault="$1" slug="$2"
+  for zone in "" "_fridge" "_archive"; do
+    echo "$vault/projects/$zone/$slug"
+  done
+}
+proot="$(zone_project_dir "$vault" "$slug")"
+'''
+
+_ZONE_SH_HARDCODED = _ZONE_SH_OK.replace(
+    'proot="$(zone_project_dir "$vault" "$slug")"',
+    'proot="$vault/projects/$slug"')
+
+_ZONE_SH_NO_HELPER = '''#!/usr/bin/env bash
+slug="$(sed -n 's/^slug: //p' "$breadcrumb")"
+proot="$vault/active/$slug"
+'''
+
+
+class TestHookZoneAwarenessOnRepo(unittest.TestCase):
+
+    def test_validator_passes_on_repo(self):
+        r = validate.Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertEqual(r.failures, [], r.failures)
+        self.assertIn("hook-zone-awareness", r.passes)
+
+
+class TestHookZoneAwareness(_PatchedTree):
+    """Validator 30. Added 2026-07-27 after shelf moved projects to _fridge/
+    and _archive/ without touching the breadcrumb: every hook that hardcoded
+    projects/<slug> grew a phantom active-zone twin and dropped every write to
+    the real project."""
+
+    def _hook(self, name: str, text: str) -> None:
+        d = self.plugin / "hooks" / "scripts"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / name).write_text(text)
+
+    def test_passes_on_zone_aware_hooks(self):
+        self._hook("a.py", _ZONE_PY_OK)
+        self._hook("b.sh", _ZONE_SH_OK)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertEqual(r.failures, [], r.failures)
+        self.assertIn("hook-zone-awareness", r.passes)
+
+    def test_fails_when_python_hook_hardcodes_the_active_zone(self):
+        self._hook("a.py", _ZONE_PY_HARDCODED)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertTrue(any("a.py" in f and "hardcode" in f for f in r.failures),
+                        r.failures)
+
+    def test_fails_when_python_hook_never_resolves_zone_aware(self):
+        self._hook("a.py", _ZONE_PY_NO_RESOLVER)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertTrue(any("a.py" in f for f in r.failures), r.failures)
+
+    def test_fails_when_python_hook_skips_the_slug_guard(self):
+        self._hook("a.py", _ZONE_PY_NO_SLUG_GUARD)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertTrue(any("unvalidated slug" in f for f in r.failures), r.failures)
+
+    def test_fails_when_shell_hook_hardcodes_the_active_zone(self):
+        self._hook("b.sh", _ZONE_SH_HARDCODED)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertTrue(any("b.sh" in f and "hardcode" in f for f in r.failures),
+                        r.failures)
+
+    def test_fails_when_shell_hook_skips_zone_project_dir(self):
+        self._hook("b.sh", _ZONE_SH_NO_HELPER)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertTrue(any("b.sh" in f for f in r.failures), r.failures)
+
+    def test_one_bad_hook_fails_the_whole_validator(self):
+        # A green neighbour must not mask an offender.
+        self._hook("a.py", _ZONE_PY_OK)
+        self._hook("b.sh", _ZONE_SH_HARDCODED)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertTrue(any("b.sh" in f for f in r.failures), r.failures)
+        self.assertNotIn("hook-zone-awareness", r.passes)
+
+    def test_non_script_files_are_ignored(self):
+        # Only .py and .sh are hooks. Prose that quotes the old shape is fine.
+        self._hook("README.md", 'the old shape was vault / "projects" / slug\n')
+        self._hook("a.py", _ZONE_PY_OK)
+        r = Result()
+        validate.validate_hook_zone_awareness(r)
+        self.assertEqual(r.failures, [], r.failures)
+
+
 class TestSkillSplit(unittest.TestCase):
     """v0.17.0 token discipline: background tables live in internals.md, not
     in the always-loaded router."""

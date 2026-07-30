@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import repo_scan as rs
+import token_budget as tb
 from test_repo_walk import _make_plugin, _marketplace, _write
 
 
@@ -80,6 +81,64 @@ class TestRepoScan(unittest.TestCase):
             _marketplace(root, [("alpha", "1.0.0")])
             report = rs.run_scan(root, today=date(2026, 7, 7))
             json.loads(json.dumps(report, default=str))
+
+
+class TestRepoScanTokenBudget(unittest.TestCase):
+    """v0.17.0 wired token_budget.py into the repo scan. reference/check.md
+    instructs the model to render the block, so its absence is a silent
+    contract break: `check repo` renders nothing and nobody notices."""
+
+    def _repo(self, root: Path) -> None:
+        _make_plugin(root, "alpha", "1.0.0", skills=False)
+        _marketplace(root, [("alpha", "1.0.0")])
+
+    def test_run_scan_carries_the_token_budget_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            report = rs.run_scan(root, today=date(2026, 7, 7))
+            block = report["token_budget"]
+            self.assertEqual(set(block), {"surfaces", "total", "over_count"})
+            self.assertGreater(block["total"], 0)
+
+    def test_block_reports_adjudants_own_surfaces_not_the_scanned_repo(self):
+        # The budget is about what THIS plugin costs the model on invocation,
+        # so it is anchored at adjudant/skills/adjudant regardless of --project-dir.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            report = rs.run_scan(root, today=date(2026, 7, 7))
+            files = {s["file"] for s in report["token_budget"]["surfaces"]}
+            self.assertIn("SKILL.md", files)
+            self.assertIn("reference/vault-standards.md", files)
+
+    def test_each_surface_carries_the_keys_check_renders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            report = rs.run_scan(root, today=date(2026, 7, 7))
+            for s in report["token_budget"]["surfaces"]:
+                self.assertEqual(set(s), {"file", "tokens", "budget", "over"})
+
+    def test_declared_budgets_reach_the_report(self):
+        # Also a canary on BUDGETS itself: a test that mutates the module-level
+        # dict without restoring it turns this red.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            report = rs.run_scan(root, today=date(2026, 7, 7))
+            skill = [s for s in report["token_budget"]["surfaces"]
+                     if s["file"] == "SKILL.md"][0]
+            self.assertEqual(skill["budget"], tb.BUDGETS["SKILL.md"])
+            self.assertFalse(skill["over"], "the shipped SKILL.md is inside budget")
+
+    def test_token_budget_survives_json_serialization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            report = rs.run_scan(root, today=date(2026, 7, 7))
+            round_tripped = json.loads(json.dumps(report, default=str))
+            self.assertIn("token_budget", round_tripped)
 
 
 class TestRepoScanCost(unittest.TestCase):

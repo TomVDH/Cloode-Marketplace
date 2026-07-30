@@ -292,6 +292,61 @@ class TestDryRunNeverLogs(_CommitLogCase):
         self.assertIn("· commit: feat(demo): phantom", self.session_note.read_text())
 
 
+class TestZoneAwareness(_CommitLogCase):
+    """Audit 2026-07-27: the hook hardcoded projects/<slug> while shelf moves
+    projects to _fridge/ and _archive/ without touching the breadcrumb. Commits
+    against a shelved project were logged into a phantom active-zone twin the
+    hook created itself (releases.mkdir), and the real project never saw them."""
+
+    def _shelve(self, zone: str) -> Path:
+        """Move the fixture project into `zone`; retarget the case's handles."""
+        shelved = self.vault / "projects" / zone / "demo"
+        shelved.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(self.project_root), str(shelved))
+        (shelved / "brief.md").write_text(
+            "---\ntype: project\nslug: demo\nstatus: fridge\n---\n\n# Demo\n")
+        self.project_root = shelved
+        self.session_note = shelved / "sessions" / "2020-01-02.md"
+        return shelved
+
+    def _assert_logged_in_zone(self, zone: str) -> None:
+        self._shelve(zone)
+        self._land("feat(demo): shelved work")
+        rc = self._run(self._payload('git commit -m "feat(demo): shelved work"'))
+        self.assertEqual(rc, 0)
+        self.assertIn("· commit: feat(demo): shelved work",
+                      self.session_note.read_text())
+        self.assertFalse((self.vault / "projects" / "demo").exists(),
+                         "no phantom active-zone twin may be created")
+
+    def test_commit_logged_into_a_fridged_project(self):
+        self._assert_logged_in_zone("_fridge")
+
+    def test_commit_logged_into_an_archived_project(self):
+        self._assert_logged_in_zone("_archive")
+
+    def test_release_scaffolds_into_the_shelved_project(self):
+        # The release path MKDIRS releases/ — the loudest phantom-twin symptom.
+        shelved = self._shelve("_fridge")
+        self._land_release()
+        rc = self._run(self._payload(self.RELEASE_CMD))
+        self.assertEqual(rc, 0)
+        self.assertTrue((shelved / "releases" / "v0.15.0.md").is_file())
+        self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]",
+                      (shelved / "releases" / "_index.md").read_text())
+        self.assertFalse((self.vault / "projects" / "demo").exists())
+
+    def test_unknown_project_is_noop(self):
+        # Project in no zone at all. This pins the companion guard,
+        # `if project_root is None: return 0` — delete it and find_project_dir's
+        # None reaches `.is_dir()`, which aborts the hook mid-run.
+        shutil.rmtree(self.project_root)
+        self._land("feat(demo): homeless")
+        rc = self._run(self._payload('git commit -m "feat(demo): homeless"'))
+        self.assertEqual(rc, 0)
+        self.assertFalse((self.vault / "projects" / "demo").exists())
+
+
 class TestLogSafeSubject(_CommitLogCase):
     """Audit 2026-07-27: subjects are author text landing in a wikilink-bearing
     markdown file, written verbatim before this."""
