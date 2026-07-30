@@ -333,6 +333,99 @@ class TestZoneAwareness(_EnvHygiene):
             self.assertFalse((root / "vault" / "projects" / "_fridge" / "demo").exists())
 
 
+class TestSlugGuard(_EnvHygiene):
+    """The breadcrumb is repo-committed, so a cloned repo can carry a traversal
+    slug. This hook is the dangerous one: `_handoff.md` is written with
+    write_text, which CLOBBERS, so a slug that escapes the vault overwrites
+    whatever file already sits at that path.
+
+    Each fixture MATERIALIZES the directory the bad slug resolves to, with the
+    shape find_project_dir accepts (brief.md plus a dated session note), and
+    plants a hand-written `_handoff.md` there. Everything downstream of the
+    slug guard is therefore live, and the guard is the last thing standing
+    between the hook and destroying that file.
+    """
+
+    PRECIOUS = ("---\ntype: handoff\nupdated: 2026-05-01\nsource: elsewhere\n"
+                "tags:\n  - handoff\n---\n\n# Not adjudant's file\n\n"
+                "someone else's work\n")
+
+    def _decoy(self, tmp: Path, slug: str) -> tuple[Path, Path]:
+        """Project breadcrumbed to `slug`, plus a live project where it lands.
+
+        The join is the same `vault/projects/<slug>` find_project_dir performs,
+        so `..` segments resolve exactly where a neutered guard would send the
+        write. Returns (project, decoy_root).
+        """
+        project = tmp / "code"
+        vault = tmp / "vault"
+        (vault / "projects").mkdir(parents=True)
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: precompact-slug-test-vault-3c7e\n"
+            f"slug: {slug}\nmode: project\n")
+        (project / ".remember").mkdir()
+        (project / ".remember" / "remember.md").write_text(
+            "fresh body\n\nNEXT: overwrite something\n")
+        decoy = vault / "projects" / slug
+        (decoy / "sessions").mkdir(parents=True, exist_ok=True)
+        (decoy / "brief.md").write_text(
+            "---\ntype: project\nslug: decoy\n---\n\n# Decoy\n")
+        (decoy / "sessions" / f"{datetime.now():%Y-%m-%d}.md").write_text("## Log\n")
+        (decoy / "_handoff.md").write_text(self.PRECIOUS)
+        return project, decoy
+
+    def _run(self, project: Path, *args: str) -> int:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(project)
+        argv_before = sys.argv
+        sys.argv = ["precompact.py", *args]
+        try:
+            return precompact.main()
+        finally:
+            sys.argv = argv_before
+            del os.environ["CLAUDE_PROJECT_DIR"]
+
+    def test_traversal_slug_never_clobbers_an_outside_file(self):
+        # `../../escaped` climbs out of projects/ AND out of the vault: the
+        # decoy lands next to the vault, in the tmp root.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, decoy = self._decoy(root, "../../escaped")
+            outside = root / "escaped"
+            self.assertTrue((outside / "_handoff.md").is_file(),
+                            "fixture must plant a file OUTSIDE the vault")
+            self.assertEqual(self._run(project), 0)
+            self.assertEqual((outside / "_handoff.md").read_text(), self.PRECIOUS,
+                             "a traversal slug must never overwrite a file "
+                             "outside the vault")
+            self.assertEqual(
+                (outside / "sessions" / f"{datetime.now():%Y-%m-%d}.md").read_text(),
+                "## Log\n", "and must never append a pause marker there either")
+
+    def test_metachar_slug_never_writes(self):
+        for bad in ("has space", "UPPER", "back`tick", "-leading"):
+            with self.subTest(slug=bad):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, decoy = self._decoy(Path(tmp), bad)
+                    self.assertEqual(self._run(project), 0)
+                    self.assertEqual((decoy / "_handoff.md").read_text(),
+                                     self.PRECIOUS)
+
+    def test_decoy_fixture_is_live_for_a_safe_slug(self):
+        # Control: the same fixture with a kebab-case slug DOES get clobbered.
+        # Without it, a decoy that silently failed to resolve would make the
+        # two tests above pass for the wrong reason all over again.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, decoy = self._decoy(Path(tmp), "decoy-project")
+            self.assertEqual(self._run(project), 0)
+            text = (decoy / "_handoff.md").read_text()
+            self.assertIn("NEXT: overwrite something", text)
+            self.assertNotIn("someone else's work", text)
+            self.assertIn("paused (compaction)",
+                          (decoy / "sessions" /
+                           f"{datetime.now():%Y-%m-%d}.md").read_text())
+
+
 class TestImportDegradation(_EnvHygiene):
     """A broken or mid-sync scripts/ module must only degrade its own
     capability. Runs the hook as a subprocess inside a fake plugin tree so the

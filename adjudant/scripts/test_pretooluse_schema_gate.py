@@ -10,6 +10,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -132,15 +133,108 @@ class TestFailsOpen(_GateHarness):
             project, _ = self._fixture(Path(tmp))
             self.assertEqual(self._run(project, "not json {{{"), 0)
 
-    def test_traversal_slug_allows_and_does_not_gate(self):
+
+BLOCKING = "---\ntype: decision\n---\n\nB\n"
+
+
+class TestSlugGuard(_GateHarness):
+    """The breadcrumb is repo-committed, so a cloned repo can carry a traversal
+    slug. The gate must refuse it before joining it into a path.
+
+    Every fixture here MATERIALIZES the directory the bad slug resolves to and
+    fills it with a shape find_project_dir accepts (brief.md), so the zone
+    lookup succeeds and everything downstream of the slug guard is live. The
+    guard is then the only thing between the gate and judging a file that sits
+    outside the vault entirely. An earlier version of this test pointed the
+    traversal at a path that did not exist, so find_project_dir returned None
+    and the gate bailed at the zone check: it passed with the guard deleted.
+    """
+
+    def _decoy(self, tmp: Path, slug: str) -> tuple[Path, Path]:
+        """Breadcrumb carrying `slug`, plus a real project dir where it lands.
+
+        The decoy path is built by the same `vault/projects/<slug>` join
+        find_project_dir performs, so `..` segments resolve exactly where a
+        neutered guard would send the gate. Returns (project, decoy_root).
+        """
+        project, _ = self._fixture(tmp)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {tmp / 'vault'}\nslug: {slug}\nmode: project\n")
+        decoy = tmp / "vault" / "projects" / slug
+        decoy.mkdir(parents=True, exist_ok=True)
+        (decoy / "brief.md").write_text(
+            "---\ntype: project\nslug: decoy\n---\n\n# Decoy\n")
+        return project, decoy
+
+    def test_traversal_slug_is_refused(self):
+        # `../../escaped` climbs out of projects/ AND out of the vault: the
+        # decoy lands next to the vault, in the tmp root.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, decoy = self._decoy(root, "../../escaped")
+            self.assertTrue((root / "escaped" / "brief.md").is_file(),
+                            "fixture must place a live project OUTSIDE the vault")
+            rc = self._run(project, self._payload(
+                decoy / "decisions" / "d.md", BLOCKING))
+            self.assertEqual(rc, 0,
+                             "a traversal slug must never reach the schema check")
+
+    def test_metachar_slug_is_refused(self):
+        for bad in ("has space", "UPPER", "back`tick", "-leading"):
+            with self.subTest(slug=bad):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, decoy = self._decoy(Path(tmp), bad)
+                    rc = self._run(project, self._payload(
+                        decoy / "decisions" / "d.md", BLOCKING))
+                    self.assertEqual(rc, 0)
+
+    def test_decoy_fixture_is_live_for_a_safe_slug(self):
+        # Control: the same fixture with a kebab-case slug DOES get judged, and
+        # the same payload blocks. Without it, a decoy that silently failed to
+        # resolve would make the two tests above pass for the wrong reason.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, decoy = self._decoy(Path(tmp), "decoy-project")
+            rc = self._run(project, self._payload(
+                decoy / "decisions" / "d.md", BLOCKING))
+            self.assertEqual(rc, 2,
+                             "the decoy project must be live enough to block")
+
+
+class TestZoneGuard(_GateHarness):
+    """`if project_root is None: return 0` — a slug that exists in no zone.
+
+    The historical shape was a hardcoded `vault/projects/<slug>`, which judged
+    writes against a project directory that does not exist anywhere. shelf
+    moves projects between zones without touching the breadcrumb, so the gate
+    must resolve the same way every other component does.
+
+    Scope note: deleting the `is None` line alone changes nothing observable,
+    because the AttributeError it prevents is swallowed by the blanket
+    `except Exception: return 0` three lines below. What these two tests
+    falsify is the resolution itself: swap find_project_dir back to
+    `vault / "projects" / slug` and they fail.
+    """
+
+    def test_project_in_no_zone_is_not_gated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project, proot = self._fixture(root)
-            (project / ".claude" / "adjudant").write_text(
-                f"vault_path: {root / 'vault'}\nslug: ../../../escaped\nmode: project\n")
+            shutil.rmtree(proot)  # demo now exists in no zone at all
             rc = self._run(project, self._payload(
-                proot / "decisions" / "d.md", "---\ntype: decision\n---\n\nB\n"))
-            self.assertEqual(rc, 0)
+                proot / "decisions" / "d.md", BLOCKING))
+            self.assertEqual(rc, 0,
+                             "a project that exists nowhere must not be gated")
+            self.assertFalse(proot.exists(),
+                             "the gate must never materialize a project dir")
+
+    def test_shelved_project_is_found_not_missed(self):
+        # Control: the same payload against a project that DOES exist, in a
+        # non-active zone. Resolve it wrong and this returns 0 instead of 2.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp), zone="_archive")
+            rc = self._run(project, self._payload(
+                proot / "decisions" / "d.md", BLOCKING))
+            self.assertEqual(rc, 2)
 
 
 class TestSkipList(_GateHarness):

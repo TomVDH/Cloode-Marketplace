@@ -133,7 +133,15 @@ class TestGates(_CommitLogCase):
         self.assertEqual(rc, 0)
         self.assertEqual(self.session_note.read_text(), "## Log\n")
 
+    # The three tests below pin `response_indicates_success`. Each LANDS the
+    # matching subject first: without that the hook stops at commit
+    # verification and the payload gate never runs, which is how the first two
+    # used to stay green with the gate deleted from the hook. A landed commit
+    # plus a failure payload is also the realistic shape — the retry of a
+    # subject that already exists at HEAD, or a commit the user cut short.
+
     def test_failed_commit_ignored(self):
+        self._land("feat(demo): broken")
         rc = self._run(self._payload(
             'git commit -m "feat(demo): broken"',
             tool_response={"stdout": "", "stderr": "nothing added", "exit_code": 1}))
@@ -141,11 +149,24 @@ class TestGates(_CommitLogCase):
         self.assertEqual(self.session_note.read_text(), "## Log\n")
 
     def test_interrupted_commit_ignored(self):
+        self._land("feat(demo): cut short")
         rc = self._run(self._payload(
             'git commit -m "feat(demo): cut short"',
             tool_response={"stdout": "", "stderr": "", "interrupted": True}))
         self.assertEqual(rc, 0)
         self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+    def test_same_fixture_logs_on_a_success_payload(self):
+        # Control: identical fixture, identical landed subject, no failure
+        # marker in the payload. It logs. So the two tests above are green
+        # because of the payload gate, not because the fixture never got there.
+        self._land("feat(demo): cut short")
+        rc = self._run(self._payload(
+            'git commit -m "feat(demo): cut short"',
+            tool_response={"stdout": "", "stderr": "", "interrupted": False}))
+        self.assertEqual(rc, 0)
+        self.assertIn("· commit: feat(demo): cut short",
+                      self.session_note.read_text())
 
     def test_stale_breadcrumb_fail_closed(self):
         # Vault gone (other machine's path): nothing may be materialized.
@@ -411,6 +432,72 @@ class TestCommitVerification(_CommitLogCase):
         rc = self._run(self._payload('git commit -m "feat(demo): no repo here"'))
         self.assertEqual(rc, 0)
         self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+
+class TestSlugGuard(_CommitLogCase):
+    """The breadcrumb is repo-committed, so a cloned repo can carry a traversal
+    slug. The hook must refuse it before joining it into a path.
+
+    Each fixture MATERIALIZES the directory the bad slug resolves to, with the
+    shape find_project_dir accepts (brief.md plus a dated session note), and
+    LANDS the commit so verification passes. Everything downstream of the slug
+    guard is therefore live and the guard is the last thing standing between
+    the hook and an append plus a releases/ mkdir outside the vault.
+    """
+
+    def _decoy(self, slug: str) -> Path:
+        """Point the breadcrumb at `slug` and build a live project where it
+        lands. The join is the same `vault/projects/<slug>` find_project_dir
+        performs, so `..` segments resolve exactly where a neutered guard
+        would send the writes."""
+        (self.project / ".claude" / "adjudant").write_text(
+            f"vault_path: {self.vault}\n"
+            "vault_name: commit-log-test-vault-1f9a\n"
+            f"slug: {slug}\nmode: project\n")
+        decoy = self.vault / "projects" / slug
+        (decoy / "sessions").mkdir(parents=True, exist_ok=True)
+        (decoy / "brief.md").write_text(
+            "---\ntype: project\nslug: decoy\n---\n\n# Decoy\n")
+        (decoy / "sessions" / "2020-01-02.md").write_text("## Log\n")
+        return decoy
+
+    def test_traversal_slug_writes_nothing(self):
+        # `../../escaped` climbs out of projects/ AND out of the vault: the
+        # decoy lands next to the vault, in the tmp root.
+        decoy = self._decoy("../../escaped")
+        outside = Path(self._tmp.name) / "escaped"
+        self.assertTrue((outside / "brief.md").is_file(),
+                        "fixture must place a live project OUTSIDE the vault")
+        self._land_release()
+        rc = self._run(self._payload(self.RELEASE_CMD))
+        self.assertEqual(rc, 0)
+        self.assertEqual((decoy / "sessions" / "2020-01-02.md").read_text(),
+                         "## Log\n", "a traversal slug must never reach a write")
+        self.assertFalse((outside / "releases").exists(),
+                         "no releases/ may be mkdir'd outside the vault")
+        self.assertEqual(self.session_note.read_text(), "## Log\n")
+
+    def test_metachar_slug_writes_nothing(self):
+        for bad in ("has space", "UPPER", "back`tick", "-leading"):
+            with self.subTest(slug=bad):
+                decoy = self._decoy(bad)
+                self._land("feat(demo): metachar")
+                rc = self._run(self._payload('git commit -m "feat(demo): metachar"'))
+                self.assertEqual(rc, 0)
+                self.assertEqual(
+                    (decoy / "sessions" / "2020-01-02.md").read_text(), "## Log\n")
+
+    def test_decoy_fixture_is_live_for_a_safe_slug(self):
+        # Control: the same fixture with a kebab-case slug DOES get written to,
+        # releases and all. Without it, a decoy that silently failed to resolve
+        # would make the two tests above pass for the wrong reason all over.
+        decoy = self._decoy("decoy-project")
+        self._land_release()
+        rc = self._run(self._payload(self.RELEASE_CMD))
+        self.assertEqual(rc, 0)
+        self.assertIn("· commit: release(adjudant): v0.15.0",
+                      (decoy / "sessions" / "2020-01-02.md").read_text())
+        self.assertTrue((decoy / "releases" / "v0.15.0.md").is_file())
 
 
 if __name__ == "__main__":

@@ -233,5 +233,71 @@ class TestZoneAwareness(_HookHarness):
             self.assertFalse((vault / "projects" / "demo").exists())
 
 
+class TestSlugGuard(_HookHarness):
+    """The breadcrumb is repo-committed, so a cloned repo can carry a traversal
+    slug. The hook must refuse it before joining it into a path.
+
+    Each fixture MATERIALIZES the directory the bad slug resolves to, with the
+    shape find_project_dir accepts (brief.md plus a dated session note), so the
+    zone lookup succeeds and everything downstream of the slug guard is live.
+    The guard is then the only thing between the hook and an append to a file
+    outside the vault.
+    """
+
+    def _decoy(self, tmp: Path, slug: str) -> tuple[Path, Path]:
+        """Project breadcrumbed to `slug`, plus a live project where it lands.
+
+        The join is the same `vault/projects/<slug>` find_project_dir performs,
+        so `..` segments resolve exactly where a neutered guard would send the
+        append. Returns (project, decoy_session_note).
+        """
+        project = tmp / "code"
+        vault = tmp / "vault"
+        (vault / "projects").mkdir(parents=True)
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: postcompact-slug-test-vault-8b2d\n"
+            f"slug: {slug}\nmode: project\n")
+        decoy = vault / "projects" / slug
+        (decoy / "sessions").mkdir(parents=True, exist_ok=True)
+        (decoy / "brief.md").write_text(
+            "---\ntype: project\nslug: decoy\n---\n\n# Decoy\n")
+        note = decoy / "sessions" / f"{datetime.now():%Y-%m-%d}.md"
+        note.write_text("## Log\n")
+        return project, note
+
+    def test_traversal_slug_appends_nothing(self):
+        # `../../escaped` climbs out of projects/ AND out of the vault: the
+        # decoy lands next to the vault, in the tmp root.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, note = self._decoy(root, "../../escaped")
+            self.assertTrue((root / "escaped" / "brief.md").is_file(),
+                            "fixture must place a live project OUTSIDE the vault")
+            rc = self._run_main(project, {"compaction_summary": "escaped gist"})
+            self.assertEqual(rc, 0)
+            self.assertEqual(note.read_text(), "## Log\n",
+                             "a traversal slug must never reach a write")
+
+    def test_metachar_slug_appends_nothing(self):
+        for bad in ("has space", "UPPER", "back`tick", "-leading"):
+            with self.subTest(slug=bad):
+                with tempfile.TemporaryDirectory() as tmp:
+                    project, note = self._decoy(Path(tmp), bad)
+                    rc = self._run_main(project, {"compaction_summary": "nope"})
+                    self.assertEqual(rc, 0)
+                    self.assertEqual(note.read_text(), "## Log\n")
+
+    def test_decoy_fixture_is_live_for_a_safe_slug(self):
+        # Control: the same fixture with a kebab-case slug DOES get appended
+        # to. Without it, a decoy that silently failed to resolve would make
+        # the two tests above pass for the wrong reason all over again.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, note = self._decoy(Path(tmp), "decoy-project")
+            rc = self._run_main(project, {"compaction_summary": "landed gist"})
+            self.assertEqual(rc, 0)
+            self.assertIn("compacted: landed gist", note.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
