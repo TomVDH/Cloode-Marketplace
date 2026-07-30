@@ -258,7 +258,10 @@ EOF
   # fills it. Nudge in the context stream until someone replaces it.
   if [ -f "$session_file" ] \
      && grep -qF -- '{One-line intent. Frozen after first write.}' "$session_file" 2>/dev/null; then
-    printf -- "- Intent line is still the placeholder in \`projects/%s/sessions/%s.md\`: replace it with one plain sentence once the session's purpose is clear, then leave it frozen.\n" "$slug" "$today"
+    # $rel_project, not projects/$slug: for a shelved project the hardcoded
+    # form names a path that does not exist and contradicts the created/resumed
+    # line printed just above.
+    printf -- "- Intent line is still the placeholder in \`%s/sessions/%s.md\`: replace it with one plain sentence once the session's purpose is clear, then leave it frozen.\n" "$rel_project" "$today"
   fi
 }
 

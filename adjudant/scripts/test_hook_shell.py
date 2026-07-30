@@ -586,6 +586,19 @@ class TestZoneAwareness(unittest.TestCase):
                     self.assertFalse(ghost.exists(),
                                      "no phantom active-zone project may be created")
 
+    def test_intent_nudge_names_the_zone_aware_path(self):
+        # The zone conversion missed the intent-placeholder nudge: it still
+        # said projects/<slug>/sessions/, a path that does not exist for a
+        # shelved project and contradicts the 'created' line right above it.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home, _ = self._shelved(Path(tmp))
+            r = _run("session-start.sh", project, home, plugin_root=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            today = date.today().isoformat()
+            self.assertIn("Intent line is still the placeholder", r.stdout)
+            self.assertIn(f"projects/_fridge/demo/sessions/{today}.md", r.stdout)
+            self.assertNotIn(f"`projects/demo/sessions/{today}.md`", r.stdout)
+
     def test_session_start_archive_zone(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, home, proot = self._shelved(Path(tmp), zone="_archive")
