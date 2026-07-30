@@ -1,4 +1,4 @@
-> **`adjudant` vault?** Frontmatter must follow the canonical schema in `adjudant:vault-standards (reference/vault-standards.md)` (`#{type}` tags, piped wikilink `project:` fields, ISO dates, omit-don't-null). For diagrams in fenced `mermaid` blocks, defer to `adjudant:mermaid`. The generic property guidance below applies only when no plugin schema is in force.
+> **`adjudant` vault?** Frontmatter must follow the canonical schema in `adjudant:vault-standards (reference/vault-standards.md)` (`#{type}` tags, ISO dates, omit-don't-null). Project membership is the folder path: never write a `project:` field, no type's `FIELD_SCHEMA` has a slot for it and `tidy` strips it. A `note` requires `type:`, `created:`, `updated:` and `tags:`; `title:` and `cssclasses:` are legal options, `aliases:` is not. `aliases:` belongs to a project's `brief.md`, and `tidy` strips it from a note. For diagrams in fenced `mermaid` blocks, defer to `adjudant:mermaid`. The generic property guidance below applies only when no plugin schema is in force.
 
 # Obsidian Flavored Markdown Skill
 
@@ -11,7 +11,7 @@ Create and edit valid Obsidian Flavored Markdown. Obsidian extends CommonMark an
 
 ## Workflow: Creating an Obsidian Note
 
-1. **Add frontmatter** with properties (title, tags, aliases) at the top of the file. See [the official Properties docs](https://help.obsidian.md/properties) for all property types.
+1. **Add frontmatter** with properties at the top of the file. The generic Obsidian defaults are `title`, `tags` and `aliases`; in an adjudant vault the legal keys are fixed per `type:` by `FIELD_SCHEMA`, and `aliases:` is not one of a note's. See [the official Properties docs](https://help.obsidian.md/properties) for all property types.
 2. **Write content** using standard Markdown for structure, plus Obsidian-specific syntax below.
 3. **Link related notes** using wikilinks (`[[Note]]`) for internal vault connections, or standard Markdown links for external URLs.
 4. **Embed content** from other notes, images, or PDFs using the `![[embed]]` syntax. See [the official Embeds docs](https://help.obsidian.md/embeds) for all embed types.
@@ -93,6 +93,8 @@ cssclasses:
 
 Default properties: `tags` (searchable labels), `aliases` (alternative note names for link suggestions), `cssclasses` (CSS classes for styling).
 
+In an adjudant vault that block is not a legal `note`: `date:` and `aliases:` sit outside `FIELD_SCHEMA` and `tidy` strips them. The vault shape is `type:`, `created:`, `updated:`, `tags:`, plus optional `title:` and `cssclasses:`.
+
 See [the official Properties docs](https://help.obsidian.md/properties) for all property types, tag syntax rules, and advanced usage.
 
 ## Tags
@@ -155,6 +157,8 @@ Inline footnote.^[This is inline.]
 ```
 
 ## Complete Example
+
+Plain Obsidian, not adjudant: the frontmatter below shows generic properties, and `date:` and `status:` are not legal on a vault `note`. Keep the body syntax, swap the frontmatter for the type's `FIELD_SCHEMA` key set.
 
 ````markdown
 ---

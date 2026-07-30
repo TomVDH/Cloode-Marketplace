@@ -88,9 +88,14 @@ class TestRepoScanTokenBudget(unittest.TestCase):
     instructs the model to render the block, so its absence is a silent
     contract break: `check repo` renders nothing and nobody notices."""
 
-    def _repo(self, root: Path) -> None:
-        _make_plugin(root, "alpha", "1.0.0", skills=False)
+    def _repo(self, root: Path, *, skill_body: str = "x" * 400) -> None:
+        """A repo with its OWN skill surface: one plugin, one skill, a SKILL.md
+        and one reference file of known size."""
+        _make_plugin(root, "alpha", "1.0.0", skills=True)
         _marketplace(root, [("alpha", "1.0.0")])
+        canon = root / "alpha" / "skills" / "alpha"
+        _write(canon / "SKILL.md", skill_body)
+        _write(canon / "reference" / "guide.md", "y" * 800)
 
     def test_run_scan_carries_the_token_budget_block(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,16 +106,54 @@ class TestRepoScanTokenBudget(unittest.TestCase):
             self.assertEqual(set(block), {"surfaces", "total", "over_count"})
             self.assertGreater(block["total"], 0)
 
-    def test_block_reports_adjudants_own_surfaces_not_the_scanned_repo(self):
-        # The budget is about what THIS plugin costs the model on invocation,
-        # so it is anchored at adjudant/skills/adjudant regardless of --project-dir.
+    def test_block_reports_the_scanned_repos_surfaces_not_adjudants(self):
+        # The block used to be anchored at <install>/skills/adjudant no matter
+        # what --project-dir said, so scanning anyone else's repo reported this
+        # plugin's context cost as theirs. The numbers must come from `root`.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._repo(root)
-            report = rs.run_scan(root, today=date(2026, 7, 7))
-            files = {s["file"] for s in report["token_budget"]["surfaces"]}
-            self.assertIn("SKILL.md", files)
-            self.assertIn("reference/vault-standards.md", files)
+            block = rs.run_scan(root, today=date(2026, 7, 7))["token_budget"]
+            files = {s["file"] for s in block["surfaces"]}
+            self.assertEqual(
+                files,
+                {"alpha/skills/alpha/SKILL.md",
+                 "alpha/skills/alpha/reference/guide.md"},
+                "only the scanned repo's own surfaces may appear")
+            self.assertNotIn("reference/vault-standards.md", files,
+                             "adjudant's own reference set must not leak in")
+            # 400 bytes // 4 + 800 bytes // 4, exactly the fixture.
+            self.assertEqual(block["total"], 300)
+
+    def test_total_tracks_the_scanned_repo(self):
+        # Control: change the fixture, the number changes with it. Pins that
+        # the report is measuring `root` and not something constant.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root, skill_body="x" * 4000)
+            block = rs.run_scan(root, today=date(2026, 7, 7))["token_budget"]
+            self.assertEqual(block["total"], 1200)
+
+    def test_every_skill_in_the_repo_is_measured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            _make_plugin(root, "beta", "1.0.0", skills=True)
+            _write(root / "beta" / "skills" / "beta" / "SKILL.md", "z" * 40)
+            block = rs.run_scan(root, today=date(2026, 7, 7))["token_budget"]
+            files = {s["file"] for s in block["surfaces"]}
+            self.assertIn("beta/skills/beta/SKILL.md", files)
+            self.assertIn("alpha/skills/alpha/SKILL.md", files)
+
+    def test_repo_without_skills_reports_an_empty_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_plugin(root, "alpha", "1.0.0", skills=False)
+            _marketplace(root, [("alpha", "1.0.0")])
+            block = rs.run_scan(root, today=date(2026, 7, 7))["token_budget"]
+            self.assertEqual(block["surfaces"], [])
+            self.assertEqual(block["total"], 0)
+            self.assertEqual(block["over_count"], 0)
 
     def test_each_surface_carries_the_keys_check_renders(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,16 +164,30 @@ class TestRepoScanTokenBudget(unittest.TestCase):
                 self.assertEqual(set(s), {"file", "tokens", "budget", "over"})
 
     def test_declared_budgets_reach_the_report(self):
-        # Also a canary on BUDGETS itself: a test that mutates the module-level
-        # dict without restoring it turns this red.
+        # The budget lookup stays SKILL-relative, so a declared limit still
+        # finds its surface wherever the repo sits on disk. Also a canary on
+        # BUDGETS itself: a test that mutates the module-level dict without
+        # restoring it turns this red.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._repo(root)
-            report = rs.run_scan(root, today=date(2026, 7, 7))
-            skill = [s for s in report["token_budget"]["surfaces"]
-                     if s["file"] == "SKILL.md"][0]
+            skill = [s for s in rs.run_scan(root, today=date(2026, 7, 7))
+                     ["token_budget"]["surfaces"]
+                     if s["file"].endswith("SKILL.md")][0]
             self.assertEqual(skill["budget"], tb.BUDGETS["SKILL.md"])
-            self.assertFalse(skill["over"], "the shipped SKILL.md is inside budget")
+            self.assertFalse(skill["over"])
+
+    def test_adjudants_own_repo_still_measures_adjudant(self):
+        # The regression must not swing the other way: scanning THIS repo has
+        # to find this plugin's surfaces, budgets attached.
+        repo_root = Path(rs.__file__).resolve().parent.parent.parent
+        block = rs.token_budget_for_repo(repo_root)
+        by_file = {s["file"]: s for s in block["surfaces"]}
+        self.assertIn("adjudant/skills/adjudant/SKILL.md", by_file)
+        standards = by_file["adjudant/skills/adjudant/reference/vault-standards.md"]
+        self.assertEqual(standards["budget"],
+                         tb.BUDGETS["reference/vault-standards.md"])
+        self.assertFalse(standards["over"])
 
     def test_token_budget_survives_json_serialization(self):
         with tempfile.TemporaryDirectory() as tmp:

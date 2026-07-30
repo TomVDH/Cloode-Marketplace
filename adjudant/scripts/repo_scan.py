@@ -77,6 +77,60 @@ def detect_registration(root: Path) -> dict:
     return {"unregistered": unregistered, "dangling_sources": dangling_sources}
 
 
+def skill_roots_in(root: Path) -> list[Path]:
+    """Every canonical skill dir in the scanned repo.
+
+    Two repo shapes are covered: a marketplace repo (`<plugin>/skills/<name>/`,
+    with plugins found the way every other detector finds them) and a bare
+    single-plugin repo (`skills/<name>/` at the root). Harness mirrors point at
+    the canonical dir, so the list is deduped by resolved path and each skill
+    is measured exactly once.
+    """
+    bases = [p.dir / "skills" for p in walk_plugins(root)] + [root / "skills"]
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir()):
+            if not d.is_dir() or d.name.startswith("."):
+                continue
+            try:
+                key = d.resolve()
+            except OSError:  # pragma: no cover - dangling link
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(d)
+    return out
+
+
+def token_budget_for_repo(root: Path) -> dict[str, Any]:
+    """Context cost of every skill surface IN THE SCANNED REPO.
+
+    Anchored on `root`, not on this plugin's install path. The block used to
+    measure `<install>/skills/adjudant` unconditionally, so `check repo
+    --project-dir <any other repo>` reported adjudant's own context cost as
+    that repo's.
+
+    Surfaces are labelled relative to the repo root, so two plugins each
+    shipping a SKILL.md stay distinguishable. The budget lookup inside
+    token_budget.report stays skill-relative, so a declared budget still finds
+    its surface wherever the repo sits on disk.
+    """
+    surfaces: list[dict[str, Any]] = []
+    for skill_root in skill_roots_in(root):
+        for s in token_budget_report(skill_root)["surfaces"]:
+            surfaces.append(
+                {**s, "file": str((skill_root / s["file"]).relative_to(root))})
+    return {
+        "surfaces": surfaces,
+        "total": sum(s["tokens"] for s in surfaces),
+        "over_count": sum(1 for s in surfaces if s["over"]),
+    }
+
+
 def run_scan(root: Path, *, today: date, stale_days: int = 30) -> dict[str, Any]:
     marketplace = is_marketplace_repo(root)
     version = detect_version_coherence(root) if marketplace else {"mismatches": []}
@@ -117,8 +171,7 @@ def run_scan(root: Path, *, today: date, stale_days: int = 30) -> dict[str, Any]
         "registration": registration,
         "context_files": {"repo_root": context, "per_plugin_informational": per_plugin_context},
         "plan_ages": plans,
-        "token_budget": token_budget_report(
-            Path(__file__).resolve().parent.parent / "skills" / "adjudant"),
+        "token_budget": token_budget_for_repo(root),
     }
 
 

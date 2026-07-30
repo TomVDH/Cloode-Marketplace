@@ -1020,6 +1020,37 @@ class TestFieldSchema(unittest.TestCase):
         index = "---\ntype: index\ncssclasses: wide-page\ntags:\n  - index\n---\n"
         self.assertIsNone(schema_drift_for_file(_vf(index, rel="notes/_index.md")))
 
+    def test_content_docs_do_not_prescribe_stripped_keys(self):
+        # Third instance of a bug class this branch fixed twice: a reference
+        # doc tells a model to write a key FIELD_SCHEMA rejects, and tidy
+        # feature 5 deletes it on the next pass. content-clipper.md prescribed
+        # `created:` on a `source` and never mentioned the REQUIRED `title:`;
+        # content-markdown.md prescribed `aliases:` on notes. Both documents
+        # now say so, and these assertions are what makes that saying true.
+        ref = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "reference"
+        source = FIELD_SCHEMA["source"]
+        self.assertNotIn("created", source["required"] | source["optional"],
+                         "content-clipper.md tells the reader tidy strips "
+                         "created: from a source")
+        self.assertIn("title", source["required"],
+                      "content-clipper.md names title: as required on a source")
+        note = FIELD_SCHEMA["note"]
+        self.assertNotIn("aliases", note["required"] | note["optional"],
+                         "content-markdown.md tells the reader tidy strips "
+                         "aliases: from a note")
+        self.assertIn("aliases", FIELD_SCHEMA["project"]["required"],
+                      "content-markdown.md sends aliases: to brief.md instead")
+        for ftype, spec in FIELD_SCHEMA.items():
+            self.assertNotIn("project", spec["required"] | spec["optional"],
+                             f"{ftype}: membership is the folder path, and both "
+                             "content docs say never to write project:")
+        clipper = (ref / "content-clipper.md").read_text()
+        self.assertIn("`title:`", clipper)
+        self.assertNotIn("ISO `created:` date", clipper)
+        markdown = (ref / "content-markdown.md").read_text()
+        self.assertIn("`aliases:` is not", markdown)
+        self.assertNotIn("piped wikilink `project:` fields", markdown)
+
     def test_content_optional_widening(self):
         # 2026-07-27: related/title/name/description legal on every content
         # type; superseded_by on decision/doc/note; implemented_verified on

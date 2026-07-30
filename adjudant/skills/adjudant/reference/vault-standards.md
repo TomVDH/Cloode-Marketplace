@@ -55,7 +55,7 @@ Names are strict, but only some are checked: `ramasse_scan` flags doc case and d
 
 ## 5. Folder structure
 
-Defaults per `project_type`. `coding`: `decisions/`, `notes/`, `tasks/`, `references/`, each carrying an `_index.md`, plus `sessions/` and `images/` without one. `plugin`: the coding set plus `releases/`. `knowledge`: `notes/`, `sources/`, `references/` plus `sessions/`. `tinkerage`: `sessions/` only, optional. Anything beyond the defaults must be declared in the brief's `extra_folders:`; an undeclared folder is drift, flagged by `/adjudant dream`. Auto-created, so exempt: `dreams/`, `canvases/`, `bases/`, `board/`.
+Defaults per `project_type`. `coding`: `decisions/`, `notes/`, `tasks/`, `references/`, each carrying an `_index.md`, plus `sessions/` and `images/` without one. `plugin`: the coding set plus `releases/`. `knowledge`: `notes/`, `sources/`, `references/` plus `sessions/`. `tinkerage`: `sessions/` only, optional. Anything beyond the defaults must be in the brief's `extra_folders:`; an undeclared folder is drift, flagged by `/adjudant ramasse`. Auto-created, so exempt: `dreams/`, `canvases/`, `bases/`, `board/`.
 
 Every folder under a project, or at vault root, holding two or more sibling `.md` files of the same conceptual type gets an `_index.md`. Exceptions: `sessions/` (ordering is the index), `images/`, `assets/`, `previews/`, and `iterations/` plus the iteration folders inside it, where build artefacts carry no frontmatter and `_iteration.md` is the only conformant file. `/adjudant tidy` rebuilds indexes mechanically; ramasse only detects the gaps.
 

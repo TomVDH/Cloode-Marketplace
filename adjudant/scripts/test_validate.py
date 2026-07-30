@@ -5,7 +5,9 @@ module-level path anchors (ROOT / CANONICAL / TEMPLATES / REFERENCE / HARNESS_DI
 to point at it, then drives one validator and inspects the Result.
 """
 
+import inspect
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -1084,6 +1086,37 @@ class TestDocTrim(unittest.TestCase):
         import validate
         self.assertTrue(hasattr(validate, "BANNED_LEXICON"))
         self.assertIn("delve", [w.lower() for w in validate.BANNED_LEXICON])
+
+
+class TestModuleDocstringRoster(unittest.TestCase):
+    """The module docstring is the roster people read before opening the file.
+    It listed 30 validators under a trailer that still said 29, because adding
+    a validator touches three places and the trailer is the easiest to miss.
+    """
+
+    def _doc(self) -> str:
+        return validate.__doc__ or ""
+
+    def _listed(self) -> list[tuple[int, str]]:
+        return [(int(n), name) for n, name in
+                re.findall(r"^\s*(\d+)\.\s+([a-z0-9-]+)", self._doc(), re.M)]
+
+    def _called(self) -> list[str]:
+        src = inspect.getsource(validate.main)
+        return [n.replace("_", "-") for n in
+                re.findall(r"^\s*validate_([a-z0-9_]+)\(r\)", src, re.M)]
+
+    def test_trailer_count_matches_the_list(self):
+        m = re.search(r"^(\d+) validators total\.$", self._doc(), re.M)
+        self.assertIsNotNone(m, "the docstring must state a total")
+        self.assertEqual(int(m.group(1)), len(self._listed()))
+
+    def test_list_matches_what_main_actually_runs(self):
+        listed = self._listed()
+        self.assertEqual([n for n, _ in listed], list(range(1, len(listed) + 1)),
+                         "the roster must be numbered 1..N with no gaps")
+        self.assertEqual([name for _, name in listed], self._called(),
+                         "roster names and order must match main()'s calls")
 
 
 if __name__ == "__main__":

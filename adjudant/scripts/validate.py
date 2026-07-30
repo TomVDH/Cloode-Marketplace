@@ -33,9 +33,9 @@ Validators:
  27. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
  28. decision-status-vocabulary   : _vault_walk constants, vault-standards, and the decision template agree on the five-state note vocabulary
  29. template-schema-parity       : every registered template's frontmatter keys cover its type's required set and stay inside required | optional
- 30. hook-zone-awareness         : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
+ 30. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
 
-29 validators total.
+30 validators total.
 """
 
 import json

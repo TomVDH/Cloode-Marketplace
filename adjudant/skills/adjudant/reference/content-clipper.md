@@ -1,4 +1,4 @@
-> **`adjudant` vault?** Clipped notes land as `type: source` (or `type: note`). Populate frontmatter per `adjudant:vault-standards (reference/vault-standards.md)` §2A file-type tags — `tags:` with the bare `source` file-type tag (never `ob/*` — deprecated), ISO `created:` date. Project membership is the folder path, not a frontmatter field: save the clipped note into the project's folder rather than writing `project:`.
+> **`adjudant` vault?** Clipped notes land as `type: source` (or `type: note`). Populate frontmatter per the `FIELD_SCHEMA` set for that type in `adjudant:vault-standards (reference/vault-standards.md)` §1. A `source` requires `type:`, `title:` and `tags:`, and may add `author:`, `url:`, `medium:`, `year:`. A `note` requires `type:`, `created:`, `updated:` and `tags:`. `tags:` carries the bare file-type tag per §2A, never `ob/*`, which is deprecated. Do not put `created:` on a `source`: that type has no such key and `tidy` strips it. Project membership is the folder path, not a frontmatter field: save the clipped note into the project's folder rather than writing `project:`.
 
 # Obsidian Web Clipper Template Creator
 
