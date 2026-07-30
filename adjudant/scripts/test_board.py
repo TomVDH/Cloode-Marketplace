@@ -828,6 +828,63 @@ class TestZoneAwareProjectFlag(unittest.TestCase):
             self.assertFalse((vault / "projects" / "p").exists())
 
 
+class TestUndecodableTaskNote(unittest.TestCase):
+    """Audit 2026-07-30 finding 4. cards_from_tasks read with
+    errors="replace" and wrote the decoded result straight into
+    board-data.json and board.html. U+FFFD landed in the card ID, so the
+    corruption was not self-healing: fixing the note yields a NEW id and
+    merge_deck's "never deleted" orphan rule iceboxes the mojibake card
+    forever. Same trap sync and shelf already closed (5bd7164, 1934eac)."""
+
+    LATIN1 = "---\ncode: \"DÉP-1\"\nstatus: todo\n---\n# Déploiement\n".encode("latin-1")
+
+    def test_latin1_task_note_is_skipped_with_a_named_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "proj"
+            (proj / "tasks").mkdir(parents=True)
+            (proj / "tasks" / "deploiement.md").write_bytes(self.LATIN1)
+            _write(proj / "tasks" / "ok.md", "---\ncode: T-1\nstatus: todo\n---\n# Fine\n")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                cards = cards_from_tasks(proj)
+            self.assertEqual([c["id"] for c in cards], ["T-1"],
+                             "the undecodable note must be skipped, not mojibake'd")
+            self.assertIn("deploiement.md", err.getvalue())
+            self.assertIn("not valid UTF-8", err.getvalue())
+
+    def test_no_replacement_char_reaches_the_deck_or_the_board(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "proj"
+            (proj / "tasks").mkdir(parents=True)
+            (proj / "tasks" / "deploiement.md").write_bytes(self.LATIN1)
+            _write(proj / "tasks" / "ok.md", "---\ncode: T-1\nstatus: todo\n---\n# Fine\n")
+            dest = proj / "board"
+            rc, _ = _scaffold(proj, dest, from_tasks=True, data=None, force=False,
+                              title=None, board_id="proj")
+            self.assertEqual(rc, 0)
+            deck_text = (dest / "board-data.json").read_text()
+            self.assertNotIn("�", deck_text)
+            self.assertNotIn("�", (dest / "board.html").read_text())
+            self.assertEqual([c["id"] for c in json.loads(deck_text)["cards"]], ["T-1"])
+
+    def test_no_zombie_card_after_the_note_is_re_saved_as_utf8(self):
+        # The permanent-Icebox zombie: mojibake id, then the author fixes the
+        # encoding, and the old id can never be cleared because orphans are
+        # iceboxed rather than deleted.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "proj"
+            (proj / "tasks").mkdir(parents=True)
+            note = proj / "tasks" / "deploiement.md"
+            note.write_bytes(self.LATIN1)
+            _write(proj / "tasks" / "ok.md", "---\ncode: T-1\nstatus: todo\n---\n# Fine\n")
+            _ensure(proj)
+            note.write_text("---\ncode: \"DÉP-1\"\nstatus: todo\n---\n# Déploiement\n")
+            _ensure(proj)
+            cards = json.loads((proj / "board" / "board-data.json").read_text())["cards"]
+            ids = [c["id"] for c in cards]
+            self.assertEqual(sorted(ids), ["DÉP-1", "T-1"], f"zombie card left behind: {ids}")
+
+
 class TestProjectSlugTraversal(unittest.TestCase):
     """Audit 2026-07-30 finding 3. Commit 953b5e5 gated the BREADCRUMB slug on
     the verb path; `--project SLUG` was still fed straight into

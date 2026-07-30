@@ -146,7 +146,20 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
     for f in sorted(tasks.iterdir()):
         if not f.is_file() or f.suffix != ".md" or f.name == "_index.md":
             continue
-        fm, body = parse_frontmatter(f.read_text(errors="replace"))
+        # Strict decode. errors="replace" baked a U+FFFD straight into
+        # board-data.json and board.html, and because the replacement char
+        # lands in the card ID the damage was not self-healing: re-saving the
+        # note as UTF-8 yields a NEW id, and merge_deck's "never deleted"
+        # orphan rule then iceboxes the mojibake card forever. Skip the note
+        # and name it, the way sync and shelf handle an undecodable brief.
+        try:
+            text = f.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            print(f"[board] warning: {f.name} is not valid UTF-8 "
+                  f"({e.reason} at byte {e.start}): card omitted. "
+                  f"Re-save the note as UTF-8 to get it back.", file=sys.stderr)
+            continue
+        fm, body = parse_frontmatter(text)
         fields = fm.fields
         if str(fields.get("type", "") or "").strip().lower() == "tasks":
             continue  # roadmap/index file, not a per-card task note

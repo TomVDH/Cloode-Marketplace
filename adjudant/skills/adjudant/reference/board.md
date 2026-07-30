@@ -48,6 +48,10 @@ may point at a code repo (see below).
    (`type: tasks`) are skipped — they aren't per-card task notes. Empty `tasks/`
    yields a clean 6-stage starter deck (no error). Duplicate card ids across
    task notes are disambiguated to the filename stem, with a stderr warning.
+   A task note that is not valid UTF-8 is skipped with a named stderr warning
+   instead of being decoded lossily: a `U+FFFD` in a card id is permanent,
+   because re-saving the note yields a new id and the old card is iceboxed
+   forever rather than deleted.
 3. **Serve** — `board.py serve --dir DIR` runs a localhost static server so the
    disk-save (File System Access API) works (it needs a secure context, not
    `file://`). `--open` launches the browser; `--port 0` picks a free port
