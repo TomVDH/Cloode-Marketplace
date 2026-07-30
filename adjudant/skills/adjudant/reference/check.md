@@ -46,7 +46,14 @@ JSON output shape (top-level keys):
 - `project` — brief fields (slug, project_type, status, title, created, updated, codename)
 - `counts` — non-_index .md per common folder (decisions, sessions, dreams, notes, etc.)
 - `recent` — last_session, last_decision, last_dream (YYYY-MM-DD)
-- `handoff` — present, updated, stale_hours
+- `handoff` — two clocks, deliberately. `updated` + `stale_hours` are the **mirror
+  clock**: when the handoff was last written. Every SessionEnd/PreCompact stamps
+  it, so a mirror of an empty buffer still reads fresh — diagnostic only, never
+  the answer to "are we drifting?". `light` / `age` / `next` / `stale` are the
+  **activity clock** from `_handoff_freshness` (remember dailies + session-note
+  markers) — the same sensor sync and the hooks render into the handoff banner.
+  **Render the activity clock.** When the two disagree the handoff has not been
+  re-synced since the last real work: say so rather than picking one
 - `drift_signal` — latest dream date + drift_items count if parseable
 - `board`: `{present, columns, updated, stale}`. Cards counted per deck column id
   (custom lanes included, empty lanes shown as 0), never a hardcoded status list;
@@ -80,7 +87,8 @@ Created: {created} · Updated: {updated}
 - Last session: {last_session}
 - Last decision: {last_decision}
 - Last dream:    {last_dream}
-- Handoff:       {updated} ({stale_hours}h stale)
+- Handoff:       {light} {age}{" · NEXT: " + next if next}{" · STALE" if stale}
+                 (mirrored {updated}{" — not re-synced since" if disagrees})
 - Counts:        {decisions} decisions, {sessions} sessions, {dreams} dreams, {notes} notes
 - Board:         {board.columns as "{id}: {n}" pairs, deck order}{" · stale" if board.stale}
 - Schema:        {schema.checked} checked, {schema.flagged} flagged

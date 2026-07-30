@@ -263,6 +263,26 @@ EOF
     # line printed just above.
     printf -- "- Intent line is still the placeholder in \`%s/sessions/%s.md\`: replace it with one plain sentence once the session's purpose is clear, then leave it frozen.\n" "$rel_project" "$today"
   fi
+
+  # --- 5. Handoff freshness: surface the banner the handoff already carries.
+  # sync/precompact compute this correctly and write it into _handoff.md, but
+  # nothing ever put it in front of a session — a handoff can sit red for days
+  # while every new session starts blind. Echo the existing line; never
+  # recompute, so this cannot disagree with the file.
+  # $vault_project, not projects/$slug: shelved projects live in _fridge/
+  # and _archive/, and the banner must follow them (validator 30).
+  local handoff_file="$vault_project/_handoff.md"
+  if [ -f "$handoff_file" ]; then
+    local fresh_line
+    fresh_line=$(grep -m1 -E '(🔴|🟡|🟢).*handoff age' "$handoff_file" 2>/dev/null || true)
+    if [ -n "$fresh_line" ]; then
+      # Strip markdown bold so the line reads clean in the context stream.
+      printf -- '- Handoff: %s\n' "$(printf '%s' "$fresh_line" | sed 's/\*\*//g')"
+      if grep -qE '^\s*🔴\s+\*\*STALE\*\*|🔴 \*\*STALE\*\*' "$handoff_file" 2>/dev/null; then
+        printf -- '- Handoff is STALE (session activity is newer than it). Rebuild it before trusting NEXT.\n'
+      fi
+    fi
+  fi
 }
 
 main "$@" || exit 0
