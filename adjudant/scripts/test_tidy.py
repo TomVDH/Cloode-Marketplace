@@ -474,6 +474,153 @@ class TestApplySafety(unittest.TestCase):
                              "apply must never write outside the project dir")
 
 
+class TestStalePreviewGuardHoles(unittest.TestCase):
+    """Fix wave 1 finding 5: two holes in finding 8's stale-preview guard.
+
+    (a) The guard covered `file_proposals` only. `index_proposals` carried no
+        `original_hash`, so an `_index.md` edited between preview and apply was
+        still silently overwritten. The proposal is computed FROM that file's
+        content, so the edit is genuinely lost, not merely regenerated.
+    (b) `if original_hash and live.is_file()` skipped the guard entirely when
+        the live file was GONE, so a proposal for a file deleted or renamed
+        between preview and apply recreated it at the old path, silently
+        undoing an intentional deletion.
+    """
+
+    def _indexed_folder(self, root: Path) -> Path:
+        """A folder tidy will want to rebuild an index for, with one present."""
+        for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
+            _w(root / "decisions" / f"{d}-{n}.md",
+               f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+               f"tags:\n  - decision\n---\n\nBody {n}.\n")
+        live = root / "decisions" / "_index.md"
+        _w(live, "---\ntype: index\n---\n\n# Decisions\n")
+        return live
+
+    def test_edited_index_is_not_silently_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live = self._indexed_folder(root)
+            cs = build_preview(root, build_vault_index(root), "t")
+            self.assertIn("decisions/_index.md", cs["index_proposals"],
+                          "fixture must actually produce an index proposal")
+            write_preview_to_disk(root, cs)
+            live.write_text(live.read_text() + "\nMy hand-written summary.\n")
+            backup = apply_preview(root)
+            self.assertIn("My hand-written summary.", live.read_text(),
+                          "an index edited since preview must not be clobbered")
+            note = backup / "SKIPPED-STALE.txt"
+            self.assertTrue(note.is_file(), "the skip must be recorded")
+            self.assertIn("decisions/_index.md", note.read_text())
+
+    def test_unedited_index_still_rebuilds(self):
+        # Guard against over-correction: the ordinary path must still apply.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live = self._indexed_folder(root)
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            backup = apply_preview(root)
+            self.assertEqual(live.read_text(),
+                             cs["index_proposals"]["decisions/_index.md"]["proposed_content"],
+                             "an untouched index must still be rebuilt")
+            self.assertFalse((backup / "SKIPPED-STALE.txt").exists())
+
+    def test_brand_new_index_is_still_created(self):
+        # An index proposal for a folder that had none records no hash, and
+        # must still be created rather than treated as stale.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
+                _w(root / "decisions" / f"{d}-{n}.md",
+                   f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+                   f"tags:\n  - decision\n---\n\nBody {n}.\n")
+            cs = build_preview(root, build_vault_index(root), "t")
+            self.assertFalse(
+                cs["index_proposals"]["decisions/_index.md"]["had_existing"])
+            write_preview_to_disk(root, cs)
+            apply_preview(root)
+            self.assertTrue((root / "decisions" / "_index.md").is_file(),
+                            "a missing index must still be generated")
+
+    def test_index_created_between_preview_and_apply_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
+                _w(root / "decisions" / f"{d}-{n}.md",
+                   f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+                   f"tags:\n  - decision\n---\n\nBody {n}.\n")
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            live = root / "decisions" / "_index.md"
+            live.write_text("---\ntype: index\n---\n\n# Mine, written just now.\n")
+            backup = apply_preview(root)
+            self.assertIn("Mine, written just now.", live.read_text(),
+                          "a file that appeared since preview is not ours to overwrite")
+            self.assertIn("decisions/_index.md",
+                          (backup / "SKIPPED-STALE.txt").read_text())
+
+    def test_file_deleted_after_preview_is_not_resurrected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live = root / "decisions" / "2026-01-01-d.md"
+            _w(live, "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+                     "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            live.unlink()
+            backup = apply_preview(root)
+            self.assertFalse(
+                live.exists(),
+                "a deletion between preview and apply is an intentional act")
+            self.assertIn("decisions/2026-01-01-d.md",
+                          (backup / "SKIPPED-STALE.txt").read_text())
+
+    def test_file_renamed_after_preview_is_not_resurrected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live = root / "decisions" / "2026-01-01-d.md"
+            _w(live, "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+                     "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
+            cs = build_preview(root, build_vault_index(root), "t")
+            write_preview_to_disk(root, cs)
+            renamed = root / "decisions" / "2026-01-01-better-name.md"
+            live.rename(renamed)
+            apply_preview(root)
+            self.assertFalse(live.exists(),
+                             "the old path must not reappear beside the rename")
+            self.assertTrue(renamed.is_file())
+
+    def test_an_index_in_both_proposal_dicts_is_applied_once(self):
+        """An `_index.md` that also needs a tag fix lands in file_proposals AND
+        index_proposals, but `write_preview_to_disk` collapses both into one
+        `files/<rel>`. Applying it twice reports the second pass as stale (a
+        lie: nothing changed under us) and re-backs-up the already-tidied file
+        over the only pre-change copy."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
+                _w(root / "decisions" / f"{d}-{n}.md",
+                   f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+                   f"tags:\n  - decision\n---\n\nBody {n}.\n")
+            live = root / "decisions" / "_index.md"
+            _w(live, "---\ntype: index\nupdated: 2020-01-01\n"
+                     "tags:\n  - index\n  - ob/cabinet\n---\n\n"
+                     "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
+            cs = build_preview(root, build_vault_index(root), "t")
+            self.assertIn("decisions/_index.md", cs["file_proposals"])
+            self.assertIn("decisions/_index.md", cs["index_proposals"])
+            write_preview_to_disk(root, cs)
+            backup = apply_preview(root)
+            self.assertFalse((backup / "SKIPPED-STALE.txt").exists(),
+                             "nothing changed under us, so nothing is stale")
+            legacy = backup / "decisions" / "_index.md.legacy"
+            self.assertIn("ob/cabinet", legacy.read_text(),
+                          "the backup must hold the PRE-tidy index")
+            self.assertIn("2026-01-02-b", live.read_text(),
+                          "the rebuild must still land")
+
+
 class TestPreviewApplyRoundTrip(unittest.TestCase):
 
     def test_full_cycle(self):

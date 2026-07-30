@@ -79,15 +79,22 @@ what was written and name a follow-up only if something was skipped.
 
 ## Stale-preview guard (locked)
 
-`apply` re-checks each file against the `original_hash` recorded at preview
-time. A file edited between the two phases (by you, by another session, or by
-the other machine via sync) is **left alone**, listed in
-`{backup}/SKIPPED-STALE.txt`, and reported on stderr plus the `skipped_stale`
-JSON key. Render that as its own line when non-empty and point at a fresh
-`preview`. Index rebuilds carry no hash (they are regenerated wholesale) and
-are always applied. Targets that resolve outside the project dir are refused
-outright, and each apply gets its own backup dir so a same-second retry can
-never overwrite the first backup.
+`apply` re-checks every proposal, index rebuilds included, against the state
+recorded at preview time. Anything that no longer matches is **left alone**,
+listed in `{backup}/SKIPPED-STALE.txt`, and reported on stderr plus the
+`skipped_stale` JSON key (`[{"path": …, "reason": …}]`). Four reasons:
+
+| Reason | Meaning |
+|---|---|
+| `changed` | Edited between the two phases (by you, another session, or the other machine via sync) |
+| `vanished` | Deleted or renamed since preview; re-creating it would undo an intentional act |
+| `appeared` | The preview expected no file at that path and something got there first |
+| `unreadable` | Could not be read to compare |
+
+Render any non-empty skip list as its own line and point at a fresh `preview`.
+Targets that resolve outside the project dir are refused outright, each path is
+applied at most once per run, and each apply gets its own backup dir so a
+same-second retry can never overwrite the first backup.
 
 ## Fail conditions
 

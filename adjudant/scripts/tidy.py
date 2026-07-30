@@ -570,6 +570,11 @@ def build_preview(
                     "had_existing": True,
                     "mode": mode,
                     "entry_count": len(non_index),
+                    # Hashed like a file proposal: `proposed` was computed FROM
+                    # `existing`, so an edit landing between preview and apply
+                    # is genuinely lost, not regenerated. The apply-time guard
+                    # needs this to notice.
+                    "original_hash": _hash_short(existing),
                     "proposed_content": proposed,
                 }
         else:
@@ -578,6 +583,9 @@ def build_preview(
                 entries=[m.rel_path for m in non_index],
                 project_slug=project_slug,
             )
+            # No `original_hash`: there was nothing to hash. `had_existing`
+            # False is itself the guard — apply refuses this proposal if a
+            # file has appeared at the path in the meantime.
             index_proposals[idx_rel] = {
                 "folder": str(parent),
                 "had_existing": False,
@@ -806,15 +814,88 @@ def _contained(root: Path, rel: str) -> Optional[Path]:
     return target
 
 
+SKIPPED_NOTE_NAME = "SKIPPED-STALE.txt"
+
+# Why a proposal was refused. Four different stories: an edit is not a
+# deletion, and neither is a file someone else created in the meantime.
+SKIP_REASONS: dict[str, str] = {
+    "changed": "edited since preview, applying would eat that edit",
+    "vanished": "deleted or renamed since preview, applying would resurrect it",
+    "appeared": "created since preview, the preview expected nothing here",
+    "unreadable": "could not be read to compare against the preview",
+}
+
+
+def _skip_reason(
+    live: Path,
+    original_hash: Optional[str],
+    expects_creation: bool,
+) -> Optional[str]:
+    """A SKIP_REASONS key when this proposal must not be applied, else None.
+
+    `expects_creation` marks a proposal built for a path that held no file at
+    preview time (an `_index.md` for a folder that had none). It records no
+    hash because there was nothing to hash, so its guard is presence rather
+    than content: if something is there now, someone else put it there and it
+    is not ours to overwrite.
+
+    Otherwise the proposal was computed FROM the live bytes, so anything that
+    no longer matches those bytes means applying it would destroy newer work.
+    A missing file counts: a deletion or rename between the two phases is an
+    intentional act, and copying the proposal back would silently undo it.
+    """
+    if expects_creation:
+        return "appeared" if live.exists() else None
+    if not original_hash:
+        return None  # pre-guard preview: nothing recorded to compare against
+    if not live.is_file():
+        return "vanished"
+    try:
+        if _hash_short(live.read_text()) != original_hash:
+            return "changed"
+    except (OSError, UnicodeDecodeError):
+        return "unreadable"
+    return None
+
+
+def _write_skipped_note(backup_dir: Path, skipped: list[tuple[str, str]]) -> None:
+    """Record refused proposals. Body lines are `reason<TAB>path` so that
+    `read_skipped_note` reads back exactly what was written."""
+    legend = "\n".join(f"  {key}: {why}" for key, why in SKIP_REASONS.items())
+    body = "\n".join(f"{reason}\t{rel}" for rel, reason in sorted(skipped))
+    (backup_dir / SKIPPED_NOTE_NAME).write_text(
+        "These paths no longer match what the preview was built from, so they\n"
+        "were left alone. Re-run `tidy preview` to fold the current state in.\n\n"
+        f"{legend}\n\n{body}\n"
+    )
+
+
+def read_skipped_note(backup_dir: Path) -> list[dict[str, str]]:
+    """Parse a SKIPPED-STALE.txt back into [{'path': ..., 'reason': ...}].
+
+    Empty list when nothing was skipped. Only tab-bearing lines are entries,
+    which keeps the prose header and the reason legend out of the result.
+    """
+    note = backup_dir / SKIPPED_NOTE_NAME
+    if not note.is_file():
+        return []
+    entries: list[dict[str, str]] = []
+    for line in note.read_text().splitlines():
+        if "\t" not in line:
+            continue
+        reason, _, rel = line.partition("\t")
+        entries.append({"path": rel, "reason": reason})
+    return entries
+
+
 def apply_preview(project_dir: Path) -> Path:
     """Apply .adjudant-tidy-preview/ to live files. Returns backup dir path.
 
-    Every proposal is gated three ways before it can touch a live file: the
-    target must stay inside the project, the live file must still hash to the
-    `original_hash` recorded at preview time (otherwise it was edited since,
-    and the stale proposal would silently eat that edit), and the pre-change
-    copy must land in a backup dir that no concurrent or retried apply can
-    overwrite.
+    Every proposal is gated four ways before it can touch a live file: the
+    target must stay inside the project, the path must not have been applied
+    already in this same run, the live file must still match what the proposal
+    was computed from (see `_skip_reason`), and the pre-change copy must land
+    in a backup dir that no concurrent or retried apply can overwrite.
     """
     preview = project_dir / PREVIEW_DIR_NAME
     if not preview.is_dir():
@@ -833,7 +914,8 @@ def apply_preview(project_dir: Path) -> Path:
     backup_dir = Path(tempfile.mkdtemp(prefix=f"{timestamp}-", dir=backup_root))
 
     files_root = preview / "files"
-    skipped_stale: list[str] = []
+    skipped: list[tuple[str, str]] = []
+    handled: set[str] = set()
 
     # Backup + apply
     for rel_set in (change_set["file_proposals"], change_set["index_proposals"]):
@@ -842,17 +924,25 @@ def apply_preview(project_dir: Path) -> Path:
             proposed = _contained(files_root, rel)
             if live is None or proposed is None or not proposed.is_file():
                 continue
-            # Stale-preview guard: only for proposals that carry a recorded
-            # hash (index rebuilds are regenerated wholesale and carry none).
-            original_hash = (info or {}).get("original_hash")
-            if original_hash and live.is_file():
-                try:
-                    if _hash_short(live.read_text()) != original_hash:
-                        skipped_stale.append(rel)
-                        continue
-                except (OSError, UnicodeDecodeError):
-                    skipped_stale.append(rel)
-                    continue
+            # `write_preview_to_disk` collapses both proposal dicts into one
+            # `files/<rel>`, so a path in both (an `_index.md` that also needs
+            # a tag or schema fix) has exactly ONE proposed body and must be
+            # applied exactly once. A second pass would compare the live file
+            # against a hash this run just invalidated (a false stale report)
+            # and overwrite the pre-change backup with already-tidied content.
+            if rel in handled:
+                continue
+            handled.add(rel)
+            # changes.json is editable by design, so `info` is untrusted too.
+            info = info if isinstance(info, dict) else {}
+            reason = _skip_reason(
+                live,
+                info.get("original_hash"),
+                expects_creation=info.get("had_existing") is False,
+            )
+            if reason:
+                skipped.append((rel, reason))
+                continue
             # Backup live (if exists)
             if live.is_file():
                 backup_target = backup_dir / (rel + ".legacy")
@@ -862,11 +952,8 @@ def apply_preview(project_dir: Path) -> Path:
             live.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(proposed, live)
 
-    if skipped_stale:
-        (backup_dir / "SKIPPED-STALE.txt").write_text(
-            "These files changed between preview and apply and were left alone.\n"
-            "Re-run `tidy preview` to fold the newer content in.\n\n"
-            + "\n".join(sorted(skipped_stale)) + "\n")
+    if skipped:
+        _write_skipped_note(backup_dir, skipped)
 
     # Clean up preview
     shutil.rmtree(preview)
@@ -960,17 +1047,17 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"error: no preview at {project_dir / PREVIEW_DIR_NAME}; run 'preview' first", file=sys.stderr)
             return 1
         backup_dir = apply_preview(project_dir)
-        skipped_note = backup_dir / "SKIPPED-STALE.txt"
-        skipped: list[str] = []
-        if skipped_note.is_file():
-            skipped = [ln for ln in skipped_note.read_text().splitlines()
-                       if ln and not ln.startswith(("These files", "Re-run"))]
+        skipped = read_skipped_note(backup_dir)
         print(f"[tidy] applied; backup at {backup_dir}", file=sys.stderr)
         if skipped:
             # Never let a skip be silent: the user asked for these changes.
-            print(f"[tidy] {len(skipped)} file(s) changed since preview and were "
-                  f"LEFT ALONE: {', '.join(skipped)}", file=sys.stderr)
-            print("[tidy] re-run preview to fold the newer content in", file=sys.stderr)
+            print(f"[tidy] {len(skipped)} path(s) LEFT ALONE, they no longer match "
+                  f"the preview:", file=sys.stderr)
+            for item in skipped:
+                print(f"[tidy]   {item['path']}: "
+                      f"{SKIP_REASONS.get(item['reason'], item['reason'])}",
+                      file=sys.stderr)
+            print("[tidy] re-run preview to fold the current state in", file=sys.stderr)
         print(json.dumps({"backup_dir": str(backup_dir), "skipped_stale": skipped}))
         return 0
 
