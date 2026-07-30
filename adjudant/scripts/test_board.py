@@ -276,6 +276,95 @@ class TestMergeDeck(unittest.TestCase):
         self.assertEqual(out["cards"][0]["notes"], "my annotation")  # local note preserved
 
 
+class TestMergeDeckPassThrough(unittest.TestCase):
+    """Audit 2026-07-30 finding 1: merge_deck keyed the on-disk deck into a
+    plain dict on `str(card.get("id"))`, so two cards sharing an id (or two
+    id-less cards, both keying to the string "None") collapsed to one and the
+    losers were SILENTLY DELETED. reference/board.md invites hand-editing the
+    deck and promises a card is never deleted."""
+
+    def _deck(self, cards, **kw):
+        d = {"version": 1, "boardId": "p", "title": "P", "subtitle": "s",
+             "updated": "2026-01-01", "columns": [], "categories": [], "cards": cards}
+        d.update(kw)
+        return d
+
+    def _merge(self, existing, fresh):
+        """merge_deck with stderr captured. Returns (deck, stderr)."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            out = merge_deck(existing, fresh)
+        return out, err.getvalue()
+
+    def test_id_less_hand_added_cards_all_survive(self):
+        existing = self._deck([
+            {"id": "T-1", "column": "doing", "category": "build", "notes": "", "source": "task"},
+            {"title": "call the vendor", "column": "next", "notes": "ref PO-114"},
+            {"title": "renew the cert", "column": "next", "notes": "expires 2026-08-14"},
+        ])
+        fresh = self._deck([
+            {"id": "T-1", "column": "backlog", "category": "build", "notes": "", "source": "task"},
+            {"id": "T-2", "column": "backlog", "category": "build", "notes": "", "source": "task"},
+        ])
+        out, _ = self._merge(existing, fresh)
+        titles = [c.get("title") for c in out["cards"]]
+        self.assertIn("call the vendor", titles)
+        self.assertIn("renew the cert", titles)
+        # verbatim: an id-less card can never be a merge partner, so nothing
+        # about it may change (including the icebox relocation).
+        kept = [c for c in out["cards"] if c.get("title") == "call the vendor"]
+        self.assertEqual(kept, [{"title": "call the vendor", "column": "next", "notes": "ref PO-114"}])
+
+    def test_duplicate_ids_on_disk_all_survive_with_warning(self):
+        existing = self._deck([
+            {"id": "T-1", "title": "first", "column": "doing", "category": "build", "notes": "keep me"},
+            {"id": "T-1", "title": "second", "column": "review", "category": "build", "notes": "me too"},
+        ])
+        fresh = self._deck([
+            {"id": "T-1", "title": "from the task note", "column": "backlog",
+             "category": "build", "notes": "", "source": "task"},
+        ])
+        out, err = self._merge(existing, fresh)
+        self.assertEqual(len(out["cards"]), 2, f"no card may be dropped: {out['cards']}")
+        notes = sorted(c.get("notes", "") for c in out["cards"])
+        self.assertEqual(notes, ["keep me", "me too"])
+        self.assertIn("duplicate card id 'T-1'", err)
+
+    def test_duplicate_orphan_ids_all_survive(self):
+        # Both copies carry task provenance and the task is gone: the merge
+        # partner is iceboxed as documented, the extra copy still survives.
+        existing = self._deck([
+            {"id": "T-9", "title": "first", "column": "done", "notes": "a", "source": "task"},
+            {"id": "T-9", "title": "second", "column": "doing", "notes": "b", "source": "task"},
+        ])
+        fresh = self._deck([{"id": "T-1", "column": "backlog", "notes": "", "source": "task"}])
+        out, _ = self._merge(existing, fresh)
+        self.assertEqual(len([c for c in out["cards"] if c.get("id") == "T-9"]), 2)
+
+    def test_ensure_board_reseed_keeps_hand_added_cards(self):
+        # The audit's end-to-end reproduction: a hand-edited deck, then one new
+        # task note lands and the PostToolUse hook fires ensure_board.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "proj"
+            for n in (1, 2, 3):
+                _write(proj / "tasks" / f"t{n}.md", f"---\ncode: T-{n}\nstatus: todo\n---\n# Task {n}\n")
+            _ensure(proj)
+            data_path = proj / "board" / "board-data.json"
+            deck = json.loads(data_path.read_text())
+            deck["cards"].append({"title": "call the vendor", "column": "next", "notes": "ref PO-114"})
+            deck["cards"].append({"title": "renew the cert", "column": "next", "notes": "expires 2026-08-14"})
+            data_path.write_text(json.dumps(deck, indent=2) + "\n")
+
+            _write(proj / "tasks" / "t4.md", "---\ncode: T-4\nstatus: todo\n---\n# Task 4\n")
+            self.assertEqual(_ensure(proj), "reseeded")
+
+            after = json.loads(data_path.read_text())["cards"]
+            titles = [c.get("title") for c in after]
+            self.assertIn("call the vendor", titles)
+            self.assertIn("renew the cert", titles)
+            self.assertIn("T-4", [c.get("id") for c in after])
+
+
 class TestScaffoldOne(unittest.TestCase):
 
     def _seed_tasks(self, proj, specs):

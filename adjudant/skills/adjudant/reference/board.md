@@ -111,8 +111,11 @@ Re-running `board` does not wipe in-progress card state:
   in both keeps the **column you dragged it to** (and any board-local `notes`),
   while `title`/`category`/`related` re-seed from the task note. New tasks are
   added in their status-derived column; a card whose task disappeared is moved to
-  `icebox` (never deleted). Deck-level `title`/`subtitle`/**`columns`** from disk
-  are preserved — custom lanes you added survive a re-seed.
+  `icebox` (never deleted). A hand-added card with no `id`, and any second card
+  sharing an `id`, is carried through the merge verbatim (it can never match a
+  task note); a repeated id also warns on stderr. Deck-level
+  `title`/`subtitle`/**`columns`** from disk are preserved — custom lanes you
+  added survive a re-seed.
 - **Without `--from-tasks` → the on-disk deck is kept untouched** (only `board.html`
   is refreshed from the template, so styling/engine updates land).
 - **`--force` → full rebuild from tasks**, discarding dragged columns. It

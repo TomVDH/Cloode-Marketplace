@@ -224,27 +224,57 @@ def merge_deck(existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any
         moved to ``icebox`` (never deleted).
       - on-disk card WITHOUT task provenance (hand-added via the board UI, or
         from a pre-provenance deck) → kept in its current column untouched.
+      - on-disk card with NO id, or the second and later cards sharing one id →
+        pass-through survivor, carried verbatim. Only one on-disk card can be
+        the merge partner for a fresh card (fresh ids are unique), so these can
+        never match, and dropping them is the data loss this rule exists to
+        prevent. A repeated id is warned about on stderr, the way
+        ``cards_from_tasks`` warns for tasks/.
 
     Deck-level ``title``/``subtitle`` from disk are preserved (a re-scaffold does
     not rename a board you titled); ``version``/``columns``/``updated``/
     ``boardId`` come from the fresh deck. Categories are the union over the merged
     cards (custom ``{name: colour}`` mappings on disk are preserved).
     """
-    ex_cards = {str(c.get("id")): c for c in existing.get("cards", [])}
+    # A LIST, never a dict keyed on str(id): two on-disk cards sharing an id,
+    # or two id-less ones (both keying to the string "None"), used to collapse
+    # to one entry and the losers were silently deleted, against the documented
+    # "never deleted" contract. Every on-disk card is accounted for here.
+    ex_by_id: dict[str, dict[str, Any]] = {}      # first card per non-empty id
+    # (merge key or None, card) in on-disk order. None marks a pass-through.
+    ex_ordered: list[tuple[Optional[str], dict[str, Any]]] = []
+    dupes: dict[str, int] = {}
+    for c in existing.get("cards", []):
+        cid = str(c.get("id") or "").strip()
+        if not cid:
+            ex_ordered.append((None, c))
+        elif cid in ex_by_id:
+            dupes[cid] = dupes.get(cid, 1) + 1
+            ex_ordered.append((None, c))
+        else:
+            ex_by_id[cid] = c
+            ex_ordered.append((cid, c))
+    for cid, n in dupes.items():
+        print(f"[board] warning: duplicate card id '{cid}' in the on-disk deck "
+              f"({n} cards share it): only the first merges with tasks/, the "
+              f"rest are carried through unchanged", file=sys.stderr)
+
     merged: list[dict[str, Any]] = []
     fresh_ids: set[str] = set()
     for fc in fresh.get("cards", []):
         cid = str(fc.get("id"))
         fresh_ids.add(cid)
-        ec = ex_cards.get(cid)
+        ec = ex_by_id.get(cid)
         if ec is not None:
             fc = dict(fc)
             fc["column"] = ec.get("column", fc.get("column"))
             if ec.get("notes"):
                 fc["notes"] = ec["notes"]
         merged.append(fc)
-    for cid, ec in ex_cards.items():
-        if cid not in fresh_ids:
+    for cid, ec in ex_ordered:
+        if cid is None:
+            merged.append(ec)          # pass-through survivor, verbatim
+        elif cid not in fresh_ids:
             ec = dict(ec)
             if ec.get("source") == "task":
                 # Task genuinely disappeared from tasks/ — park it
