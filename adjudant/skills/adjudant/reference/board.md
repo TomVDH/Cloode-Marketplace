@@ -121,7 +121,10 @@ Re-running `board` does not wipe in-progress card state:
 - **`--force` → full rebuild from tasks**, discarding dragged columns. It
   requires `--from-tasks` (or `--data`) when a deck already exists — `--force`
   alone would overwrite the board with an empty starter deck, so it refuses.
-  Any force-rebuild first copies the old deck to `board-data.json.bak`.
+  Any replace (`--force` or `--data`) first copies the old deck to
+  `board/.bak/board-data-<YYYYMMDD-HHMMSS>.json`, newest 5 kept. The copy is
+  taken once the replacement deck has been read and validated, so a run that
+  fails and writes nothing leaves every earlier backup byte-identical.
 - **`--data FILE` → that deck verbatim** (missing standard fields are backfilled).
 - A corrupt/unreadable `board-data.json` (or `--data` file) exits non-zero with
   a clear error — it never tracebacks or silently rebuilds.

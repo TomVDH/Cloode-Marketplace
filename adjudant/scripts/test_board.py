@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from board import (
+    BACKUP_DIR_NAME,
     DECK_VERSION,
     STATUS_TO_COLUMN,
     _as_list,
@@ -43,6 +44,12 @@ def _make_project(root: Path, slug: str, *, brief: bool = True) -> Path:
     if brief:
         _write(p / "brief.md", f"---\ntype: project\nproject_type: coding\n---\n# {slug}\n")
     return p
+
+
+def _backups(dest: Path) -> list[Path]:
+    """Every rotated deck backup under {dest}/.bak, oldest name first."""
+    bak = dest / BACKUP_DIR_NAME
+    return sorted(bak.glob("board-data-*.json")) if bak.is_dir() else []
 
 
 def _ensure(*args, **kwargs) -> str:
@@ -535,10 +542,9 @@ class TestForceSafety(unittest.TestCase):
             rc, _ = _scaffold(proj, dest, from_tasks=False, data=str(injected),
                               force=False, title=None, board_id="proj")
             self.assertEqual(rc, 0)
-            bak = dest / "board-data.json.bak"
-            self.assertTrue(bak.is_file(),
-                            "--data over an existing deck must back it up")
-            saved = json.loads(bak.read_text())
+            baks = _backups(dest)
+            self.assertEqual(len(baks), 1, "--data over an existing deck must back it up")
+            saved = json.loads(baks[0].read_text())
             self.assertEqual(saved["cards"][0]["column"], "done")
             self.assertIn("waiting", [c["id"] for c in saved["columns"]])
 
@@ -550,9 +556,75 @@ class TestForceSafety(unittest.TestCase):
             (dest / "board-data.json").write_text(json.dumps(deck))
             rc, _ = _scaffold(proj, dest, from_tasks=True, data=None, force=True, title=None, board_id="proj")
             self.assertEqual(rc, 0)
-            bak = dest / "board-data.json.bak"
-            self.assertTrue(bak.is_file(), "--force must back up the deck it discards")
-            self.assertEqual(json.loads(bak.read_text())["cards"][0]["column"], "done")
+            baks = _backups(dest)
+            self.assertEqual(len(baks), 1, "--force must back up the deck it discards")
+            self.assertEqual(json.loads(baks[0].read_text())["cards"][0]["column"], "done")
+
+    def test_second_replace_does_not_destroy_the_first_backup(self):
+        # Audit 2026-07-30 finding 2: the backup was one fixed filename with no
+        # rotation, so replace #2 overwrote the only copy of the real deck with
+        # the already-destroyed one.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj, dest = self._seeded_board(Path(tmp))
+            deck = json.loads((dest / "board-data.json").read_text())
+            deck["cards"][0]["column"] = "doing"
+            deck["cards"][0]["notes"] = "PRECIOUS"
+            deck["columns"].append({"id": "parking", "name": "Parking"})
+            (dest / "board-data.json").write_text(json.dumps(deck))
+
+            for _ in range(2):
+                rc, _ = _scaffold(proj, dest, from_tasks=True, data=None,
+                                  force=True, title=None, board_id="proj")
+                self.assertEqual(rc, 0)
+
+            saved = [json.loads(p.read_text()) for p in _backups(dest)]
+            self.assertTrue(saved, "a replace must leave a recoverable backup")
+            precious = [d for d in saved
+                        if d["cards"][0].get("notes") == "PRECIOUS"
+                        and "parking" in [c["id"] for c in d["columns"]]]
+            self.assertTrue(
+                precious,
+                "the ORIGINAL deck must still be recoverable after a second replace; "
+                f"backups held {[[c.get('notes') for c in d['cards']] for d in saved]}")
+
+    def test_failed_data_read_leaves_backups_untouched(self):
+        # A typo'd --data exits 1 having written nothing, so it must not have
+        # spent the backup either.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            proj, dest = self._seeded_board(tmpp)
+            good = tmpp / "good.json"
+            good.write_text(json.dumps({"cards": [{"id": "G-1", "column": "next"}]}))
+            rc, _ = _scaffold(proj, dest, from_tasks=False, data=str(good),
+                              force=False, title=None, board_id="proj")
+            self.assertEqual(rc, 0)
+            before = {p.name: p.read_bytes() for p in _backups(dest)}
+            self.assertTrue(before, "precondition: the good replace made a backup")
+            deck_before = (dest / "board-data.json").read_bytes()
+
+            rc, err = _scaffold(proj, dest, from_tasks=False, data=str(tmpp / "nope.json"),
+                                force=False, title=None, board_id="proj")
+            self.assertEqual(rc, 1)
+            self.assertIn("could not read deck", err)
+            self.assertEqual({p.name: p.read_bytes() for p in _backups(dest)}, before,
+                             "a failed --data must leave every backup byte-identical")
+            self.assertEqual((dest / "board-data.json").read_bytes(), deck_before)
+
+    def test_backups_are_rotated(self):
+        # Bounded growth in a synced vault: the newest BACKUP_KEEP survive.
+        from board import BACKUP_KEEP
+        with tempfile.TemporaryDirectory() as tmp:
+            proj, dest = self._seeded_board(Path(tmp))
+            bak_dir = dest / BACKUP_DIR_NAME
+            bak_dir.mkdir(parents=True, exist_ok=True)
+            for n in range(BACKUP_KEEP + 3):
+                (bak_dir / f"board-data-2020010{n}-000000.json").write_text("{}")
+            rc, _ = _scaffold(proj, dest, from_tasks=True, data=None,
+                              force=True, title=None, board_id="proj")
+            self.assertEqual(rc, 0)
+            names = sorted(p.name for p in _backups(dest))
+            self.assertEqual(len(names), BACKUP_KEEP, names)
+            self.assertNotIn("board-data-20200100-000000.json", names)  # oldest pruned
 
     def test_non_object_deck_friendly_error(self):
         # Valid JSON that isn't an object (null/[]) must hit the same friendly

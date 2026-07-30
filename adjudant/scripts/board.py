@@ -42,7 +42,7 @@ import json
 import re
 import shutil
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -55,6 +55,12 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "tem
 MARK_RE = re.compile(r"/\*BOARD_DATA_START\*/.*?/\*BOARD_DATA_END\*/", re.DOTALL)
 
 DECK_VERSION = 1
+# Deck backups live in a dot-dir beside the board, one timestamped file per
+# replace, newest BACKUP_KEEP retained. A dot-dir keeps them out of the served
+# listing and out of Obsidian's explorer; the timestamp is what makes a second
+# replace unable to overwrite the copy of the deck the first one saved.
+BACKUP_DIR_NAME = ".bak"
+BACKUP_KEEP = 5
 DEFAULT_SUBTITLE = "Work-order board"
 DEFAULT_CATEGORIES = ["build", "docs", "infra", "chore"]
 
@@ -328,6 +334,35 @@ def emit_html(deck: dict[str, Any], dest_html: Path) -> None:
     dest_html.write_text(render_template(deck))
 
 
+def backup_deck(data_path: Path, keep: int = BACKUP_KEEP) -> Path:
+    """Copy the deck about to be replaced to `{board}/.bak/board-data-{ts}.json`.
+
+    One timestamped copy per replace, so a second replace can never overwrite
+    the copy the first one saved (the old scheme was a single fixed
+    `board-data.json.bak`, and run two clobbered the user's real deck with the
+    already-destroyed one). Rotation keeps the newest ``keep`` files so a
+    synced vault does not accumulate them without bound.
+
+    Raises OSError; callers refuse the replace rather than proceed unbacked.
+    """
+    bak_dir = data_path.parent / BACKUP_DIR_NAME
+    bak_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = bak_dir / f"board-data-{stamp}.json"
+    n = 2
+    while target.exists():                      # two replaces in the same second
+        target = bak_dir / f"board-data-{stamp}-{n}.json"
+        n += 1
+    shutil.copy2(data_path, target)
+    existing = sorted(bak_dir.glob("board-data-*.json"))
+    for stale in existing[:max(0, len(existing) - keep)]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass                                # rotation is housekeeping, never fatal
+    return target
+
+
 def _resolve_vault_root(args: argparse.Namespace) -> Optional[Path]:
     """Vault root for --project / --all: explicit --vault, else breadcrumb at cwd."""
     if getattr(args, "vault", None):
@@ -362,19 +397,14 @@ def scaffold_one(
               "the existing board with an empty deck — refusing. "
               "Add --from-tasks to rebuild from tasks/.", file=sys.stderr)
         return 1
-    # ANY overwrite of an existing deck keeps a one-shot escape hatch, not just
+    # ANY overwrite of an existing deck keeps an escape hatch, not just
     # --force: `--data foo.json` used to replace a live deck (cards, custom
     # lanes, title) with no backup at all, because both this and the refusal
     # above were gated on `force`. A plain re-seed merges (it never discards),
-    # so only the replacing paths need the .bak.
+    # so only the replacing paths need a backup. Taken further down, once the
+    # replacement deck has been read and validated and the template has
+    # rendered: a run that fails and writes nothing must not spend the backup.
     replaces_deck = force or bool(data)
-    if replaces_deck and data_path.is_file():
-        try:
-            shutil.copy2(data_path, data_path.with_name("board-data.json.bak"))
-        except OSError as e:
-            print(f"error: could not back up the existing deck before replacing it: {e}",
-                  file=sys.stderr)
-            return 1
 
     try:
         if data:
@@ -415,6 +445,13 @@ def scaffold_one(
     # Render FIRST: a missing/markerless template must fail before any write,
     # never leaving board-data.json and board.html out of sync.
     html = render_template(deck)
+    if replaces_deck and data_path.is_file():
+        try:
+            backup_deck(data_path)
+        except OSError as e:
+            print(f"error: could not back up the existing deck before replacing it: {e}",
+                  file=sys.stderr)
+            return 1
     data_path.write_text(json.dumps(deck, indent=2) + "\n")
     (dest / "board.html").write_text(html)
     print(f"[board] {dest}/board.html  ({len(deck.get('cards', []))} cards, {len(deck.get('columns', []))} stages)", file=sys.stderr)
