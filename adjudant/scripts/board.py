@@ -47,8 +47,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from _vault_walk import (
-    enumerate_projects_all_zones, find_project_dir, parse_frontmatter,
-    resolve_vault, smart_project_dir, VaultUnresolvableError,
+    enumerate_projects_all_zones, find_project_dir, is_safe_slug, parse_frontmatter,
+    resolve_vault, smart_project_dir, SLUG_MAX_LEN, VaultUnresolvableError,
 )
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "templates" / "board.html"
@@ -371,6 +371,41 @@ def _resolve_vault_root(args: argparse.Namespace) -> Optional[Path]:
     return resolve_vault(Path.cwd())
 
 
+def _project_dir_for_slug(vault: Path, slug: str) -> Optional[Path]:
+    """`--project SLUG` -> project dir, or None when it does not resolve to a
+    path inside the vault.
+
+    Two guards. The slug rule is the same primitive the breadcrumb path uses
+    (commit 953b5e5), no second rule: `--project` used to go straight into
+    `find_project_dir` / `{vault}/projects/{slug}`, so
+    `--project '../../../../scratchpad/outside'` scaffolded a whole board out
+    there, with card titles taken from tasks/*.md. Then containment on the
+    RESOLVED dir, which the slug rule alone cannot give: a zone dir that is a
+    symlink out of the vault passes any string check.
+    """
+    if not is_safe_slug(slug):
+        return None
+    pdir = find_project_dir(vault, slug) or (vault / "projects" / slug)
+    return pdir if _is_inside(pdir, vault) else None
+
+
+def _bad_slug_error(slug: str) -> None:
+    print(f"error: --project {slug!r} is not a valid project slug "
+          f"(lowercase kebab-case: a-z, 0-9, hyphen; no leading hyphen; "
+          f"{SLUG_MAX_LEN} chars max). It would resolve outside the vault.",
+          file=sys.stderr)
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    """True when `child` is `parent` or sits under it, symlinks resolved.
+    Neither path needs to exist."""
+    try:
+        c, p = Path(child).expanduser().resolve(), Path(parent).expanduser().resolve()
+    except (OSError, ValueError):
+        return False
+    return c == p or p in c.parents
+
+
 def scaffold_one(
     project_dir: Path,
     dest: Path,
@@ -380,10 +415,33 @@ def scaffold_one(
     force: bool,
     title: Optional[str],
     board_id: Optional[str],
+    vault_root: Optional[Path] = None,
+    dest_explicit: bool = False,
 ) -> int:
-    """Scaffold a single board into ``dest``. Returns a process exit code."""
+    """Scaffold a single board into ``dest``. Returns a process exit code.
+
+    Containment (the last line of defense under the slug gates, so a future
+    caller that forgets to gate cannot write a board anywhere it likes):
+
+      - a ``dest`` this code derived (``{project}/board``) must stay inside
+        ``project_dir``;
+      - when the caller knows the vault, ``project_dir`` must stay inside it;
+      - ``dest_explicit=True`` (the operator typed ``--dest``) exempts only the
+        first rule. reference/board.md documents `--dest <repo>/_docs/board`,
+        so a deliberate code-repo target stays legal. The project it is
+        scaffolded FROM is still contained.
+    """
     if not project_dir.is_dir():
         print(f"error: project not found: {project_dir} (run /adjudant connect first)", file=sys.stderr)
+        return 1
+    if vault_root is not None and not _is_inside(project_dir, vault_root):
+        print(f"error: project {project_dir} resolves outside the vault {vault_root} "
+              f"— refusing to scaffold a board there.", file=sys.stderr)
+        return 1
+    if not dest_explicit and not _is_inside(dest, project_dir):
+        print(f"error: board dest {dest} resolves outside the project {project_dir} "
+              f"— refusing. Pass --dest explicitly to target a directory outside it.",
+              file=sys.stderr)
         return 1
     dest.mkdir(parents=True, exist_ok=True)
     data_path = dest / "board-data.json"
@@ -513,7 +571,7 @@ def ensure_board(project_dir: Path, vault_dir: Optional[Path] = None) -> str:
         if _same_deck(merge_deck(existing, fresh), existing):
             return "no-change"
     rc = scaffold_one(project_dir, dest, from_tasks=True, data=None,
-                      force=False, title=None, board_id=None)
+                      force=False, title=None, board_id=None, vault_root=vault_dir)
     if rc != 0:
         raise RuntimeError(f"board reseed failed for {project_dir} (rc {rc})")
     return "reseeded"
@@ -545,7 +603,8 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
         for slug, pdir in projects:
             try:
                 if scaffold_one(pdir, pdir / "board", from_tasks=args.from_tasks,
-                                data=None, force=args.force, title=None, board_id=slug) == 0:
+                                data=None, force=args.force, title=None, board_id=slug,
+                                vault_root=vault) == 0:
                     ok += 1
                 else:
                     rc = 1
@@ -556,27 +615,32 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
         return rc
 
     if args.project:
-        pdir = find_project_dir(vault, args.project) or (vault / "projects" / args.project)
+        pdir = _project_dir_for_slug(vault, args.project)
+        if pdir is None:
+            _bad_slug_error(args.project)
+            return 1
         if not pdir.is_dir():
             have = ", ".join(s for s, _ in enumerate_projects(vault)) or "(none)"
             print(f"error: project '{args.project}' not found under {vault}/projects (have: {have})", file=sys.stderr)
             return 1
         dest = Path(args.dest).expanduser() if args.dest else (pdir / "board")
         rc = scaffold_one(pdir, dest, from_tasks=args.from_tasks, data=args.data,
-                          force=args.force, title=args.title, board_id=args.project)
+                          force=args.force, title=args.title, board_id=args.project,
+                          vault_root=vault, dest_explicit=bool(args.dest))
         if rc == 0:
             _serve_hint(dest)
         return rc
 
     # ── Default: --project-dir (the current breadcrumb-linked project) ──
     try:
-        project_dir, _hint = smart_project_dir(args.project_dir)
+        project_dir, vault_hint = smart_project_dir(args.project_dir)
     except VaultUnresolvableError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     dest = Path(args.dest).expanduser() if args.dest else (project_dir / "board")
     rc = scaffold_one(project_dir, dest, from_tasks=args.from_tasks, data=args.data,
-                      force=args.force, title=args.title, board_id=None)
+                      force=args.force, title=args.title, board_id=None,
+                      vault_root=vault_hint, dest_explicit=bool(args.dest))
     if rc == 0:
         _serve_hint(dest)
     return rc
@@ -668,7 +732,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         return rc
 
     if args.project:
-        pdir = find_project_dir(vault, args.project) or (vault / "projects" / args.project)
+        pdir = _project_dir_for_slug(vault, args.project)
+        if pdir is None:
+            _bad_slug_error(args.project)
+            return 1
         if not pdir.is_dir():
             have = ", ".join(s for s, _ in enumerate_projects(vault)) or "(none)"
             print(f"error: project '{args.project}' not found under {vault}/projects (have: {have})", file=sys.stderr)

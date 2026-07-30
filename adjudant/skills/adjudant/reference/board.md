@@ -26,6 +26,12 @@ OKLCH palette hues by index, or supply explicit `{ "name": "oklch(...)" }`.
 `projects/_index.md` table is never parsed, so malformed or duplicate rows can't
 break discovery. `--all` is error-isolated: one bad project never aborts the batch.
 
+**Containment.** A `--project` slug must be lowercase kebab-case and must
+resolve to a path inside the vault, so a traversal slug (or a zone dir that is
+a symlink out) is refused rather than scaffolded. A board is written under the
+project it belongs to; the one exception is a `--dest` you pass yourself, which
+may point at a code repo (see below).
+
 ## The features (locked spec)
 
 1. **Scaffold** — `board.py scaffold` writes `board-data.json` (the deck) + a

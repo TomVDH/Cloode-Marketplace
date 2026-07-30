@@ -828,5 +828,191 @@ class TestZoneAwareProjectFlag(unittest.TestCase):
             self.assertFalse((vault / "projects" / "p").exists())
 
 
+class TestProjectSlugTraversal(unittest.TestCase):
+    """Audit 2026-07-30 finding 3. Commit 953b5e5 gated the BREADCRUMB slug on
+    the verb path; `--project SLUG` was still fed straight into
+    find_project_dir / `{vault}/projects/{slug}` with no gate and no
+    containment check, so a traversal slug wrote a whole board outside the
+    vault. Card titles come from tasks/*.md, so the written content is
+    attacker-influenceable."""
+
+    @staticmethod
+    def _census(root: Path, skip: Path) -> dict[str, bytes]:
+        """Byte-exact census of everything under `root` except the `skip`
+        subtree. Any file created, deleted, or rewritten shows up as a diff."""
+        out: dict[str, bytes] = {}
+        for p in sorted(root.rglob("*")):
+            if p == skip or skip in p.parents:
+                continue
+            out[str(p)] = p.read_bytes() if p.is_file() else b"<dir>"
+        return out
+
+    def _fixture(self, root: Path) -> tuple[Path, Path, str]:
+        vault = root / "vault"
+        (vault / "projects").mkdir(parents=True)
+        _write(vault / "Home.md", "---\ntype: vault-home\nupdated: 2026-01-01\n---\n")
+        _make_project(vault, "demo")
+        # The escape target exists, so the `pdir.is_dir()` check passes and the
+        # write goes through — this is the audit's fixture shape.
+        outside = root / "scratchpad" / "outside"
+        outside.mkdir(parents=True)
+        _write(outside / "keep.txt", "untouched\n")
+        return vault, outside, "../../scratchpad/outside"
+
+    def test_scaffold_project_slug_traversal_writes_nothing_outside_the_vault(self):
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, outside, slug = self._fixture(root)
+            before = self._census(root, skip=vault)
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                rc = cli_main(["scaffold", "--vault", str(vault), "--project", slug, "--from-tasks"])
+            self.assertEqual(rc, 1, "a traversal slug must be refused")
+            self.assertIn("error:", err.getvalue())
+            self.assertEqual(self._census(root, skip=vault), before,
+                             "nothing outside the vault may be created or rewritten")
+            self.assertFalse((outside / "board").exists())
+
+    def test_symlinked_zone_dir_cannot_smuggle_the_board_out(self):
+        # A perfectly safe-looking slug whose {vault}/projects/<slug> is a
+        # symlink out of the vault: the string rule cannot see this, only
+        # containment on the resolved dir can.
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, outside, _slug = self._fixture(root)
+            _write(outside / "brief.md", "---\ntype: project\n---\n# outside\n")
+            (vault / "projects" / "escaped").symlink_to(outside, target_is_directory=True)
+            before = self._census(root, skip=vault)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rc = cli_main(["scaffold", "--vault", str(vault), "--project", "escaped", "--from-tasks"])
+            self.assertEqual(rc, 1)
+            self.assertEqual(self._census(root, skip=vault), before)
+            self.assertFalse((outside / "board").exists())
+
+    def test_symlinked_zone_dir_is_refused_by_status_too(self):
+        # status is read-only, so nothing downstream re-checks containment:
+        # the resolved-dir guard is the only thing standing between a
+        # safe-looking slug and a deck read from outside the vault.
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, outside, _slug = self._fixture(root)
+            _write(outside / "board" / "board-data.json",
+                   json.dumps({"columns": [{"id": "backlog", "name": "Backlog"}], "cards": []}))
+            (vault / "projects" / "escaped").symlink_to(outside, target_is_directory=True)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rc = cli_main(["status", "--vault", str(vault), "--project", "escaped"])
+            self.assertEqual(rc, 1, "status must not read a deck from outside the vault")
+
+    def test_slug_gate_rejects_traversal_before_any_path_is_built(self):
+        from board import _project_dir_for_slug
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, _outside, slug = self._fixture(root)
+            self.assertIsNone(_project_dir_for_slug(vault, slug))
+            self.assertIsNone(_project_dir_for_slug(vault, "/etc"))
+            self.assertIsNone(_project_dir_for_slug(vault, "Has Spaces"))
+            self.assertEqual(_project_dir_for_slug(vault, "demo"), vault / "projects" / "demo")
+
+    def test_status_project_slug_traversal_refused(self):
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, _outside, slug = self._fixture(root)
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                rc = cli_main(["status", "--vault", str(vault), "--project", slug])
+            self.assertEqual(rc, 1)
+            self.assertIn("slug", err.getvalue())
+
+    def test_absolute_project_slug_refused(self):
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, outside, _slug = self._fixture(root)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rc = cli_main(["scaffold", "--vault", str(vault), "--project", str(outside)])
+            self.assertEqual(rc, 1)
+            self.assertFalse((outside / "board").exists())
+
+    def test_good_slug_still_scaffolds(self):
+        # The gate must not cost the normal path.
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault, _outside, _slug = self._fixture(root)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rc = cli_main(["scaffold", "--vault", str(vault), "--project", "demo"])
+            self.assertEqual(rc, 0)
+            self.assertTrue((vault / "projects" / "demo" / "board" / "board-data.json").is_file())
+
+
+class TestScaffoldContainment(unittest.TestCase):
+    """Defense in depth under the slug gates: scaffold_one itself refuses to
+    write a board outside the project it belongs to. The one exception is a
+    `dest` the operator typed (`--dest`), which reference/board.md explicitly
+    allows to point at a code repo."""
+
+    def _proj(self, root: Path) -> Path:
+        proj = root / "vault" / "projects" / "demo"
+        _write(proj / "brief.md", "---\ntype: project\n---\n# demo\n")
+        _write(proj / "tasks" / "t1.md", "---\ncode: T-1\nstatus: todo\n---\n# One\n")
+        return proj
+
+    def test_default_dest_outside_the_project_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            proj = self._proj(root)
+            rogue = root / "elsewhere" / "board"
+            rc, err = _scaffold(proj, rogue, from_tasks=True, data=None, force=False,
+                                title=None, board_id="demo")
+            self.assertEqual(rc, 1)
+            self.assertIn("outside", err)
+            self.assertFalse(rogue.exists(), "not even the directory may be created")
+
+    def test_project_dir_outside_the_vault_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "vault" / "projects").mkdir(parents=True)
+            rogue_proj = root / "scratchpad" / "outside"
+            _write(rogue_proj / "tasks" / "t1.md", "---\ncode: T-1\nstatus: todo\n---\n# One\n")
+            rc, err = _scaffold(rogue_proj, rogue_proj / "board", from_tasks=True, data=None,
+                                force=False, title=None, board_id="outside",
+                                vault_root=root / "vault")
+            self.assertEqual(rc, 1)
+            self.assertIn("outside", err)
+            self.assertFalse((rogue_proj / "board").exists())
+
+    def test_explicit_dest_may_target_a_code_repo(self):
+        # reference/board.md:35 documents `--dest <repo>/_docs/board`. The
+        # containment rule must not break it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            proj = self._proj(root)
+            repo_dest = root / "repo" / "_docs" / "board"
+            rc, err = _scaffold(proj, repo_dest, from_tasks=True, data=None, force=False,
+                                title=None, board_id="demo", vault_root=root / "vault",
+                                dest_explicit=True)
+            self.assertEqual(rc, 0, err)
+            self.assertTrue((repo_dest / "board-data.json").is_file())
+
+    def test_cli_dest_flag_still_reaches_a_code_repo(self):
+        from board import cli_main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            vault = root / "vault"
+            (vault / "projects").mkdir(parents=True)
+            _write(vault / "Home.md", "---\ntype: vault-home\nupdated: 2026-01-01\n---\n")
+            self._proj(root)
+            repo_dest = root / "repo" / "_docs" / "board"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rc = cli_main(["scaffold", "--vault", str(vault), "--project", "demo",
+                               "--dest", str(repo_dest), "--from-tasks"])
+            self.assertEqual(rc, 0)
+            self.assertTrue((repo_dest / "board-data.json").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
