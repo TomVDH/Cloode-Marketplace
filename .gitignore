@@ -42,3 +42,6 @@ __pycache__/
 
 # Adjudant breadcrumb (project-local)
 .claude/adjudant
+
+# Playwright MCP scratch (browser profile + traces)
+.playwright-mcp/
