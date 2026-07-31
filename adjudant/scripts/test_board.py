@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -1408,6 +1409,133 @@ class TestKanbanLifecycle(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertIn("obsidian://open?vault=My%20Vault"
                           "&file=projects%2Fdemo%2Fboard%2Fkanban.md", err)
+
+
+# ── templates/board.html: STRUCTURAL guards ────────────────────────────────
+#
+# READ THIS BEFORE TRUSTING ANYTHING BELOW.
+#
+# The board template is JavaScript inside a stdlib-only Python plugin. There is
+# no JS test runner here and there must not be one, so these tests assert on the
+# template's TEXT: that a role attribute is written, that no empty catch block
+# came back, that the persisted shape is the moves map rather than the whole
+# deck. They are STRUCTURAL, not BEHAVIOURAL. A green run here says the code
+# that implements a behaviour is still present and still shaped the way it was
+# when the behaviour was verified in a real browser. It does NOT say the board
+# works. Every behaviour these guard was driven in Chromium against a scaffolded
+# fixture on 2026-07-31 and the observations are in
+# .superpowers/sdd/2026-07-28-adjudant-token-discipline/board-html-fix-report.md.
+# Re-run that browser pass when you change the template; do not let a green
+# suite here stand in for it.
+
+def _template_text() -> str:
+    from board import TEMPLATE
+    return TEMPLATE.read_text()
+
+
+def _js_function(src: str, name: str) -> str:
+    """The body of `function name(` / `async function name(` by brace matching.
+
+    Lets a guard assert about one function rather than about the whole file,
+    so "writeDisk re-reads before it writes" cannot be satisfied by an
+    unrelated getFile() call somewhere else in the template.
+    """
+    for opener in (f"async function {name}(", f"function {name}("):
+        i = src.find(opener)
+        if i == -1:
+            continue
+        j = src.index("{", i)
+        depth = 0
+        for k in range(j, len(src)):
+            if src[k] == "{":
+                depth += 1
+            elif src[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    return src[j:k + 1]
+        break
+    raise AssertionError(f"function {name} not found in the board template")
+
+
+class TestTemplateSavesHonestly(unittest.TestCase):
+    """Structural guards for the persistence rewrite. Behaviour verified in
+    Chromium; see the module comment above."""
+
+    def setUp(self):
+        self.src = _template_text()
+
+    def test_no_silently_swallowed_error_anywhere_in_the_template(self):
+        # persistLocal() used to eat every storage failure in `catch(e){}`, so a
+        # drag rendered as committed while nothing was written. An empty catch
+        # is the shape of that bug; the template must never carry one again.
+        empty = re.findall(r"catch\s*\(\s*\w*\s*\)\s*\{\s*\}", self.src)
+        self.assertEqual(empty, [], f"empty catch block(s) back in board.html: {empty}")
+
+    def test_a_failed_save_is_reported_and_the_move_is_put_back(self):
+        body = _js_function(self.src, "applyMove")
+        self.assertIn("await persist()", body)
+        # rollback: the pre-move column and the pre-move override set restore
+        self.assertIn("card.column=from", body)
+        self.assertIn("moves=JSON.parse(undo)", body)
+        # and it is said out loud, in the page and to a screen reader
+        self.assertIn("notice(", body)
+        self.assertIn("announce(", body)
+        self.assertIn('id="notice"', self.src)
+        self.assertIn('role="alert"', self.src)
+
+    def test_storage_write_reports_its_failure_rather_than_returning_true(self):
+        body = _js_function(self.src, "writeMoves")
+        self.assertIn("ok:false", body)
+        self.assertIn("QuotaExceededError", body)
+        self.assertIn("catch", body)
+
+    def test_persist_needs_a_store_to_confirm_before_a_move_counts(self):
+        body = _js_function(self.src, "persist")
+        self.assertIn("local.ok||disk.ok", body.replace(" ", ""))
+        self.assertIn("unsaved", body)
+
+    def test_only_the_moves_are_persisted_never_the_whole_deck(self):
+        # The old shape (`setItem(LS_KEY, JSON.stringify(state))`) is what made a
+        # re-scaffolded title permanently invisible: the stale blob won and the
+        # page had no way back. Titles/categories/refs must re-seed every load.
+        body = _js_function(self.src, "writeMoves")
+        self.assertIn("moves:moves", body.replace(" ", ""))
+        self.assertNotIn("JSON.stringify(state)", self.src)
+        self.assertNotRegex(self.src, r"setItem\(\s*LS_KEY\s*,\s*JSON\.stringify\(\s*state")
+
+    def test_the_rev_guard_that_keyed_only_on_the_id_set_is_gone(self):
+        # deckRev() hashed the SET of card ids, so re-seeding a title, category
+        # or related list changed nothing the browser could see.
+        self.assertNotIn("deckRev", self.src)
+        self.assertNotIn('":rev")===', self.src)
+
+    def test_a_pre_existing_whole_deck_blob_is_migrated_not_dropped(self):
+        body = _js_function(self.src, "movesFromLegacyDeck")
+        self.assertIn("SEED.cards", body)
+        self.assertIn("from:seed[id]", body.replace(" ", ""))
+
+    def test_the_disk_write_re_reads_the_file_first(self):
+        # createWritable() truncates. python reseeds the same file, and another
+        # tab may own it: writing this tab's boot-time snapshot blind drops
+        # every card and lane that landed since.
+        body = _js_function(self.src, "writeDisk")
+        read_at = body.index("getFile()")
+        write_at = body.index("createWritable()")
+        self.assertLess(read_at, write_at, "writeDisk writes before it re-reads")
+        self.assertIn("mergeMoves(disk,moves)", body.replace(" ", ""))
+
+    def test_another_tab_is_adopted_instead_of_being_clobbered(self):
+        self.assertIn('addEventListener("storage"', self.src)
+        self.assertIn('addEventListener("visibilitychange"', self.src)
+
+    def test_an_override_is_expressed_against_the_deck_as_it_stands_now(self):
+        # A frozen base stops matching the moment the deck absorbs the move, and
+        # the NEXT move of that same card is then silently dropped. Verified in
+        # the browser: four consecutive moves of one card, all landing on disk.
+        body = _js_function(self.src, "recordMove")
+        self.assertIn("baseCols[key]", body)
+        write = _js_function(self.src, "writeDisk")
+        self.assertIn("baseCols=out.cards.map", write.replace(" ", ""))
 
 
 if __name__ == "__main__":

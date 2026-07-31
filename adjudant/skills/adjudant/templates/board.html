@@ -17,6 +17,7 @@
     --text-dim:     oklch(45% 0.008 280);
     --text-faint:   oklch(62% 0.005 280);
     --ok:   oklch(55% 0.14 155);
+    --bad:  oklch(48% 0.18 25);
     --park: oklch(62% 0.005 280);
 
     /* spacing — deliberately uneven: tight inside a docket, generous between stages */
@@ -33,7 +34,7 @@
       --bg:oklch(10% 0.005 280); --surface:oklch(13% 0.005 280); --surface-2:oklch(16% 0.005 280);
       --border:oklch(22% 0.005 280); --border-strong:oklch(34% 0.005 280);
       --text:oklch(94% 0.002 280); --text-dim:oklch(70% 0.003 280); --text-faint:oklch(52% 0.005 280);
-      --ok:oklch(80% 0.14 155); --park:oklch(52% 0.005 280);
+      --ok:oklch(80% 0.14 155); --bad:oklch(72% 0.18 25); --park:oklch(52% 0.005 280);
     }
   }
   *{box-sizing:border-box}
@@ -70,6 +71,21 @@
   .conn{display:inline-flex;align-items:center;gap:6px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.1em}
   .conn::before{content:"";width:7px;height:7px;border:1.5px solid currentColor;border-radius:50%}
   .conn.on{color:var(--ok)} .conn.on::before{background:currentColor;border-color:currentColor}
+  .conn.bad{color:var(--bad);font-weight:700} .conn.bad::before{background:currentColor;border-color:currentColor}
+
+  /* a save that did not happen, said out loud (see persist / applyMove) */
+  .notice{display:flex;align-items:flex-start;gap:var(--sp-4);
+    margin:var(--sp-4) var(--sp-6) 0;padding:var(--sp-3) var(--sp-4);
+    border:1px solid var(--border-strong);border-left:3px solid var(--text-dim);border-radius:var(--rad-xs);
+    background:var(--surface);font-family:var(--mono);font-size:var(--fs-micro);line-height:1.6;color:var(--text)}
+  .notice.bad{border-left-color:var(--bad)}
+  .notice[hidden]{display:none}
+  .notice button{font:inherit;background:none;border:none;color:var(--text-dim);cursor:pointer;padding:0;
+    text-transform:uppercase;letter-spacing:.08em;border-bottom:1px dashed var(--border-strong);margin-left:auto}
+  .notice button:hover{color:var(--text);border-bottom-color:var(--text)}
+  /* in the accessibility tree, out of the layout */
+  .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+    clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 
   /* ledger field strip: stats (left) + category key (right), inner rule of the double-rule */
   .fields{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-5);flex-wrap:wrap;
@@ -153,7 +169,7 @@
     <div class="spacer"></div>
     <div class="controls">
       <input id="q" type="search" placeholder="filter" spellcheck="false" autocomplete="off">
-      <span class="conn" id="conn">local</span>
+      <span class="conn" id="conn" aria-label="save target: local">local</span>
       <button id="connectBtn" type="button">connect file</button>
       <button id="downloadBtn" type="button">download</button>
     </div>
@@ -169,9 +185,14 @@
     <div class="legend" id="legend"></div>
   </div>
 </header>
+<div class="notice" id="notice" role="alert" hidden>
+  <span id="noticeText"></span>
+  <button id="noticeClose" type="button" aria-label="Dismiss this message">dismiss</button>
+</div>
+<div id="live" class="sr-only" role="status" aria-live="polite"></div>
 <main class="board" id="board"></main>
 <p class="foot">
-  Drag an order between stages — saved to this browser instantly. Hit
+  Drag an order between stages, saved to this browser instantly. Hit
   <kbd>connect file</kbd> and pick <code>board-data.json</code> to auto-save to disk (Chromium).
   Card ids and mono <code>ref ·</code> tags cross-link your codes (specs, handoffs, commits).
   Type in <kbd>filter</kbd> (or click a legend key) to narrow; <kbd>Esc</kbd> clears.
@@ -200,11 +221,17 @@ const PALETTE=["oklch(78% 0.16 295)","oklch(82% 0.17 142)","oklch(82% 0.15 50)",
    each other. Falls back to the title for pre-0.9 decks without a boardId. */
 function boardKey(){ return String(SEED.boardId||SEED.title||"default"); }
 const LS_KEY="adjudant-board:"+boardKey();
+const LS_REV=LS_KEY+":rev";   /* pre-0.25 whole-deck mirror; retired on first save */
 const IDB_KEY=boardKey();
 const STAMP={done:["built","BUILT"],icebox:["parked","PARKED"]};
+const MOVES_VERSION=2;
 let state=null, fileHandle=null, catColors={};
+/* baseDeck = the deck exactly as loaded (disk or SEED), before any override.
+   moves    = the ONLY thing this page persists (see readMoves). */
+let baseJson=null, baseCols=[], moves={};
 /* view-state only (never persisted): text filter + toggled legend category */
 let filterText="", filterCat=null;
+function errText(e){ return String((e&&e.message)||e||"unknown error"); }
 function cardMatches(c){
   if(filterCat && c.category!==filterCat) return false;
   if(!filterText) return true;
@@ -226,27 +253,150 @@ async function connectFile(){
     if(!(await ensurePerm(h,"readwrite"))){alert("Write permission denied.");return;}
     fileHandle=h; await saveHandle(h);
     const txt=await (await h.getFile()).text();
-    if(txt.trim()) state=normalize(JSON.parse(txt));
-    persistLocal(); render(); setConn(true);
-  }catch(e){ if(e&&e.name!=="AbortError") alert("Connect failed: "+e.message); }
+    if(txt.trim()){ baseJson=txt; state=deckFrom(txt); }
+    render();
+    const res=await persist();
+    if(!res.ok) notice("Connected, but nothing could be saved: "+res.reason,true); else clearNotice();
+  }catch(e){ if(e&&e.name!=="AbortError") alert("Connect failed: "+errText(e)); }
 }
-/* rev = identity of the card SET (sorted ids), NOT the date or count — so a
-   re-scaffold that only moves cards between columns keeps your browser state,
-   while adding/removing a card refreshes it. */
-function deckRev(){ return (SEED.cards||[]).map(c=>String(c.id)).sort().join("|"); }
-function persistLocal(){ try{localStorage.setItem(LS_KEY,JSON.stringify(state));localStorage.setItem(LS_KEY+":rev",deckRev());}catch(e){} }
-async function writeDisk(){
-  if(!fileHandle) return false;
-  try{ if(!(await ensurePerm(fileHandle,"readwrite"))) return false;
-    const w=await fileHandle.createWritable(); await w.write(JSON.stringify(state,null,2)); await w.close(); return true;
-  }catch(e){ console.warn("disk write failed",e); return false; }
+/* ── What this page persists ──────────────────────────────────────────────
+   ONLY the moves you made by hand, as {cardId:{from,to}}. Titles, categories,
+   refs and notes always re-render from the deck the scaffolder wrote, so a
+   re-scaffold that renames or re-categorises a card is never masked by a
+   stale browser blob, while the lane you dragged a card into still survives
+   that re-scaffold. `from` is the lane the deck held when you moved the card:
+   when the deck itself later puts that card somewhere else (a reseed, a hand
+   edit, another tab's disk write), the deck wins and the override retires.
+   Storing the whole deck instead is what made a re-seeded title permanently
+   invisible in the browser with no way to recover in the page. */
+/* One-time migration. Boards before this shape stored the whole deck, so the
+   drags are recoverable by diffing that blob against the deck this page ships.
+   The next save replaces it with the moves-only shape. */
+function movesFromLegacyDeck(o){
+  const seed={};
+  (SEED.cards||[]).forEach(c=>{ const id=String(c.id); if(seed[id]===undefined) seed[id]=String(c.column==null?"":c.column); });
+  const out={};
+  (o.cards||[]).forEach(c=>{
+    const id=String(c.id), col=String(c.column==null?"":c.column);
+    if(seed[id]!==undefined&&seed[id]!==col) out[id]={from:seed[id],to:col};
+  });
+  return out;
 }
-async function persist(){ persistLocal(); const ok=await writeDisk(); setConn(!!fileHandle && ok); }
+function readMoves(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw) return {};
+    const o=JSON.parse(raw);
+    if(o&&typeof o==="object"&&o.v!==MOVES_VERSION&&Array.isArray(o.cards)) return movesFromLegacyDeck(o);
+    if(!o||typeof o!=="object"||o.v!==MOVES_VERSION||!o.moves||typeof o.moves!=="object") return {};
+    const out={};
+    Object.keys(o.moves).forEach(k=>{
+      const m=o.moves[k];
+      if(m&&typeof m==="object"&&typeof m.to==="string") out[k]={from:typeof m.from==="string"?m.from:"",to:m.to};
+    });
+    return out;
+  }catch(e){ console.warn("board: saved moves unreadable, starting from the deck",e); return {}; }
+}
+/* Returns {ok,reason}. A storage failure (private mode, a blocked or full
+   origin, an enterprise policy) must be reported, never swallowed: the footer
+   promises "saved to this browser instantly" and the caller rolls the move
+   back when no store confirmed it. */
+function writeMoves(){
+  try{
+    localStorage.setItem(LS_KEY,JSON.stringify({v:MOVES_VERSION,moves:moves}));
+    localStorage.removeItem(LS_REV);
+    return {ok:true,reason:""};
+  }catch(e){
+    console.warn("board: browser storage write failed",e);
+    const why=(e&&e.name==="QuotaExceededError") ? "this browser's storage is full or blocked" : errText(e);
+    return {ok:false,reason:why};
+  }
+}
+/* Overrides onto a deck, in place. Returns the surviving set: an override whose
+   `from` no longer matches the deck, or whose target lane is gone, has been
+   overtaken by the deck itself and retires. Touches no global, so a caller can
+   compute a merge it may still decide not to commit. */
+function mergeMoves(deck,mv){
+  const known=new Set(deck.columns.map(c=>String(c.id)));
+  const live={};
+  deck.cards.forEach(c=>{
+    const m=mv[c.id];
+    if(!m||m.from!==c.column||!known.has(m.to)) return;
+    c.column=m.to; live[c.id]=m;
+  });
+  return live;
+}
+/* This deck is now the one every override is expressed against. */
+function adopt(deck){
+  baseCols=deck.cards.map(c=>c.column);
+  moves=mergeMoves(deck,moves);
+  return deck;
+}
+/* `from` is always the lane the CURRENT deck holds for that card, never the
+   lane it held the first time it was moved: once the deck absorbs a move (a
+   disk write, a reseed), a frozen base would stop matching and the next move
+   of that same card would be dropped on the floor. */
+function recordMove(key,card,to){
+  const base=(baseCols[key]===undefined)?card.column:baseCols[key];
+  if(to===base) delete moves[card.id]; else moves[card.id]={from:base,to:to};
+}
+function deckFrom(txt){ return adopt(normalize(JSON.parse(txt))); }
 
-function setConn(on){
+/* Re-read before writing. createWritable() truncates, python reseeds this same
+   file, and another tab may own it too: a blind write of this tab's boot-time
+   snapshot silently drops every card and lane that landed since. */
+async function writeDisk(){
+  if(!fileHandle) return {ok:false,reason:"",skipped:true};
+  try{
+    if(!(await ensurePerm(fileHandle,"readwrite"))) return {ok:false,reason:"write permission for board-data.json was denied"};
+    const txt=await (await fileHandle.getFile()).text();
+    let disk=null;
+    if(txt.trim()){
+      try{ disk=normalize(JSON.parse(txt)); }
+      catch(e){ return {ok:false,reason:"board-data.json on disk is not a readable deck ("+errText(e)+"), nothing written"}; }
+    }
+    let out=state, live=null;
+    if(disk){ live=mergeMoves(disk,moves); out=disk; }
+    const written=JSON.stringify(out,null,2);
+    const w=await fileHandle.createWritable();
+    await w.write(written);
+    await w.close();
+    /* Adopt the reconciled deck only once the write actually landed, and adopt
+       what was WRITTEN: the file now holds the merged columns, so those are the
+       lanes the next override has to be expressed against. */
+    if(disk){ baseJson=written; state=out; baseCols=out.cards.map(c=>c.column); moves=live; }
+    return {ok:true,reason:"",refreshed:!!disk};
+  }catch(e){ console.warn("board: disk write failed",e); return {ok:false,reason:errText(e)}; }
+}
+/* Confirmed by at least one backing store, or it did not happen. */
+async function persist(){
+  const local=writeMoves();
+  const disk=await writeDisk();
+  setConn(disk.ok?"disk":(fileHandle?"reconnect":(local.ok?"local":"unsaved")));
+  const reasons=[];
+  if(!local.ok) reasons.push(local.reason);
+  if(!disk.ok&&!disk.skipped) reasons.push(disk.reason);
+  return {ok:local.ok||disk.ok,reason:reasons.join(" · "),refreshed:!!disk.refreshed};
+}
+/* Pull in a deck another writer put on disk while this tab sat idle. */
+async function refreshFromDisk(){
+  if(!fileHandle) return;
+  try{
+    if((await fileHandle.queryPermission({mode:"readwrite"}))!=="granted") return;
+    const txt=await (await fileHandle.getFile()).text();
+    if(!txt.trim()||txt===baseJson) return;
+    baseJson=txt; state=deckFrom(txt); render();
+    announce("Board refreshed from disk.");
+  }catch(e){ console.warn("board: disk refresh failed",e); }
+}
+
+const CONN_TEXT={disk:"disk",reconnect:"reconnect",local:"local",unsaved:"unsaved"};
+function setConn(mode){
   const el=document.getElementById("conn");
-  el.classList.toggle("on",!!on);
-  el.textContent= on ? "disk" : (fileHandle ? "reconnect" : "local");
+  el.classList.toggle("on",mode==="disk");
+  el.classList.toggle("bad",mode==="unsaved");
+  el.textContent=CONN_TEXT[mode]||"local";
+  el.setAttribute("aria-label","save target: "+(CONN_TEXT[mode]||"local"));
 }
 function download(){
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
@@ -266,20 +416,68 @@ function normalize(d){
 }
 function catColor(cat){ return catColors[cat] || "var(--border-strong)"; }
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
+function colName(id){ const c=state.columns.find(c=>String(c.id)===String(id)); return c?c.name:String(id); }
+function cardLabel(c){ return (c.id?c.id+", ":"")+(c.title||"untitled order"); }
 
-/* keyboard capacity: focused ticket + [ / ] moves it one lane left / right */
-function moveCard(card, delta){
-  const cols=state.columns.map(c=>c.id);
-  const i=cols.indexOf(card.column);
-  const j=i+delta;
-  if(i<0||j<0||j>=cols.length) return;
-  card.column=cols[j]; render(); persist();
-  const moved=document.querySelector('.ticket[data-id="'+CSS.escape(String(card.id))+'"]');
-  if(moved) moved.focus();
+/* ── Telling the truth about what happened ── */
+function announce(msg){
+  const live=document.getElementById("live");
+  if(live){ live.textContent=""; live.textContent=msg; }
 }
-
-function ticketNode(card){
-  const t=el("div","ticket"); t.draggable=true; t.tabIndex=0; t.dataset.id=card.id;
+function notice(msg,bad){
+  const n=document.getElementById("notice");
+  if(!n) return;
+  document.getElementById("noticeText").textContent=msg;
+  n.classList.toggle("bad",!!bad);
+  n.hidden=false;
+}
+function clearNotice(){ const n=document.getElementById("notice"); if(n){ n.hidden=true; } }
+/* Cards are addressed by their position in state.cards, never by id: a deck may
+   legitimately carry two cards with the same id (board.py only de-duplicates
+   the tasks path), and resolving a drag with .find(c=>c.id===id) moves the
+   first match rather than the card the user actually dragged. */
+function focusKey(key){
+  const node=document.querySelector('.ticket[data-key="'+key+'"]');
+  if(node) node.focus();
+}
+/* The single mutation path. A move renders optimistically, then rolls back and
+   says so when no backing store confirmed the write. */
+async function applyMove(key,toCol){
+  const card=state.cards[key];
+  if(!card) return false;
+  const from=card.column;
+  const label=cardLabel(card);
+  if(from===toCol){ announce(label+" is already in "+colName(toCol)+"."); return false; }
+  const undo=JSON.stringify(moves);
+  card.column=toCol; recordMove(key,card,toCol);
+  render();
+  const res=await persist();
+  if(!res.ok){
+    card.column=from; moves=JSON.parse(undo); render();
+    notice("Not saved: "+res.reason+". "+label+" was put back in "+colName(from)+".",true);
+    announce("Save failed. "+label+" was put back in "+colName(from)+".");
+    focusKey(key);
+    return false;
+  }
+  if(res.refreshed) render();
+  if(res.reason) notice("Saved in this browser, but not to disk: "+res.reason,true); else clearNotice();
+  announce(label+" moved to "+colName(toCol)+".");
+  focusKey(key);
+  return true;
+}
+/* keyboard capacity: focused ticket + [ / ] moves it one lane left / right */
+function moveByKey(key,delta){
+  const card=state.cards[key];
+  if(!card) return;
+  const cols=state.columns.map(c=>String(c.id));
+  const i=cols.indexOf(String(card.column));
+  const j=i+delta;
+  if(i<0) return;
+  if(j<0||j>=cols.length){ announce(cardLabel(card)+" is already in the "+(delta<0?"first":"last")+" stage."); return; }
+  applyMove(key,cols[j]);
+}
+function ticketNode(card,key){
+  const t=el("div","ticket"); t.draggable=true; t.tabIndex=0; t.dataset.id=card.id; t.dataset.key=String(key);
   t.style.setProperty("--c",catColor(card.category));
   const top=el("div","t-top");
   top.appendChild(el("span","t-id",card.id));
@@ -294,11 +492,11 @@ function ticketNode(card){
   }
   if(card.notes) t.appendChild(el("div","t-note",card.notes));
   if(STAMP[card.column]){ const [cls,label]=STAMP[card.column]; t.appendChild(el("span","stamp "+cls,label)); }
-  t.addEventListener("dragstart",ev=>{ev.dataTransfer.setData("text/plain",card.id);ev.dataTransfer.effectAllowed="move";t.classList.add("dragging");});
+  t.addEventListener("dragstart",ev=>{ev.dataTransfer.setData("text/plain",String(key));ev.dataTransfer.effectAllowed="move";t.classList.add("dragging");});
   t.addEventListener("dragend",()=>t.classList.remove("dragging"));
   t.addEventListener("keydown",ev=>{
-    if(ev.key==="[") { ev.preventDefault(); moveCard(card,-1); }
-    else if(ev.key==="]") { ev.preventDefault(); moveCard(card,1); }
+    if(ev.key==="[") { ev.preventDefault(); moveByKey(key,-1); }
+    else if(ev.key==="]") { ev.preventDefault(); moveByKey(key,1); }
   });
   return t;
 }
@@ -319,64 +517,90 @@ function render(){
   });
   const filtering = !!(filterText || filterCat);
   const board=document.getElementById("board"); board.innerHTML="";
-  const laneNode=(col, all, extraCls)=>{
-    const cards=all.filter(cardMatches);
-    const lane=el("div","lane"+( (col.id==="done"||col.id==="icebox")?" muted":"" )+(extraCls||"")); lane.dataset.col=col.id;
+  const laneNode=(col, entries, opts)=>{
+    const shown=entries.filter(e=>cardMatches(e.card));
+    const lane=el("div","lane"+((col.id==="done"||col.id==="icebox")?" muted":"")+((opts&&opts.cls)||""));
+    lane.dataset.col=col.id;
     const head=el("div","lane-head");
     head.appendChild(el("span","nm",col.name));
     // count: `shown/total` while filtering; over-limit (col.wip) shown in red
-    const over = Number.isFinite(col.wip) && all.length>col.wip;
+    const over = Number.isFinite(col.wip) && entries.length>col.wip;
     const ctTxt = filtering
-      ? String(cards.length).padStart(2,"0")+"/"+String(all.length).padStart(2,"0")
-      : String(all.length).padStart(2,"0") + (Number.isFinite(col.wip)?("/"+col.wip+" wip"):"");
+      ? String(shown.length).padStart(2,"0")+"/"+String(entries.length).padStart(2,"0")
+      : String(entries.length).padStart(2,"0") + (Number.isFinite(col.wip)?("/"+col.wip+" wip"):"");
     head.appendChild(el("span","ct"+(over?" over":""),ctTxt));
     lane.appendChild(head);
     const body=el("div","lane-body");
-    if(!cards.length) body.appendChild(el("div","lane-empty", filtering&&all.length ? "—  filtered" : "—  empty"));
-    cards.forEach(c=>body.appendChild(ticketNode(c)));
+    if(!shown.length) body.appendChild(el("div","lane-empty", filtering&&entries.length ? "—  filtered" : "—  empty"));
+    shown.forEach(e=>body.appendChild(ticketNode(e.card,e.key)));
     lane.appendChild(body);
     lane.addEventListener("dragover",ev=>{ev.preventDefault();ev.dataTransfer.dropEffect="move";lane.classList.add("drop");});
     lane.addEventListener("dragleave",ev=>{ if(!lane.contains(ev.relatedTarget)) lane.classList.remove("drop"); });
     lane.addEventListener("drop",ev=>{
       ev.preventDefault(); lane.classList.remove("drop");
-      const id=ev.dataTransfer.getData("text/plain");
-      const card=state.cards.find(c=>c.id===id);
-      if(card && card.column!==col.id && col.id!=="__unfiled"){ card.column=col.id; render(); persist(); }
+      const key=Number(ev.dataTransfer.getData("text/plain"));
+      if(Number.isInteger(key) && col.id!=="__unfiled") applyMove(key,col.id);
     });
     board.appendChild(lane);
   };
-  const known=new Set(state.columns.map(c=>c.id));
-  state.columns.forEach(col=>laneNode(col, state.cards.filter(c=>c.column===col.id)));
+  const buckets=new Map();
+  state.columns.forEach(c=>buckets.set(String(c.id),[]));
+  const orphans=[];
+  state.cards.forEach((card,key)=>{
+    const b=buckets.get(String(card.column));
+    (b||orphans).push({card:card,key:key});
+  });
+  state.columns.forEach(col=>laneNode(col,buckets.get(String(col.id)),{}));
   // Safety lane: cards whose column matches no lane (deck edited by hand,
   // column removed) must never be invisible — surface them as UNFILED.
-  const orphans=state.cards.filter(c=>!known.has(c.column));
-  if(orphans.length) laneNode({id:"__unfiled",name:"Unfiled"}, orphans, " unfiled");
+  if(orphans.length) laneNode({id:"__unfiled",name:"Unfiled"},orphans,{cls:" unfiled"});
 }
 
 async function boot(){
-  try{
-    const h=await loadHandle();
-    if(h){ fileHandle=h;
-      if((await h.queryPermission({mode:"readwrite"}))==="granted"){
-        const txt=await (await h.getFile()).text();
-        if(txt.trim()) state=normalize(JSON.parse(txt));
+  let diskTxt=null;
+  {
+    try{
+      const h=await loadHandle();
+      if(h){ fileHandle=h;
+        if((await h.queryPermission({mode:"readwrite"}))==="granted"){
+          const txt=await (await h.getFile()).text();
+          if(txt.trim()) diskTxt=txt;
+        }
+      }
+    }catch(e){ console.warn("board: handle restore failed",e); }
+    moves=readMoves();
+    if(diskTxt){
+      try{ baseJson=diskTxt; state=deckFrom(diskTxt); }
+      catch(e){
+        baseJson=null; state=null;
+        console.warn("board: deck on disk unreadable",e);
+        notice("board-data.json on disk is not a readable deck ("+errText(e)+"). Showing the deck built into this page instead.",true);
       }
     }
-  }catch(e){ console.warn("handle restore failed",e); }
-  if(!state){
-    const ls=localStorage.getItem(LS_KEY);
-    // a re-scaffold (new deck rev) always wins over stale browser state
-    state= (ls && localStorage.getItem(LS_KEY+":rev")===deckRev()) ? normalize(JSON.parse(ls)) : normalize(JSON.parse(JSON.stringify(SEED)));
   }
-  setConn(false); render();
+  if(!state){ baseJson=JSON.stringify(SEED); state=deckFrom(baseJson); }
+  setConn(fileHandle?"reconnect":"local");
+  render();
 }
 document.getElementById("connectBtn").addEventListener("click",connectFile);
 document.getElementById("downloadBtn").addEventListener("click",download);
+document.getElementById("noticeClose").addEventListener("click",clearNotice);
 const q=document.getElementById("q");
 q.addEventListener("input",()=>{ filterText=q.value.trim().toLowerCase(); render(); });
 q.addEventListener("keydown",ev=>{
   if(ev.key==="Escape"){ q.value=""; filterText=""; filterCat=null; render(); q.blur(); }
 });
+/* Another tab on the same board is another writer. Adopt its moves instead of
+   letting whichever tab saves last silently win. */
+window.addEventListener("storage",ev=>{
+  if(ev.key&&ev.key!==LS_KEY) return;
+  const before=JSON.stringify(moves);
+  moves=readMoves();
+  if(JSON.stringify(moves)===before) return;
+  try{ state=deckFrom(baseJson); render(); announce("Board updated in another tab."); }
+  catch(e){ console.warn("board: could not adopt another tab's state",e); }
+});
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refreshFromDisk(); });
 boot();
 </script>
 </body>
