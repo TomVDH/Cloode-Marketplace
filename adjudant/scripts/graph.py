@@ -291,11 +291,22 @@ def board_graph(
     # status's orphan accounting and board.html's UNFILED lane).
     orphans = [c for c in cards if str(c.get("column")) not in known_ids]
 
+    # An empty deck is named, not drawn blank. `{"columns": [], "cards": []}`
+    # is legal and reachable (reference/board.md invites hand-editing), and it
+    # used to leave a bare `flowchart LR` — which mermaid accepts and Obsidian
+    # renders as an empty box with nothing to say why. relations_graph names
+    # its own empty case; this says it the same way. It also means the lane
+    # count below is never zero, so the cap can divide by it safely.
+    if not columns and not orphans:
+        return "flowchart LR\n  empty[\"(empty deck: no columns, no cards)\"]\n"
+
     # PER-GROUP cap, not a running total. A cap that simply stopped at N cards
     # would empty the terminal lane completely, and the terminal lane is what a
-    # snapshot is usually read for. Every lane keeps at least one card.
+    # snapshot is usually read for. Every lane keeps at least one card: without
+    # that floor, a deck with more lanes than `max_nodes` reports every card as
+    # omitted and draws a full board as an empty one.
     n_groups = len(grouped) + (1 if orphans else 0)
-    per_group = max(1, max_nodes // n_groups) if n_groups else max_nodes
+    per_group = max(1, max_nodes // n_groups)
     omitted = sum(max(0, len(g) - per_group) for g in (*grouped, orphans))
     if stats is not None:
         stats.update(total=len(cards), omitted=omitted)

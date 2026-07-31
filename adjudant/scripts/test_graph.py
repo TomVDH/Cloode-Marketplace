@@ -321,6 +321,34 @@ class TestBoardCapAndStyling(unittest.TestCase):
             self.assertLessEqual(len(self._card_nodes(g)), 10)
             self.assertIn("classDef orphan", g)
 
+    def test_every_lane_keeps_one_card_when_lanes_outnumber_the_cap(self):
+        # 8 lanes at --max-nodes 4 makes per-lane share 4 // 8 == 0. Without
+        # the floor of one, the snapshot comes back as eight named but empty
+        # lanes with every card counted as omitted: a diagram that says the
+        # board is empty when it is full.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._deck(Path(tmp).resolve(), 40, n_cols=8)
+            g = board_graph(root, max_nodes=4)
+            for i in range(8):
+                lane = g.split(f"subgraph col{i}[")[1].split("  end")[0]
+                self.assertTrue(self._card_nodes(lane), f"lane {i} lost every card")
+
+    def test_an_empty_deck_is_a_named_diagram_not_a_traceback(self):
+        # reference/board.md invites hand-editing board-data.json, so a deck
+        # with no columns AND no cards is reachable. It used to divide the cap
+        # by a lane count of zero. It must come back as a diagram that says it
+        # is empty, the way relations mode names its own empty case.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            _write(root / "board" / "board-data.json",
+                   json.dumps({"columns": [], "cards": []}))
+            rc, so, err = _run_cli(["--mode", "board", "--project-dir", str(root)])
+            self.assertEqual(rc, 0, err)
+            self.assertNotIn("Traceback", err)
+            self.assertIn("empty deck", so)
+            self.assertNotIn('""', so)          # even the placeholder is quoted
+
     def test_an_uncapped_deck_is_emitted_whole_with_no_omission_note(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._deck(Path(tmp).resolve(), 8)
@@ -351,6 +379,77 @@ class TestTiersAndFence(unittest.TestCase):
         block = fenced("flowchart LR\n  a --> b\n")
         self.assertTrue(block.startswith("```mermaid\n"))
         self.assertTrue(block.endswith("```\n"))
+
+
+class TestCliModeDispatch(unittest.TestCase):
+    """Each `--mode` is its own path through cli_main. `tiers` takes an early
+    branch that must never need a project; `relations` and `board` must both
+    resolve one through the breadcrumb first, and resolve it to the VAULT
+    project rather than to the code repo they were pointed at."""
+
+    def test_tiers_prints_a_fence_with_no_project_at_all(self):
+        # A bare code repo: the same fixture that makes relations exit 1.
+        # tiers is static, so it is the one mode that still works there, and
+        # draw.md says so. Routing it through the resolver would make that
+        # documented claim false.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "pyproject.toml").write_text("[project]\nname='x'\n")
+            rc, so, err = _run_cli(["--mode", "tiers", "--project-dir", str(root)])
+            self.assertEqual(rc, 0, err)
+            self.assertTrue(so.startswith("```mermaid\n"))
+            self.assertTrue(so.endswith("```\n"))
+            self.assertIn("stateDiagram-v2", so)
+            self.assertNotIn("error:", err)
+
+    def test_relations_follows_the_breadcrumb_to_the_vault_project(self):
+        # --project-dir names the CODE repo; the graph must be of the vault
+        # project the breadcrumb resolves to. Walking the code repo instead
+        # would emit an empty graph and still exit 0.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, vault = _linked_project(Path(tmp).resolve())
+            _write(vault / "projects" / "demo" / "notes" / "idea.md",
+                   "---\ntype: note\n---\n# Idea\n\nBack to [[brief]].\n")
+            rc, so, err = _run_cli(["--mode", "relations", "--project-dir", str(code)])
+            self.assertEqual(rc, 0, err)
+            self.assertTrue(so.startswith("```mermaid\n"))
+            self.assertIn('"brief"', so)
+            self.assertIn('"idea"', so)
+            self.assertNotIn("no vault files found", so)
+
+
+class TestCliFlagPlumbing(unittest.TestCase):
+    """Flags whose only job is to reach a graph builder. Each is a branch of
+    cli_main, and an unexercised cli_main branch is exactly where the --out
+    file-destroying bug lived."""
+
+    def test_include_legacy_is_off_by_default_and_on_when_asked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            _write(root / "_legacy" / "old-note.md", "---\ntype: note\n---\n# Old\n")
+            rc, plain, err = _run_cli(["--mode", "relations", "--project-dir", str(root)])
+            self.assertEqual(rc, 0, err)
+            self.assertNotIn("old-note", plain)
+            rc, widened, err = _run_cli(
+                ["--mode", "relations", "--project-dir", str(root), "--include-legacy"])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("old-note", widened)
+
+    def test_board_data_reads_a_deck_outside_the_default_location(self):
+        # No board/board-data.json exists here, so an ignored --board-data
+        # would exit 1 on a missing deck rather than draw the one named.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            deck = {"columns": [{"id": "b", "name": "Backlog"}],
+                    "cards": [{"id": "T-7", "title": "elsewhere", "column": "b"}]}
+            _write(root / "decks" / "snapshot.json", json.dumps(deck))
+            rc, so, err = _run_cli(
+                ["--mode", "board", "--project-dir", str(root),
+                 "--board-data", str(root / "decks" / "snapshot.json")])
+            self.assertEqual(rc, 0, err)
+            self.assertIn('"T-7 · elsewhere"', so)
 
 
 class TestCliErrorHandling(unittest.TestCase):
@@ -445,7 +544,7 @@ class TestTruncationIsVisible(unittest.TestCase):
             self.assertEqual(rc, 0, err)
             self.assertIn("36 of 41", err)         # 40 leaves + the brief
             self.assertIn("--max-nodes 5", err)
-            self.assertIn("omitted", err)
+            self.assertIn("file(s) omitted", err)   # files here, cards in board mode
             self.assertIn("%%", so)                # the in-fence note stays
 
     def test_relations_truncation_is_reported_in_out_mode_too(self):
@@ -614,6 +713,19 @@ class TestOutGuards(unittest.TestCase):
             out = root / "deep" / "nested" / "tiers.md"
             rc, _so, err = _run_cli(
                 ["--mode", "tiers", "--project-dir", str(root), "--out", str(out)])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("stateDiagram-v2", out.read_text())
+
+    def test_tiers_out_may_land_in_the_resolved_vault_project_too(self):
+        # tiers needs no project, and a resolution failure there stays
+        # non-fatal — but when one DOES resolve it is a legitimate --out
+        # destination (draw.md: the tiers fence belongs in a brief or a doc).
+        # Skipping the best-effort resolve would refuse this write.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, vault = _linked_project(Path(tmp).resolve())
+            out = vault / "projects" / "demo" / "docs" / "tiers.md"
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(code), "--out", str(out)])
             self.assertEqual(rc, 0, err)
             self.assertIn("stateDiagram-v2", out.read_text())
 
