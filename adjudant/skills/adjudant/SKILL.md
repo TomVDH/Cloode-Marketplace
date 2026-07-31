@@ -1,7 +1,7 @@
 ---
 name: adjudant
 description: Operate an Obsidian vault from a code project. `/adjudant {connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf}` — project init and migration, schema-enforced writes, three-tier cleanup (tidy/ramasse/dream), read-only status (check) and orientation (sitrep), diagrams and canvases (draw), a self-hosted kanban board, and lifecycle transitions (shelf). Also fires whenever decisions, sessions, or notes are written into a linked vault.
-version: 0.19.0
+version: 0.20.0
 user-invocable: true
 argument-hint: "[connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf] [args]"
 license: MIT
@@ -19,7 +19,7 @@ Vault editor/writer and project initializer. One skill, one command, eleven verb
 | `port` | `reference/port.md` | Migrate any legacy project (raw / obsidian-bridge / hand-authored) to adjudant compliance via two-phase preview → apply |
 | `sync` | `reference/sync.md` | Push brief + handoff to vault |
 | `check` | `reference/check.md` | Read-only project + vault summary (consumes `check.py` JSON). `[vault\|repo\|all]` also audits repo structure — versions, symlinks, registration, stale plans — via `repo_scan.py` |
-| `sitrep` | `reference/sitrep.md` | ELI5 orientation briefing — where we were, what's done, where the vault is, where to start. Read-only (consumes `sitrep.py` JSON). For re-orienting after a break |
+| `sitrep` | `reference/sitrep.md` | ELI5 orientation briefing — where we were, what's done, where the vault is, where to start, **plus the workbench**: git branch/HEAD/uncommitted count, and whether the dev servers declared in `.claude/launch.json` are up. Read-only (consumes `sitrep.py` JSON). For re-orienting after a break |
 | `tidy` | `reference/tidy.md` | Surface mechanical sweep — indexes, tags, wikilink form, `updated:`, frontmatter schema strip/migrate. Routine cadence. Two-phase preview→apply (via `tidy.py`). `[vault\|repo\|all]` also repairs adopted-plugin harness symlinks via `repo_tidy.py` |
 | `ramasse` | `reference/ramasse.md` | Deep structural clean — folder shape, schema, file types, naming, doc/decision mismatches. Sparing cadence. Analysis via `ramasse_scan.py`, planning + execute via superpowers |
 | `dream` | `reference/dream.md` | Content/knowledge/memory refresh — semantic, judgment-heavy. `dream.py` (read-only) emits a 10-category comparator catalog (staleness, supersession, contradictions, redundancy, stale refs, orphans, unacted decisions, gaps, dangling scopes); Claude judges, superpowers executes |
