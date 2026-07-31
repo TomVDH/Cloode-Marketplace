@@ -106,6 +106,29 @@ the brief is needed and `ramasse` never flags them as drift. Reserve the brief's
   exit non-zero, nothing written
 - `graph.py --out` at a path that already exists, without `--force` → exit
   non-zero, nothing written and no backup spent
+- A malformed `.canvas` or `.base` → **nothing in adjudant catches it.** The
+  write succeeds and the break surfaces later, in Obsidian. See below.
+
+### Shape checking: the gap, stated plainly
+
+No helper parses a written `.canvas` or `.base`. The PreToolUse schema gate
+judges markdown frontmatter and passes a `.canvas` through untouched, `ramasse`
+checks the *filename* only, and validator 32 (`base-dashboards`) covers the four
+shipped `templates/bases/dashboard-*.base` files, which are not the ones draw
+writes. So a trailing comma in a canvas, or an edge whose `fromNode` names no
+node, is written, is indexed as a real link target by the vault walkers, and
+then fails to open in Obsidian. The user finds it, not the verb.
+
+Close that at authoring time, since there is no check afterwards:
+
+- `.canvas` → run the parse `content-canvas.md` already prescribes:
+  `python3 -c "import json; json.load(open('user-flow.canvas'))"`. Then confirm
+  each edge's `fromNode` and `toNode` matches a node `id`. This is the only
+  parse the file gets before Obsidian opens it.
+- `.base` → open it in Obsidian. adjudant is stdlib-only and ships no YAML
+  parser, so there is no equivalent one-liner. `content-bases.md` step 5 lists
+  the quoting traps behind most YAML errors, and the four shipped dashboards are
+  working examples to copy a shape from.
 
 ## What draw does NOT do
 
