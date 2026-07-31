@@ -154,6 +154,20 @@ on the last stdout line:
 | `created` | first real task note found, no deck yet: board born via the scaffold path |
 | `reseeded` | deck existed and the clobber-safe `--from-tasks` merge changed it |
 | `no-change` | merge would change nothing; deck untouched, mtime included (no sync churn) |
+| `html-refreshed` | only board.html was stale (template drift or vanished page); deck untouched |
+
+### Kanban surface (v0.23.0)
+
+`scaffold --kanban` also writes `board/kanban.md` in the de-facto
+obsidian-kanban format (`kanban-plugin: board` frontmatter, `##` lanes,
+`- [ ]` cards), so the same deck renders as a native drag-drop board inside
+Obsidian. Born only by the flag; refreshed by every scaffold/ensure once it
+exists. The plugin's own state — the `%% kanban:settings %%` block, the
+`## Archive` section, any other `%% %%` comment block — survives every
+rewrite byte-for-byte. Drags made in Obsidian read back on the next reseed
+when `kanban.md` is newer than the deck (unknown lanes keep the deck column;
+archived cards never count); the deck stays the single truth. After each
+kanban write the scaffold prints an `obsidian://open` URI for the file.
 
 Projects that never grow tasks never grow board files. Passive surfaces that
 keep the board current without being asked:

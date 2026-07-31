@@ -40,6 +40,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -1156,6 +1157,13 @@ def _validate_epistemic(fields: dict) -> list[dict]:
         bad.append({"field": "valid_until", "value": window["valid_until"],
                     "reason": "valid_from is after valid_until"})
     return bad
+
+
+def obsidian_cli_path() -> Optional[str]:
+    """Absolute path of the official Obsidian CLI, or None. A capability
+    probe only - adjudant prefers app-level operations when the CLI exists
+    but never depends on it (tranche 2C)."""
+    return shutil.which("obsidian")
 
 
 def _wikilink_stem(value: Any) -> Optional[str]:

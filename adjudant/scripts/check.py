@@ -23,9 +23,9 @@ from typing import Any, Optional
 from _cost import breadcrumb_int, cost_block, read_threshold, stat_walk
 from _handoff_freshness import compute_freshness, latest_session_file
 from _vault_walk import (
-    DEFAULT_STALE_DAYS, freshness_report, parse_frontmatter, resolve_vault,
-    schema_drift, smart_project_dir, suggest_status, walk_project,
-    zone_matches_status, zone_of, VaultUnresolvableError,
+    DEFAULT_STALE_DAYS, freshness_report, obsidian_cli_path, parse_frontmatter,
+    resolve_vault, schema_drift, smart_project_dir, suggest_status,
+    walk_project, zone_matches_status, zone_of, VaultUnresolvableError,
 )
 
 # Task-status alias set for schema_drift's normalizable flag (import
@@ -266,6 +266,7 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
         "status": status,
         "schema": schema_drift(files, _TASK_ALIASES),
         "freshness": freshness_report(files, today or date.today()),
+        "environment": {"obsidian_cli": obsidian_cli_path() is not None},
     }
 
 

@@ -74,6 +74,7 @@ JSON output shape (top-level keys):
   `dangling_supersession` (`superseded_by` target resolves to no file),
   `dated_unbounded` (`freshness: dated` with no validity window), `counts`
   (adoption per field). Vault-standards section 10 owns the vocabulary
+- `environment` — capability probes: `obsidian_cli` (official CLI on PATH)
 
 ## Render
 

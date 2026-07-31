@@ -1246,5 +1246,169 @@ class TestTemplateDriftReemit(unittest.TestCase):
             self.assertTrue(html_path.is_file())
 
 
+KANBAN_DECK = {
+    "title": "Demo",
+    "columns": [{"id": "backlog", "name": "Backlog"},
+                {"id": "doing", "name": "Doing"},
+                {"id": "done", "name": "Done"}],
+    "cards": [
+        {"id": "T-1", "title": "First task", "column": "backlog"},
+        {"id": "T-2", "title": "Ship it", "column": "done"},
+        {"id": "T-3", "title": "In flight", "column": "doing"},
+    ],
+}
+
+
+class TestKanbanRender(unittest.TestCase):
+    """Tranche 2A: the deck renders in the de-facto obsidian-kanban format,
+    and the plugin's own state in an existing file survives every rewrite."""
+
+    def test_render_shape(self):
+        import board
+        md = board.render_kanban(KANBAN_DECK)
+        self.assertTrue(md.startswith("---\nkanban-plugin: board\n---\n"))
+        # Lanes in deck order
+        b = md.index("## Backlog"); d = md.index("## Doing"); n = md.index("## Done")
+        self.assertTrue(b < d < n)
+        self.assertIn("- [ ] **T-1** First task", md)
+        self.assertIn("- [ ] **T-3** In flight", md)
+        # done lane cards are checked
+        self.assertIn("- [x] **T-2** Ship it", md)
+
+    def test_settings_archive_and_unknown_blocks_preserved(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "kanban.md"
+            settings = "%% kanban:settings\n```\n{\"kanban-plugin\":\"board\",\"lane-width\":300}\n```\n%%"
+            archive = "***\n\n## Archive\n\n- [x] **OLD-1** ancient history\n"
+            unknown = "%% my-other-plugin\nstate the plugin owns\n%%"
+            path.write_text("---\nkanban-plugin: board\n---\n\n## Backlog\n\n- [ ] **T-1** stale\n\n"
+                            + archive + "\n" + unknown + "\n" + settings + "\n")
+            board.write_kanban(KANBAN_DECK, path)
+            out = path.read_text()
+            self.assertIn(settings, out)
+            self.assertIn(unknown, out)
+            self.assertIn("## Archive\n\n- [x] **OLD-1** ancient history", out)
+            # lanes regenerated from the deck, stale card gone from the lanes
+            self.assertIn("- [ ] **T-1** First task", out)
+            self.assertNotIn("**T-1** stale", out)
+
+    def test_fresh_write_has_no_preserved_sections(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "kanban.md"
+            board.write_kanban(KANBAN_DECK, path)
+            out = path.read_text()
+            self.assertNotIn("%% kanban:settings", out)
+            self.assertNotIn("## Archive", out)
+
+
+class TestKanbanLifecycle(unittest.TestCase):
+    """Tranche 2A: born explicitly, refreshed ambiently, read back gated on
+    mtime - the kanban file is a peer drag surface, never a second truth."""
+
+    def _seeded(self, tmp: Path, *, kanban: bool = False) -> Path:
+        project = _make_project(tmp, "demo")
+        _write(project / "tasks" / "t-01.md",
+               "---\ncode: T-01\nstatus: todo\n---\n\n# First task\n")
+        if kanban:
+            rc, _ = _scaffold(project, project / "board", from_tasks=True,
+                              data=None, force=False, title=None,
+                              board_id=None, kanban=True)
+            self.assertEqual(rc, 0)
+        else:
+            self.assertEqual(_ensure(project), "created")
+        return project
+
+    def test_kanban_born_only_with_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp))
+            self.assertFalse((project / "board" / "kanban.md").exists())
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp), kanban=True)
+            kb = project / "board" / "kanban.md"
+            self.assertTrue(kb.is_file())
+            self.assertIn("**T-01** First task", kb.read_text())
+
+    def test_ambient_reseed_refreshes_existing_kanban(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp), kanban=True)
+            _write(project / "tasks" / "t-02.md",
+                   "---\ncode: T-02\nstatus: doing\n---\n\n# Second task\n")
+            self.assertEqual(_ensure(project), "reseeded")
+            self.assertIn("**T-02** Second task",
+                          (project / "board" / "kanban.md").read_text())
+
+    def test_kanban_drag_reads_back_when_newer(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp), kanban=True)
+            kb = project / "board" / "kanban.md"
+            deck_path = project / "board" / "board-data.json"
+            # Simulate an Obsidian drag: move T-01 from Backlog to Doing
+            text = kb.read_text()
+            text = text.replace("- [ ] **T-01** First task\n", "")
+            text = text.replace("## Doing\n", "## Doing\n\n- [ ] **T-01** First task\n")
+            kb.write_text(text)
+            future = deck_path.stat().st_mtime + 60
+            os.utime(kb, (future, future))
+            self.assertEqual(_ensure(project), "reseeded")
+            deck = json.loads(deck_path.read_text())
+            card = [c for c in deck["cards"] if c["id"] == "T-01"][0]
+            self.assertEqual(card["column"], "doing")
+
+    def test_kanban_older_than_deck_is_ignored(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp), kanban=True)
+            kb = project / "board" / "kanban.md"
+            deck_path = project / "board" / "board-data.json"
+            text = kb.read_text().replace(
+                "- [ ] **T-01** First task\n", "")
+            kb.write_text(text.replace("## Doing\n",
+                                       "## Doing\n\n- [ ] **T-01** First task\n"))
+            past = deck_path.stat().st_mtime - 60
+            os.utime(kb, (past, past))
+            self.assertEqual(_ensure(project), "no-change")
+            deck = json.loads(deck_path.read_text())
+            card = [c for c in deck["cards"] if c["id"] == "T-01"][0]
+            self.assertEqual(card["column"], "backlog")
+
+    def test_archived_cards_never_count_as_placement(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            kb = Path(tmp) / "kanban.md"
+            kb.write_text("---\nkanban-plugin: board\n---\n\n## Backlog\n\n"
+                          "- [ ] **T-1** live\n\n***\n\n## Archive\n\n"
+                          "- [x] **T-9** buried\n")
+            got = board.read_kanban_placement(kb)
+            self.assertEqual(got, {"T-1": "Backlog"})
+
+    def test_malformed_kanban_is_skipped(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            kb = Path(tmp) / "kanban.md"
+            kb.write_bytes(b"\xff\xfe not text")
+            self.assertEqual(board.read_kanban_placement(kb), {})
+
+    def test_kanban_write_prints_obsidian_uri(self):
+        # Tranche 2C: the affordance is a printed obsidian:// URI, vault-name
+        # + vault-relative path, URL-encoded. Print-only, nothing opens.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp) / "My Vault"
+            project = vault / "projects" / "demo"
+            (project / "tasks").mkdir(parents=True)
+            _write(project / "tasks" / "t-01.md",
+                   "---\ncode: T-01\nstatus: todo\n---\n\n# First\n")
+            _write(project / "brief.md",
+                   "---\ntype: project\nproject_type: coding\n---\n# demo\n")
+            rc, err = _scaffold(project, project / "board", from_tasks=True,
+                                data=None, force=False, title=None,
+                                board_id=None, vault_root=vault, kanban=True)
+            self.assertEqual(rc, 0)
+            self.assertIn("obsidian://open?vault=My%20Vault"
+                          "&file=projects%2Fdemo%2Fboard%2Fkanban.md", err)
+
+
 if __name__ == "__main__":
     unittest.main()

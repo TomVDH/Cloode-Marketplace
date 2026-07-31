@@ -807,5 +807,42 @@ class TestZoneAwareReconnect(unittest.TestCase):
             self.assertEqual(summary["project_type"], "plugin")
 
 
+class TestProvisionDashboards(unittest.TestCase):
+    """Tranche 2B: connect provisions the four .base dashboards into
+    {project}/bases/, write-if-absent, slug templated, edits never clobbered."""
+
+    def _connect(self, root: Path, vault: Path) -> dict:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = connect_cli([
+                "--project-root", str(root), "--vault-path", str(vault),
+                "--slug", "proj", "--project-type", "coding"])
+        assert rc == 0, buf.getvalue()
+        return json.loads(buf.getvalue())
+
+    def test_dashboards_written_with_slug_templated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); vault = root / "vault"; vault.mkdir()
+            self._connect(root, vault)
+            bases = vault / "projects" / "proj" / "bases"
+            names = sorted(p.name for p in bases.glob("dashboard-*.base"))
+            self.assertEqual(names, ["dashboard-decisions.base",
+                                     "dashboard-freshness.base",
+                                     "dashboard-sessions.base",
+                                     "dashboard-tasks.base"])
+            text = (bases / "dashboard-sessions.base").read_text()
+            self.assertIn('file.inFolder("projects/proj/sessions")', text)
+            self.assertNotIn("{slug}", text)
+
+    def test_edited_dashboard_never_clobbered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); vault = root / "vault"; vault.mkdir()
+            self._connect(root, vault)
+            target = vault / "projects" / "proj" / "bases" / "dashboard-tasks.base"
+            target.write_text("filters: 'status == \"done\"'\n# my edit\n")
+            self._connect(root, vault)   # idempotent re-run
+            self.assertIn("# my edit", target.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

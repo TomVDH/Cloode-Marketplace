@@ -1670,6 +1670,35 @@ class TestFreshnessReport(unittest.TestCase):
             self.assertEqual(rep["dangling_supersession"], [])
 
 
+class TestObsidianCliProbe(unittest.TestCase):
+    """Tranche 2C: capability probe only - never a wrapper."""
+
+    def test_probe_finds_binary_on_path(self):
+        import os
+        from _vault_walk import obsidian_cli_path
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "obsidian"
+            fake.write_text("#!/bin/sh\nexit 0\n")
+            fake.chmod(0o755)
+            before = os.environ.get("PATH", "")
+            os.environ["PATH"] = tmp
+            try:
+                self.assertEqual(obsidian_cli_path(), str(fake))
+            finally:
+                os.environ["PATH"] = before
+
+    def test_probe_absent_is_none(self):
+        import os
+        from _vault_walk import obsidian_cli_path
+        with tempfile.TemporaryDirectory() as tmp:
+            before = os.environ.get("PATH", "")
+            os.environ["PATH"] = tmp
+            try:
+                self.assertIsNone(obsidian_cli_path())
+            finally:
+                os.environ["PATH"] = before
+
+
 class TestScratchSkip(unittest.TestCase):
     """Finding 31: a project `scratch/` dir was walked like content, so junk
     working files skewed counts and the cost estimator."""

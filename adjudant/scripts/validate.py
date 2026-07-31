@@ -35,8 +35,9 @@ Validators:
  29. template-schema-parity       : every registered template's frontmatter keys cover its type's required set and stay inside required | optional
  30. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
  31. freshness-vocabulary         : FRESHNESS_VALUES, the epistemic optional sets, and vault-standards section 10 agree
+ 32. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
 
-31 validators total.
+32 validators total.
 """
 
 import json
@@ -710,6 +711,67 @@ def validate_status_vocabulary(r: Result) -> None:
     r.add_pass(name)
 
 
+_BASE_TOP_KEYS = {"filters", "formulas", "properties", "summaries", "views"}
+_BASE_BARE_PROP_RE = re.compile(r"(?m)^\s+-\s+([a-z_][\w.]*)\s*$")
+_BASE_GROUPBY_PROP_RE = re.compile(r"(?m)^\s+property:\s*([\w.]+)\s*$")
+
+
+def _base_template_problems(text: str, legal_props: set) -> list[str]:
+    """Structural problems in a shipped .base dashboard template.
+
+    Regex-level (stdlib rule: no YAML dependency): known top-level keys,
+    filters + views present, and every bare property referenced in an
+    order/groupBy/sort position is a FIELD_SCHEMA field, a `file.*`
+    builtin, or a declared `formula.*` - so a schema rename can never
+    silently orphan a dashboard column."""
+    problems: list[str] = []
+    if "filters" not in text:
+        problems.append("no filters block")
+    if "views:" not in text:
+        problems.append("no views block")
+    for m in re.finditer(r"(?m)^([A-Za-z_][\w-]*):", text):
+        if m.group(1) not in _BASE_TOP_KEYS:
+            problems.append(f"unknown top-level key {m.group(1)!r}")
+    declared_formulas = set(re.findall(r"(?m)^\s{2}([\w-]+):", text)) if "formulas:" in text else set()
+    refs = [m.group(1) for m in _BASE_BARE_PROP_RE.finditer(text)]
+    refs += [m.group(1) for m in _BASE_GROUPBY_PROP_RE.finditer(text)]
+    for prop in refs:
+        if prop.startswith("file."):
+            continue
+        if prop.startswith("formula."):
+            if prop.split(".", 1)[1] not in declared_formulas:
+                problems.append(f"undeclared formula {prop!r}")
+            continue
+        if prop not in legal_props:
+            problems.append(f"property {prop!r} is not a FIELD_SCHEMA field")
+    return problems
+
+
+def validate_base_dashboards(r: Result) -> None:
+    """32. base-dashboards — every shipped .base dashboard template is
+    structurally sound and references only schema-legal properties."""
+    name = "base-dashboards"
+    src = TEMPLATES / "bases"
+    if not src.is_dir():
+        r.add_fail(name, "templates/bases/ missing")
+        return
+    files = sorted(src.glob("dashboard-*.base"))
+    expected = {"dashboard-sessions.base", "dashboard-decisions.base",
+                "dashboard-tasks.base", "dashboard-freshness.base"}
+    if {f.name for f in files} != expected:
+        r.add_fail(name, f"expected {sorted(expected)}, found {[f.name for f in files]}")
+        return
+    legal: set = set()
+    for spec in FIELD_SCHEMA.values():
+        legal |= spec["required"] | spec["optional"]
+    for f in files:
+        problems = _base_template_problems(f.read_text(), legal)
+        if problems:
+            r.add_fail(name, f"{f.name}: {problems[0]}")
+            return
+    r.add_pass(name)
+
+
 def validate_freshness_vocabulary(r: Result) -> None:
     """31. freshness-vocabulary — _vault_walk.FRESHNESS_VALUES, the epistemic
     optional sets, and vault-standards section 10 agree on the truth-lifetime
@@ -1087,6 +1149,7 @@ def main() -> int:
     validate_template_schema_parity(r)
     validate_hook_zone_awareness(r)
     validate_freshness_vocabulary(r)
+    validate_base_dashboards(r)
     return r.report()
 
 

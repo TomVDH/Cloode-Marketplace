@@ -524,6 +524,29 @@ def write_session_note(
 # ============================================================
 
 
+def provision_dashboards(proj_dir: Path, slug: str) -> str:
+    """Install the shipped .base dashboards into {project}/bases/.
+
+    Write-if-absent per file: connect is idempotent, and a dashboard the
+    human edited must never be clobbered. `{slug}` in the templates becomes
+    the real slug so the base scopes to this project only. Returns
+    "provisioned" (any file written), "present" (all already there), or
+    "no-templates" (plugin install missing the folder - degrade quietly)."""
+    src = TEMPLATES / "bases"
+    if not src.is_dir():
+        return "no-templates"
+    dest = proj_dir / "bases"
+    wrote = False
+    for tpl in sorted(src.glob("dashboard-*.base")):
+        target = dest / tpl.name
+        if target.exists():
+            continue
+        dest.mkdir(parents=True, exist_ok=True)
+        target.write_text(tpl.read_text().replace("{slug}", slug))
+        wrote = True
+    return "provisioned" if wrote else "present"
+
+
 def append_gitignore(project_root: Path) -> str:
     """Add `.claude/adjudant` to .gitignore (idempotent). Returns 'added' / 'preserved'."""
     gi = project_root / ".gitignore"
@@ -752,6 +775,10 @@ def run_connect(
 
     # Step 5
     summary["steps"]["gitignore"] = append_gitignore(project_root)
+
+    # Step 5b: .base dashboards (tranche 2B) - write-if-absent, so an edited
+    # dashboard is never clobbered by an idempotent re-run.
+    summary["steps"]["base_dashboards"] = provision_dashboards(proj_dir, slug)
 
     # Step 6
     decisions_n = count_non_index_files(proj_dir / "decisions")

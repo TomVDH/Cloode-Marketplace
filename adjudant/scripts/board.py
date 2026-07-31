@@ -21,6 +21,7 @@ CLI:
     python3 board.py scaffold [--project-dir PATH | --project SLUG | --all]
                               [--vault PATH] [--dest DIR] [--from-tasks]
                               [--data board-data.json] [--title STR] [--force]
+                              [--kanban]
     python3 board.py serve --dir DIR [--port 8787] [--open]
     python3 board.py status [--project-dir PATH | --project SLUG | --all]
     python3 board.py --ensure [--project-dir PATH]
@@ -331,6 +332,127 @@ def merge_deck(existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any
     return out
 
 
+KANBAN_FILE = "kanban.md"
+
+
+def render_kanban(deck: dict[str, Any]) -> str:
+    """The deck in de-facto obsidian-kanban markdown: lanes as `## {name}`
+    headings in deck column order, cards as `- [ ] **{id}** {title}` with the
+    `done` lane checked. One file, two renderers: this one is Obsidian's."""
+    parts = ["---\nkanban-plugin: board\n---\n"]
+    for col in deck.get("columns", []):
+        cid = col.get("id")
+        parts.append(f"\n## {col.get('name') or cid}\n\n")
+        mark = "x" if cid == "done" else " "
+        for c in deck.get("cards", []):
+            if c.get("column") != cid:
+                continue
+            title = str(c.get("title") or "").strip()
+            parts.append(f"- [{mark}] **{c.get('id')}** {title}\n")
+    return "".join(parts)
+
+
+def _kanban_preserved_tail(text: str) -> str:
+    """Everything the kanban PLUGIN owns in an existing file, verbatim: the
+    `## Archive` section (introduced by its `***` rule) and every line-start
+    `%% … %%` comment block (settings or any other plugin's state). The
+    never-destroy-plugin-state rule: adjudant regenerates lanes, nothing else.
+    """
+    starts = []
+    m = re.search(r"(?ms)^\*\*\*[ \t]*\n\s*## Archive\b", text)
+    if m:
+        starts.append(m.start())
+    q = re.search(r"(?m)^%%", text)
+    if q:
+        starts.append(q.start())
+    if not starts:
+        return ""
+    return text[min(starts):]
+
+
+def read_kanban_placement(path: Path) -> dict[str, str]:
+    """{card_id: lane_heading} from a kanban file's LIVE lanes only.
+
+    Parsing stops at the preserved tail (`***` rule or a `%%` block), so
+    archived cards never count as placement. Malformed or undecodable files
+    read as empty - the deck stays the truth."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    placement: dict[str, str] = {}
+    lane: Optional[str] = None
+    for ln in text.splitlines():
+        if re.match(r"^\*\*\*[ \t]*$", ln) or ln.startswith("%%"):
+            break
+        m = re.match(r"^##\s+(.+?)\s*$", ln)
+        if m:
+            lane = m.group(1)
+            continue
+        m = re.match(r"^-\s*\[[ xX]\]\s*\*\*(.+?)\*\*", ln)
+        if m and lane is not None:
+            placement[m.group(1).strip()] = lane
+    return placement
+
+
+def _apply_kanban_placement(deck: dict[str, Any], kanban_path: Path,
+                            data_path: Path) -> dict[str, Any]:
+    """Fold a NEWER kanban file's drag state into the deck (a copy).
+
+    Gated on mtime: the kanban file only speaks for itself when it was
+    touched after the deck - two drag surfaces, last writer wins, exactly
+    the contract board.html's persisted columns already have. Lane headings
+    match columns by name then id, case-insensitive; an unknown lane keeps
+    the deck column."""
+    try:
+        if not kanban_path.is_file():
+            return deck
+        if kanban_path.stat().st_mtime <= data_path.stat().st_mtime:
+            return deck
+    except OSError:
+        return deck
+    placement = read_kanban_placement(kanban_path)
+    if not placement:
+        return deck
+    lane_to_col: dict[str, str] = {}
+    for col in deck.get("columns", []):
+        cid = str(col.get("id") or "")
+        if not cid:
+            continue
+        lane_to_col[cid.lower()] = cid
+        name = str(col.get("name") or "").strip()
+        if name:
+            lane_to_col[name.lower()] = cid
+    out = dict(deck)
+    out["cards"] = []
+    for c in deck.get("cards", []):
+        lane = placement.get(str(c.get("id")))
+        col = lane_to_col.get(lane.lower()) if lane else None
+        if col and col != c.get("column"):
+            c = dict(c)
+            c["column"] = col
+        out["cards"].append(c)
+    return out
+
+
+def write_kanban(deck: dict[str, Any], path: Path) -> None:
+    """Regenerate the kanban lanes from the deck, carrying an existing file's
+    preserved tail (archive + `%% %%` blocks) byte-for-byte. Atomic; callers
+    hold the deck lock so the three board surfaces cannot diverge."""
+    tail = ""
+    try:
+        if path.is_file():
+            tail = _kanban_preserved_tail(path.read_text())
+    except OSError:
+        tail = ""
+    out = render_kanban(deck)
+    if tail:
+        out = out.rstrip("\n") + "\n\n" + tail
+    if not out.endswith("\n"):
+        out += "\n"
+    atomic_write_text(path, out)
+
+
 _TEMPLATE_STAMP_PREFIX = "<!-- adjudant-template "
 
 
@@ -470,6 +592,7 @@ def scaffold_one(
     board_id: Optional[str],
     vault_root: Optional[Path] = None,
     dest_explicit: bool = False,
+    kanban: bool = False,
 ) -> int:
     """Scaffold a single board into ``dest``. Returns a process exit code.
 
@@ -553,7 +676,10 @@ def scaffold_one(
                 deck["title"] = title
         elif data_path.is_file() and not force:
             if from_tasks:
-                # refresh-without-clobber: merge current task state into the deck
+                # refresh-without-clobber: fold a newer kanban file's drag
+                # state in first, then merge current task state into the deck
+                existing = _apply_kanban_placement(
+                    existing, dest / KANBAN_FILE, data_path)
                 fresh = build_deck(project_dir, from_tasks=True, title=resolved_title, board_id=bid)
                 deck = merge_deck(existing, fresh)
             else:
@@ -578,6 +704,22 @@ def scaffold_one(
         # the deck and the board that embeds it cannot diverge.
         atomic_write_text(data_path, json.dumps(deck, indent=2) + "\n")
         atomic_write_text(dest / "board.html", html)
+        # Kanban surface: born on the explicit flag, refreshed whenever the
+        # file already exists - same birth/upkeep contract as board.html's
+        # template stamp. Same lock, so the three surfaces cannot diverge.
+        kb = dest / KANBAN_FILE
+        if kanban or kb.is_file():
+            write_kanban(deck, kb)
+            if vault_root is not None:
+                # The stable public way to open it in the app; print-only.
+                try:
+                    from urllib.parse import quote
+                    rel = kb.resolve().relative_to(Path(vault_root).resolve())
+                    print(f"[board] obsidian://open?vault="
+                          f"{quote(Path(vault_root).name, safe='')}"
+                          f"&file={quote(str(rel), safe='')}", file=sys.stderr)
+                except ValueError:
+                    pass
     print(f"[board] {dest}/board.html  ({len(deck.get('cards', []))} cards, {len(deck.get('columns', []))} stages)", file=sys.stderr)
     print(str(dest / "board.html"))
     return 0
@@ -631,11 +773,17 @@ def ensure_board(project_dir: Path, vault_dir: Optional[Path] = None) -> str:
     except (OSError, json.JSONDecodeError):
         existing = None
     if existing is not None:
-        # Mirror scaffold_one's title/board_id defaults exactly.
+        # Mirror scaffold_one's title/board_id defaults exactly - including
+        # the kanban drag fold. The no-change compare runs against the
+        # ON-DISK deck: comparing against the placement-applied copy would
+        # cancel the very difference a kanban-only drag introduces.
+        on_disk = existing
+        existing = _apply_kanban_placement(
+            existing, dest / KANBAN_FILE, data_path)
         fresh = build_deck(project_dir, from_tasks=True,
                            title=project_dir.name.replace("-", " ").title(),
                            board_id=project_dir.name)
-        if _same_deck(merge_deck(existing, fresh), existing):
+        if _same_deck(merge_deck(existing, fresh), on_disk):
             html_path = dest / "board.html"
             if _board_html_current(html_path):
                 return "no-change"
@@ -684,7 +832,7 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
             try:
                 if scaffold_one(pdir, pdir / "board", from_tasks=args.from_tasks,
                                 data=None, force=args.force, title=None, board_id=slug,
-                                vault_root=vault) == 0:
+                                vault_root=vault, kanban=args.kanban) == 0:
                     ok += 1
                 else:
                     rc = 1
@@ -706,7 +854,8 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
         dest = Path(args.dest).expanduser() if args.dest else (pdir / "board")
         rc = scaffold_one(pdir, dest, from_tasks=args.from_tasks, data=args.data,
                           force=args.force, title=args.title, board_id=args.project,
-                          vault_root=vault, dest_explicit=bool(args.dest))
+                          vault_root=vault, dest_explicit=bool(args.dest),
+                          kanban=args.kanban)
         if rc == 0:
             _serve_hint(dest)
         return rc
@@ -720,7 +869,8 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
     dest = Path(args.dest).expanduser() if args.dest else (project_dir / "board")
     rc = scaffold_one(project_dir, dest, from_tasks=args.from_tasks, data=args.data,
                       force=args.force, title=args.title, board_id=None,
-                      vault_root=vault_hint, dest_explicit=bool(args.dest))
+                      vault_root=vault_hint, dest_explicit=bool(args.dest),
+                      kanban=args.kanban)
     if rc == 0:
         _serve_hint(dest)
     return rc
@@ -877,6 +1027,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     sc.add_argument("--data", help="use this board-data.json as the deck (verbatim); not allowed with --all")
     sc.add_argument("--title", help="board title")
     sc.add_argument("--force", action="store_true", help="rebuild from tasks, discarding dragged card state")
+    sc.add_argument("--kanban", action="store_true", help="also write board/kanban.md (obsidian-kanban format; refreshed ambiently once born)")
     sc.set_defaults(func=cmd_scaffold)
 
     sv = sub.add_parser("serve", help="serve a board dir over localhost (so disk-save works)")

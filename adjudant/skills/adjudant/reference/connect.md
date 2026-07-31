@@ -35,6 +35,7 @@ connect never writes the key itself).
 3. **Vault scaffold** — create `{vault}/projects/{slug}/` with `brief.md` (from `templates/project-brief-{project_type}.md`), per-`project_type` default subfolders, `_index.md` per subfolder
 4. **Session note** — create today's `{vault}/projects/{slug}/sessions/{YYYY-MM-DD}.md` from `templates/session.md` with frontmatter filled in
 5. **Gitignore** — append `.claude/adjudant` to project `.gitignore` (create file if missing)
+6. **Base dashboards** — install `templates/bases/dashboard-*.base` into `{project}/bases/` with `{slug}` templated (sessions, decisions, tasks, freshness views). Write-if-absent: an edited dashboard is never clobbered by an idempotent re-run.
 
 Also: append project row to `{vault}/projects/_index.md`.
 
