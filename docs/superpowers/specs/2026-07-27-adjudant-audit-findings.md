@@ -324,6 +324,72 @@ Findings 6 and 7 fixed, tested, committed. 792 tests, 30 validators.
   requires both guards. Verified by deliberately reintroducing the bug and
   watching it fail.
 
+## Tier 4 status: closed 2026-07-31
+
+Finding 18 fully closed (the deck half landed in v0.19.0; the session-stamp
+half is now done), 23 closed by async. 1008 tests, 30 validators.
+
+- Finding 18: `_session_stamp` runs its whole read-modify-write under
+  `file_lock` with `atomic_write_text` — the same shared primitives the deck
+  adopted. The regression test spawns four real processes stamping eight
+  UUIDs each; the bare write_text path reproducibly lost 12 of 32.
+- Finding 23: the board refresh no longer runs inside anything that blocks —
+  vault-log (its host hook) is async (finding 21), and `ensure_board`
+  already skips writes on no-change. The deck-mtime debounce was
+  consciously NOT taken: post-async it would only save background CPU, and
+  a debounce marker is new state with its own staleness bugs. Revisit only
+  if iCloud materialization cost shows up in practice.
+
+## Tier 5 status: closed 2026-07-31
+
+Findings 19-22 and 24-31 fixed, tested, committed (20 was already closed
+under tier 1; the board id-collapse item of 31 landed with v0.19.0's
+merge_deck rewrite).
+
+- Finding 19: every latest-dated-note fallback (vault-log, commit-log,
+  postcompact, `_handoff_freshness.latest_session_file`) and
+  `newest_dated_stem` (via `not_after`) now bound to real calendar dates not
+  after today. A restored `2029-12-31.md` no longer absorbs appends, and
+  `days_quiet` can no longer go negative (-1250 in the fixture).
+- Finding 21: vault-log defers the `_vault_walk`/`_session_stamp` imports
+  behind the breadcrumb gate (`-X importtime` proves the unlinked no-op path
+  imports neither) and registers `async: true` like its PostToolUse siblings.
+- Finding 22: vault-log and precompact drain stdin before any early exit;
+  the regression tests write an 8 MB payload and fail on EPIPE.
+- Finding 24: `render_template` stamps a 16-hex template hash into
+  board.html; `ensure_board`'s no-change path re-emits html-only (deck and
+  its mtime untouched, verdict `html-refreshed`) when the stamp drifts or
+  the page vanished.
+- Finding 25: `_session_stamp` reads newline-untranslated (a CRLF file is
+  skipped byte-identical, never rewritten as LF) and catches decode and OS
+  errors inside the primitives per the safe-skip contract.
+- Finding 26: the `vault_name` fallback requires a vault marker
+  (`.obsidian/`, `projects/`, or a frontmatter vault-home `Home.md`). The
+  candidate ORDER was left alone: with the marker check a stale empty
+  directory can no longer capture, which was the harm.
+- Finding 27: a `status:` that is present-but-None, a list, or an empty
+  string now reports `status_invalid` like any bad enum value.
+- Finding 28: the Home.md walk-up parses frontmatter for
+  `type: vault-home`; prose mentioning the phrase no longer becomes a vault.
+- Finding 29: OB_VAULT rejects non-absolute paths after expanduser.
+- Finding 30: `parse_frontmatter` strips a UTF-8 BOM at entry, so BOM'd
+  notes rejoin the type inventory and schema checks.
+- Finding 31 (assorted): stamping refuses symlinked targets on direct calls;
+  a closing fence at EOF without trailing newline is stampable (the two
+  grammars re-converged); `_handoff_freshness` only counts times on
+  activity-shaped lines (markup-led, range headers yield their end time), so
+  "ratio 3:45" in prose no longer skews the banner; `board_bridge`
+  `read_ledger` keeps a falsy-but-real id of 0; user-prompt-reminder drops
+  bare `brief`/`decision` for phrase forms and sweeps day-old markers from
+  TMPDIR; `_session_stamp`'s docstring stops claiming connect.py stamps;
+  `scratch/` joined DEFAULT_SKIP. `_archive/` was consciously NOT added:
+  it names a project zone (`projects/_archive/`) the walkers must keep
+  seeing, and the parked archive verb introduces `archived-context/` for the
+  in-project case instead.
+- Test hygiene: the atomic-write reader test's anti-vacuity floor was
+  recalibrated (`>20` clean reads → `>=5` with triple the writer work); the
+  old floor was tuned to one machine's disk and flaked on faster hardware.
+
 ## Parked: archive verb decisions (locked with Tom, 2026-07-27)
 
 Brainstorm paused at the approaches step in favour of hardening first. Decided:
