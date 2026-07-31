@@ -50,10 +50,38 @@ CLASS_DEFS = {
 GROUP_FOLDERS = ("sessions", "dreams")
 
 
+EMPTY_LABEL = "(untitled)"
+
+
 def _q(label: str) -> str:
-    """Mermaid-safe quoted label: escaped quotes, no raw brackets/newlines."""
-    clean = label.replace('"', "'").replace("\n", " ").strip()
-    return f'"{clean}"'
+    """Mermaid-safe quoted label. Four separate hazards, one choke point:
+
+      &, <, >  entity-escaped per mermaid-generation-rules §2. Mermaid renders
+               flowchart labels as HTML (`flowchart.htmlLabels` defaults to
+               true and Obsidian keeps the default), so a card titled
+               `fix <br> handling` is not displayed — the renderer eats the
+               tag and the label reads `fix  handling` with a stray break.
+               `&` goes first or `<` would come back out as `&amp;lt;`.
+               board.py:495 escapes `<` for the same class of reason.
+      "        downgraded to `'`; a raw one closes the quoted label early.
+      \\r \\n    collapsed to a space. A card title is user-typed in
+               board.html, and a newline splits one node across two lines,
+               which terminates the surrounding ```mermaid fence early.
+      empty    replaced by a placeholder. Mermaid REFUSES to parse `n0[""]`,
+               and one empty label anywhere kills the whole fence, not just
+               its own node — so an empty column name or a card with no id
+               and no title takes the entire diagram down.
+    """
+    clean = (label
+             .replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "'")
+             .replace("\r\n", " ")
+             .replace("\n", " ")
+             .replace("\r", " ")
+             .strip())
+    return f'"{clean or EMPTY_LABEL}"'
 
 
 def _role(vf: VaultFile) -> str:

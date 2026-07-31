@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from graph import (
+    _q,
     board_graph,
     fenced,
     relations_graph,
@@ -16,6 +17,34 @@ from graph import (
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+
+
+class TestLabelSanitiser(unittest.TestCase):
+    """`_q` is the single choke point every label passes through. Each branch
+    gets its own assertion: the audit found the newline branch survived being
+    deleted because only the quote branch was ever exercised."""
+
+    def test_empty_label_falls_back_to_a_placeholder(self):
+        # mermaid refuses to parse `n0[""]`, and ONE such label kills the whole
+        # fence — not just that node.
+        for raw in ("", "   ", "\n", "\t \n"):
+            self.assertEqual(_q(raw), '"(untitled)"', f"empty label {raw!r}")
+
+    def test_angle_brackets_and_ampersands_are_entity_escaped(self):
+        # mermaid renders flowchart labels as HTML (htmlLabels defaults to
+        # true), so a raw `<br>` is consumed by the renderer instead of shown.
+        self.assertEqual(_q("fix <br> handling"), '"fix &lt;br&gt; handling"')
+        self.assertEqual(_q("a & b"), '"a &amp; b"')
+        # `&` escapes FIRST, or `<` would become `&amp;lt;`
+        self.assertEqual(_q("a <b> & c"), '"a &lt;b&gt; &amp; c"')
+
+    def test_newlines_collapse_so_a_label_stays_one_line(self):
+        self.assertEqual(_q("a\nb"), '"a b"')
+        self.assertEqual(_q("a\r\nb"), '"a b"')
+        self.assertEqual(_q("a\rb"), '"a b"')
+
+    def test_double_quotes_downgrade_to_single(self):
+        self.assertEqual(_q('say "hi"'), "\"say 'hi'\"")
 
 
 class TestRelations(unittest.TestCase):
@@ -69,7 +98,7 @@ class TestRelations(unittest.TestCase):
             root = Path(tmp)
             _write(root / 'a "quoted" name.md', "---\ntype: note\n---\n# Q\n")
             g = relations_graph(root)
-            self.assertNotIn('""', g.replace('[""]', ""))  # no broken quoting
+            self.assertNotIn('""', g)          # every label is non-empty
             self.assertIn("'quoted'", g)
 
     def test_empty_project(self):
@@ -161,6 +190,41 @@ class TestBoard(unittest.TestCase):
             self.assertIn('"T-1 · Here"', g)              # int column matched
             self.assertIn("orphaned", g)
             self.assertIn('"T-9 · Lost lane"', g)          # surfaced, not dropped
+
+    def test_empty_column_name_and_card_id_never_emit_an_empty_label(self):
+        # One `[""]` anywhere makes mermaid reject the ENTIRE fence.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            deck = {
+                "columns": [{"id": "wip", "name": ""}],
+                "cards": [{"id": "", "title": "", "column": "wip"}],
+            }
+            _write(root / "board" / "board-data.json", json.dumps(deck))
+            g = board_graph(root)
+            self.assertNotIn('""', g)
+            self.assertIn("(untitled)", g)
+
+    def test_card_title_with_a_newline_stays_on_one_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def _lines(title: str) -> int:
+                deck = {"columns": [{"id": "b", "name": "B"}],
+                        "cards": [{"id": "T-1", "title": title, "column": "b"}]}
+                _write(root / "board" / "board-data.json", json.dumps(deck))
+                return len(board_graph(root).splitlines())
+            # A newline in the title must not split the node onto two lines —
+            # that is what terminates the surrounding ```mermaid fence early.
+            self.assertEqual(_lines("fix\nthe widget"), _lines("fix the widget"))
+
+    def test_card_title_with_angle_brackets_is_escaped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            deck = {"columns": [{"id": "b", "name": "B"}],
+                    "cards": [{"id": "T-3", "title": "fix <br> handling", "column": "b"}]}
+            _write(root / "board" / "board-data.json", json.dumps(deck))
+            g = board_graph(root)
+            self.assertNotIn("<br>", g)
+            self.assertIn("&lt;br&gt;", g)
 
     def test_missing_deck_raises_with_hint(self):
         with tempfile.TemporaryDirectory() as tmp:
