@@ -21,7 +21,7 @@ Vault editor/writer and project initializer for Claude Code (and Gemini CLI). Su
 | Templates | 20 file-type scaffolds + `board.html` (self-hosted kanban) |
 | Python helpers | `_vault_walk.py` · `_handoff_freshness.py` · `_session_stamp.py` · `_cost.py` (primitives), `connect.py`, `port.py`, `sync.py`, `tidy.py`, `ramasse_scan.py`, `dream.py`, `board.py`, `board_bridge.py`, `graph.py`, `check.py`, `sitrep.py`, `shelf.py`; repo target: `repo_walk.py`, `repo_scan.py`, `repo_tidy.py` |
 | Drift defense | `python3 scripts/validate.py`: 30 validators, runs via pre-commit |
-| Tests | 1008 unit tests; `python3 -m unittest discover -p 'test_*.py'` |
+| Tests | 1080 unit tests; `python3 -m unittest discover -p 'test_*.py'` |
 | Context cost | `python3 scripts/token_budget.py`: per-surface token report, wired into `check repo` (report only, never fails a build) |
 
 ## The three-tier cleanup model (locked 2026-05-26)
