@@ -1,0 +1,1 @@
+/Users/tomlinson/Library/Mobile Documents/com~apple~CloudDocs/Projects/IDE/claude/hookify/git-safety.local.md

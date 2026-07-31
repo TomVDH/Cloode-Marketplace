@@ -1,0 +1,1 @@
+/Users/tomlinson/Library/Mobile Documents/com~apple~CloudDocs/Projects/IDE/claude/hookify/secret-scan.local.md
