@@ -53,8 +53,8 @@ The JSON catalog (the **comparator catalog**) carries ten categories:
 
 | Key | What it surfaces |
 |---|---|
-| `staleness_candidates` | Content-type files older than the threshold (`updated:`/`date:`/filename date) |
-| `supersession_signals` | Same-topic decision pairs, older likely superseded (+ whether already marked) |
+| `staleness_candidates` | Content-type files older than the threshold (`updated:`/`date:`/filename date). Declared epistemic signals outrank the clock (vault-standards §10): `freshness: timeless` never appears here; an expired `valid_until` appears regardless of age, tagged `reason: declared validity expired` |
+| `supersession_signals` | Same-topic decision pairs, older likely superseded (+ whether already marked). Also `kind: dangling-pointer` entries: a frontmatter `superseded_by` whose target resolves to no file |
 | `contradiction_pairs` | Topically-overlapping files where a change/negation cue appears ("no longer", "switched from", "deprecated") |
 | `redundancy_clusters` | Near-duplicate notes/docs by token-set (Jaccard) similarity |
 | `stale_refs` | Refs that *resolve* but point to `_archive`/`_legacy` or old dated targets (broken links stay ramasse's job) |

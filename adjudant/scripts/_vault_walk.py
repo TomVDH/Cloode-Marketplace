@@ -870,12 +870,21 @@ _CONTENT_OPTIONAL: frozenset[str] = frozenset({
     "related", "title", "name", "description", "cssclasses",
 })
 
+# Epistemic freshness (v0.22.0, locked 2026-07-31): per-fact truth-lifetime
+# metadata, legal ONLY on the four content types (decision, note, doc,
+# source) — never on system shapes. Every stored fact is timeless, dated, or
+# a pointer; declared signals outrank heuristics in every tier.
+FRESHNESS_VALUES: tuple[str, ...] = ("timeless", "dated", "pointer")
+_EPISTEMIC_OPTIONAL: frozenset[str] = frozenset({
+    "freshness", "certainty", "validity_context", "valid_from", "valid_until",
+})
+
 FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     "decision": {
         "required": frozenset({"type", "status", "date", "tags"}),
         "optional": frozenset({"supersedes", "superseded_by",
                                "implemented_verified", "source_session"})
-                    | _CONTENT_OPTIONAL,
+                    | _CONTENT_OPTIONAL | _EPISTEMIC_OPTIONAL,
     },
     "session": {
         "required": frozenset({"type", "date", "started", "session_id", "tags"}),
@@ -883,12 +892,13 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     },
     "note": {
         "required": frozenset({"type", "created", "updated", "tags"}),
-        "optional": frozenset({"superseded_by", "source_session"}) | _CONTENT_OPTIONAL,
+        "optional": frozenset({"superseded_by", "source_session"})
+                    | _CONTENT_OPTIONAL | _EPISTEMIC_OPTIONAL,
     },
     "doc": {
         "required": frozenset({"type", "title", "updated", "tags"}),
         "optional": frozenset({"superseded_by", "source_session"})
-                    | (_CONTENT_OPTIONAL - {"title"}),
+                    | (_CONTENT_OPTIONAL - {"title"}) | _EPISTEMIC_OPTIONAL,
     },
     "handoff": {
         # session_id and future custom keys are legal here: the sync mirror
@@ -912,7 +922,7 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     "source": {
         "required": frozenset({"type", "title", "tags"}),
         "optional": frozenset({"author", "url", "medium", "year", "source_session"})
-                    | (_CONTENT_OPTIONAL - {"title"}),
+                    | (_CONTENT_OPTIONAL - {"title"}) | _EPISTEMIC_OPTIONAL,
     },
     "iteration": {
         "required": frozenset({"type", "identifier", "status", "date", "tags"}),
@@ -1109,6 +1119,97 @@ DECISION_STATUS_ALIASES: dict[str, str] = {
 }
 
 
+def _validate_epistemic(fields: dict) -> list[dict]:
+    """Malformed epistemic declarations, as [{field, value, reason}].
+
+    Presence is legal (the optional sets say where); this checks SHAPE:
+    freshness in enum, certainty an integer 1-5, valid_from/valid_until real
+    calendar dates, and the window not inverted. Semantics (expiry, dangling
+    supersession) live in freshness_report — drift is for what the write
+    gate should refuse."""
+    bad: list[dict] = []
+    if "freshness" in fields:
+        v = fields["freshness"]
+        if not (isinstance(v, str) and v.strip() in FRESHNESS_VALUES):
+            bad.append({"field": "freshness", "value": v,
+                        "reason": f"must be one of {', '.join(FRESHNESS_VALUES)}"})
+    if "certainty" in fields:
+        v = fields["certainty"]
+        ok = isinstance(v, str) and v.strip().isdigit() and 1 <= int(v.strip()) <= 5
+        if not ok:
+            bad.append({"field": "certainty", "value": v,
+                        "reason": "must be an integer 1-5"})
+    window: dict[str, str] = {}
+    for key in ("valid_from", "valid_until"):
+        if key not in fields:
+            continue
+        v = fields[key]
+        try:
+            if not isinstance(v, str):
+                raise ValueError
+            datetime.strptime(v.strip(), "%Y-%m-%d")
+            window[key] = v.strip()
+        except ValueError:
+            bad.append({"field": key, "value": v,
+                        "reason": "must be a real YYYY-MM-DD date"})
+    if len(window) == 2 and window["valid_from"] > window["valid_until"]:
+        bad.append({"field": "valid_until", "value": window["valid_until"],
+                    "reason": "valid_from is after valid_until"})
+    return bad
+
+
+def _wikilink_stem(value: Any) -> Optional[str]:
+    """The bare note stem a frontmatter wikilink value points at, or None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    s = value.strip().strip('"').strip("'").strip()
+    if s.startswith("[[") and s.endswith("]]"):
+        s = s[2:-2]
+    s = s.split("|", 1)[0].strip()
+    stem = s.rsplit("/", 1)[-1].strip()
+    return stem or None
+
+
+def freshness_report(files: list["VaultFile"], today: date) -> dict[str, Any]:
+    """Read-only truth-lifetime semantics over VALID epistemic declarations.
+
+    Shape problems are schema drift (the gate refuses them); this reports
+    what valid declarations MEAN today: expired validity windows, dangling
+    supersession pointers, dated facts with no clock attached, and adoption
+    counts. Content types only.
+    """
+    expired: list[dict] = []
+    dangling: list[dict] = []
+    unbounded: list[dict] = []
+    counts: dict[str, int] = {k: 0 for k in sorted(_EPISTEMIC_OPTIONAL)}
+    stems = {vf.path.stem for vf in files}
+    today_s = today.strftime("%Y-%m-%d")
+    for vf in files:
+        fields = vf.frontmatter.fields
+        if fields.get("type") not in ("decision", "note", "doc", "source"):
+            continue
+        if _validate_epistemic(fields):
+            continue  # malformed declarations are drift's finding, not semantics'
+        for k in counts:
+            if k in fields:
+                counts[k] += 1
+        vu = fields.get("valid_until")
+        if isinstance(vu, str) and vu.strip() and vu.strip() < today_s:
+            days = (today - datetime.strptime(vu.strip(), "%Y-%m-%d").date()).days
+            expired.append({"file": str(vf.rel_path),
+                            "valid_until": vu.strip(), "days_expired": days})
+        if fields.get("superseded_by") is not None:
+            target = _wikilink_stem(fields.get("superseded_by"))
+            if target is not None and target not in stems:
+                dangling.append({"file": str(vf.rel_path), "target": target})
+        fr = fields.get("freshness")
+        if (isinstance(fr, str) and fr.strip() == "dated"
+                and not fields.get("valid_from") and not fields.get("valid_until")):
+            unbounded.append({"file": str(vf.rel_path)})
+    return {"expired": expired, "dangling_supersession": dangling,
+            "dated_unbounded": unbounded, "counts": counts}
+
+
 def _schema_drift_core(fields: dict, has_block: bool, parse_error: Optional[str],
                        ftype: Optional[str], rel: str,
                        aliases: Optional[set] = None) -> Optional[dict]:
@@ -1142,6 +1243,10 @@ def _schema_drift_core(fields: dict, has_block: bool, parse_error: Optional[str]
             out["status_invalid"] = {"value": status, "normalizable": False}
     if "node_type" in keys and "type" in keys:
         out["type_conflict"] = True
+    if ftype in ("decision", "note", "doc", "source"):
+        epistemic = _validate_epistemic(fields)
+        if epistemic:
+            out["epistemic_invalid"] = epistemic
     if not out:
         return None
     out["file"] = rel
@@ -1200,6 +1305,7 @@ def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dic
             "unknown_fields": sum(1 for d in flagged if "unknown_fields" in d),
             "status_invalid": sum(1 for d in flagged if "status_invalid" in d),
             "type_conflict": sum(1 for d in flagged if "type_conflict" in d),
+            "epistemic_invalid": sum(1 for d in flagged if "epistemic_invalid" in d),
         },
         "samples": flagged[:20],
     }

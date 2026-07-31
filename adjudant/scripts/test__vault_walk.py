@@ -1079,10 +1079,13 @@ class TestFieldSchema(unittest.TestCase):
     def test_decision_shape(self):
         self.assertEqual(FIELD_SCHEMA["decision"]["required"],
                          frozenset({"type", "status", "date", "tags"}))
+        # v0.22.0: the epistemic freshness set joined every content type.
         self.assertEqual(FIELD_SCHEMA["decision"]["optional"],
                          frozenset({"supersedes", "superseded_by", "implemented_verified",
                                     "source_session", "related", "title", "name",
-                                    "description", "cssclasses"}))
+                                    "description", "cssclasses",
+                                    "freshness", "certainty", "validity_context",
+                                    "valid_from", "valid_until"}))
 
     def test_is_safe_slug_accepts_kebab(self):
         from _vault_walk import is_safe_slug
@@ -1549,6 +1552,122 @@ class TestFileLock(unittest.TestCase):
                 self.assertTrue(locked)
             # Never unlinked: deleting it races another holder onto a new inode.
             self.assertTrue(lock_path_for(target).exists())
+
+
+class TestEpistemicFields(unittest.TestCase):
+    """v0.22.0 tranche 1: per-fact truth-lifetime frontmatter. Fields are
+    optional on content types, illegal on system shapes, and malformed
+    declarations are schema drift the write gate refuses."""
+
+    def _drift_note(self, extra: str):
+        from _vault_walk import schema_drift_for_text
+        text = ("---\ntype: note\ncreated: 2026-07-01\nupdated: 2026-07-01\n"
+                "tags:\n  - note\n" + extra + "---\nbody\n")
+        return schema_drift_for_text(text, "notes/x.md")
+
+    def test_all_five_fields_legal_on_note(self):
+        self.assertIsNone(self._drift_note(
+            "freshness: dated\ncertainty: 4\n"
+            "validity_context: while OneDrive hosts the git store\n"
+            "valid_from: 2026-07-01\nvalid_until: 2026-12-31\n"))
+
+    def test_fields_illegal_on_session(self):
+        from _vault_walk import schema_drift_for_text
+        text = ("---\ntype: session\ndate: 2026-07-01\nstarted: 09:00\n"
+                "session_id: []\ntags:\n  - session\ncertainty: 3\n---\n")
+        d = schema_drift_for_text(text, "sessions/2026-07-01.md")
+        self.assertIsNotNone(d)
+        self.assertIn("certainty", d.get("unknown_fields", []))
+
+    def test_bad_freshness_value_is_drift(self):
+        d = self._drift_note("freshness: eternal\n")
+        self.assertIsNotNone(d)
+        fields = [e["field"] for e in d.get("epistemic_invalid", [])]
+        self.assertIn("freshness", fields)
+
+    def test_certainty_out_of_range_and_shape(self):
+        for bad in ("certainty: 7\n", "certainty: high\n", "certainty: 3.5\n",
+                    "certainty:\n  - 3\n"):
+            d = self._drift_note(bad)
+            self.assertIsNotNone(d, bad)
+            fields = [e["field"] for e in d.get("epistemic_invalid", [])]
+            self.assertIn("certainty", fields, bad)
+        self.assertIsNone(self._drift_note("certainty: 1\n"))
+        self.assertIsNone(self._drift_note("certainty: 5\n"))
+
+    def test_impossible_and_malformed_dates_are_drift(self):
+        for bad in ("valid_until: 2026-99-99\n", "valid_from: soon\n"):
+            d = self._drift_note(bad)
+            self.assertIsNotNone(d, bad)
+            self.assertTrue(d.get("epistemic_invalid"), bad)
+
+    def test_inverted_validity_window_is_drift(self):
+        d = self._drift_note("valid_from: 2026-12-31\nvalid_until: 2026-01-01\n")
+        self.assertIsNotNone(d)
+        reasons = " ".join(e.get("reason", "") for e in d.get("epistemic_invalid", []))
+        self.assertIn("valid_from", reasons)
+
+
+class TestFreshnessReport(unittest.TestCase):
+    """v0.22.0 tranche 1: read-only semantics over VALID epistemic
+    declarations - expiry, dangling supersession, dated-without-bounds."""
+
+    def _report(self, tmp: Path):
+        from datetime import date
+        from _vault_walk import freshness_report, walk_project
+        return freshness_report(list(walk_project(tmp)), date(2026, 7, 30))
+
+    def _note(self, tmp: Path, name: str, extra: str) -> None:
+        p = tmp / "notes" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("---\ntype: note\ncreated: 2026-07-01\n"
+                     "updated: 2026-07-01\ntags:\n  - note\n" + extra
+                     + "---\nbody\n")
+
+    def test_expired_validity_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            self._note(tmpp, "old.md", "valid_until: 2026-01-01\n")
+            self._note(tmpp, "current.md", "valid_until: 2026-12-31\n")
+            rep = self._report(tmpp)
+            self.assertEqual(len(rep["expired"]), 1)
+            e = rep["expired"][0]
+            self.assertIn("old.md", str(e["file"]))
+            self.assertEqual(e["days_expired"], 210)
+
+    def test_dangling_supersession_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            self._note(tmpp, "a.md", 'superseded_by: "[[notes/gone|the new one]]"\n')
+            self._note(tmpp, "b.md", 'superseded_by: "[[notes/target]]"\n')
+            self._note(tmpp, "target.md", "")
+            rep = self._report(tmpp)
+            self.assertEqual(len(rep["dangling_supersession"]), 1)
+            d = rep["dangling_supersession"][0]
+            self.assertIn("a.md", str(d["file"]))
+            self.assertEqual(d["target"], "gone")
+
+    def test_dated_without_bounds_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            self._note(tmpp, "vague.md", "freshness: dated\n")
+            self._note(tmpp, "bounded.md",
+                       "freshness: dated\nvalid_until: 2026-12-31\n")
+            self._note(tmpp, "forever.md", "freshness: timeless\n")
+            rep = self._report(tmpp)
+            self.assertEqual(len(rep["dated_unbounded"]), 1)
+            self.assertIn("vague.md", str(rep["dated_unbounded"][0]["file"]))
+
+    def test_adoption_counts_and_clean_vault(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            self._note(tmpp, "one.md", "freshness: timeless\ncertainty: 5\n")
+            self._note(tmpp, "plain.md", "")
+            rep = self._report(tmpp)
+            self.assertEqual(rep["counts"]["freshness"], 1)
+            self.assertEqual(rep["counts"]["certainty"], 1)
+            self.assertEqual(rep["expired"], [])
+            self.assertEqual(rep["dangling_supersession"], [])
 
 
 class TestScratchSkip(unittest.TestCase):

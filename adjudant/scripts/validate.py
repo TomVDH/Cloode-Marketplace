@@ -34,8 +34,9 @@ Validators:
  28. decision-status-vocabulary   : _vault_walk constants, vault-standards, and the decision template agree on the five-state note vocabulary
  29. template-schema-parity       : every registered template's frontmatter keys cover its type's required set and stay inside required | optional
  30. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
+ 31. freshness-vocabulary         : FRESHNESS_VALUES, the epistemic optional sets, and vault-standards section 10 agree
 
-30 validators total.
+31 validators total.
 """
 
 import json
@@ -48,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _vault_walk import (  # noqa: E402
     DECISION_STATUS_VALUES,
     FIELD_SCHEMA,
+    FRESHNESS_VALUES,
     PROJECT_STATUS_VALUES,
     parse_frontmatter,
 )
@@ -708,6 +710,39 @@ def validate_status_vocabulary(r: Result) -> None:
     r.add_pass(name)
 
 
+def validate_freshness_vocabulary(r: Result) -> None:
+    """31. freshness-vocabulary — _vault_walk.FRESHNESS_VALUES, the epistemic
+    optional sets, and vault-standards section 10 agree on the truth-lifetime
+    vocabulary and its home types."""
+    name = "freshness-vocabulary"
+    expected = ("timeless", "dated", "pointer")
+    if FRESHNESS_VALUES != expected:
+        r.add_fail(name, f"_vault_walk.FRESHNESS_VALUES is {FRESHNESS_VALUES}")
+        return
+    vs_path = REFERENCE / "vault-standards.md"
+    if not vs_path.is_file():
+        r.add_fail(name, "reference/vault-standards.md not found")
+        return
+    vs = vs_path.read_text()
+    if "## 10. Epistemic freshness" not in vs:
+        r.add_fail(name, "vault-standards.md missing section 10 (Epistemic freshness)")
+        return
+    missing = [s for s in expected if f"`{s}`" not in vs]
+    if missing:
+        r.add_fail(name, f"vault-standards.md missing freshness values: {missing}")
+        return
+    epistemic = {"freshness", "certainty", "validity_context", "valid_from", "valid_until"}
+    for ftype in ("decision", "note", "doc", "source"):
+        if not epistemic <= FIELD_SCHEMA[ftype]["optional"]:
+            r.add_fail(name, f"FIELD_SCHEMA[{ftype!r}] missing epistemic optional set")
+            return
+    for ftype in ("session", "task", "release", "handoff", "index"):
+        if epistemic & (FIELD_SCHEMA[ftype]["required"] | FIELD_SCHEMA[ftype]["optional"]):
+            r.add_fail(name, f"epistemic fields leaked into system shape {ftype!r}")
+            return
+    r.add_pass(name)
+
+
 def validate_hook_zone_awareness(r: Result) -> None:
     """30. hook-zone-awareness — no hook may hardcode projects/<slug>.
 
@@ -1051,6 +1086,7 @@ def main() -> int:
     validate_decision_status_vocabulary(r)
     validate_template_schema_parity(r)
     validate_hook_zone_awareness(r)
+    validate_freshness_vocabulary(r)
     return r.report()
 
 

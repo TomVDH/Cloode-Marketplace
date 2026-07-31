@@ -127,6 +127,11 @@ def main() -> int:
         hard.append(f"missing required field(s): {', '.join(drift['missing_required'])}")
     if drift.get("type_conflict"):
         hard.append("both `type:` and `node_type:` are set; keep `type:` only")
+    # Epistemic declarations (v0.22.0) have zero legacy values, so a
+    # malformed one is pure model drift - block, unlike status values whose
+    # historical synonyms tidy migrates after the fact.
+    for e in drift.get("epistemic_invalid", []):
+        hard.append(f"`{e['field']}: {e['value']}` - {e['reason']}")
     if hard:
         print(f"adjudant schema gate: {rel} (type: {ftype}) "
               f"does not match the vault schema.", file=sys.stderr)

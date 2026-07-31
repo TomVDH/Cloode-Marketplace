@@ -66,8 +66,14 @@ JSON output shape (top-level keys):
   `last_session`, `days_quiet`, `suggested`, `reason`, `nudge`, `zone`, `zone_matches`
 - `schema` — frontmatter drift per `FIELD_SCHEMA`: `checked`, `unchecked` (no block /
   parse error / non-canonical type — those are ramasse territory), `flagged`, `counts`
-  (`missing_required`, `unknown_fields`, `status_invalid`, `type_conflict`), `samples`
-  (capped at 20, each with `file`, `type`, and the offending keys/values)
+  (`missing_required`, `unknown_fields`, `status_invalid`, `type_conflict`,
+  `epistemic_invalid`), `samples` (capped at 20, each with `file`, `type`, and the
+  offending keys/values)
+- `freshness` — what valid epistemic declarations MEAN today (shape problems are
+  `schema`'s): `expired` (`valid_until` past, with `days_expired`),
+  `dangling_supersession` (`superseded_by` target resolves to no file),
+  `dated_unbounded` (`freshness: dated` with no validity window), `counts`
+  (adoption per field). Vault-standards section 10 owns the vocabulary
 
 ## Render
 
@@ -92,7 +98,10 @@ Created: {created} · Updated: {updated}
 - Counts:        {decisions} decisions, {sessions} sessions, {dreams} dreams, {notes} notes
 - Board:         {board.columns as "{id}: {n}" pairs, deck order}{" · stale" if board.stale}
 - Schema:        {schema.checked} checked, {schema.flagged} flagged
-                 ({counts as "{n} missing-required, {n} unknown-field, {n} status, {n} type-conflict", nonzero only})
+                 ({counts as "{n} missing-required, {n} unknown-field, {n} status, {n} type-conflict, {n} epistemic", nonzero only})
+- Freshness:     {sum of counts} declared{" — all current" when expired/dangling/unbounded all empty;
+                 else "{n} expired, {n} dangling supersession, {n} dated-unbounded", nonzero only}
+                 (skip the line entirely when no note declares any epistemic field)
 
 ## Drift signal
 
@@ -117,6 +126,7 @@ next ambient refresh), no alarm.
 - If `status.nudge` is set, render the nudge as its own line.
 - If `status.zone_matches` is false, flag the mismatch: the declared status doesn't match the vault zone the project actually sits in.
 - If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant tidy (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.
+- If `freshness.expired` or `freshness.dangling_supersession` is non-empty, render one line: "{n} declared facts need review (expired validity / dangling supersession) → run /adjudant dream". Judgment-heavy by design: expiry review is dream territory, never tidy's.
 
 ## Inputs
 

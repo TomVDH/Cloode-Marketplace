@@ -89,6 +89,27 @@ class TestBlocks(_GateHarness):
             rc = self._run(project, self._payload(proot / "notes" / "n.md", bad))
             self.assertEqual(rc, 2)
 
+    def test_malformed_epistemic_declaration_blocks(self):
+        # v0.22.0: epistemic fields have zero legacy values, so a malformed
+        # declaration is pure model drift - block and name the field.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            bad = GOOD_NOTE.replace("type: note\n",
+                                    "type: note\ncertainty: 9\n")
+            rc, err = self._run_capturing(
+                project, self._payload(proot / "notes" / "n.md", bad))
+            self.assertEqual(rc, 2)
+            self.assertIn("certainty", err)
+
+    def test_valid_epistemic_declaration_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            good = GOOD_NOTE.replace(
+                "type: note\n",
+                "type: note\nfreshness: dated\nvalid_until: 2030-01-01\n")
+            rc = self._run(project, self._payload(proot / "notes" / "n.md", good))
+            self.assertEqual(rc, 0)
+
 
 class TestAllows(_GateHarness):
 

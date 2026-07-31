@@ -23,9 +23,9 @@ from typing import Any, Optional
 from _cost import breadcrumb_int, cost_block, read_threshold, stat_walk
 from _handoff_freshness import compute_freshness, latest_session_file
 from _vault_walk import (
-    DEFAULT_STALE_DAYS, parse_frontmatter, resolve_vault, schema_drift,
-    smart_project_dir, suggest_status, walk_project, zone_matches_status,
-    zone_of, VaultUnresolvableError,
+    DEFAULT_STALE_DAYS, freshness_report, parse_frontmatter, resolve_vault,
+    schema_drift, smart_project_dir, suggest_status, walk_project,
+    zone_matches_status, zone_of, VaultUnresolvableError,
 )
 
 # Task-status alias set for schema_drift's normalizable flag (import
@@ -252,6 +252,9 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
     zone = zone_of(project_dir)
     status = {**sug, "zone": zone,
               "zone_matches": zone_matches_status(brief.get("status"), zone)}
+    # One walk feeds both audit sections: schema (shape) and freshness
+    # (what valid declarations mean today).
+    files = list(walk_project(project_dir))
     return {
         "project": brief,
         "counts": counts,
@@ -261,7 +264,8 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
         "board": _board_status(project_dir),
         "suitcase": _suitcase_status(),
         "status": status,
-        "schema": schema_drift(list(walk_project(project_dir)), _TASK_ALIASES),
+        "schema": schema_drift(files, _TASK_ALIASES),
+        "freshness": freshness_report(files, today or date.today()),
     }
 
 

@@ -547,5 +547,48 @@ class TestDreamCost(unittest.TestCase):
             self.assertIn("summary", payload)
 
 
+class TestDeclaredFreshnessPrecedence(unittest.TestCase):
+    """v0.22.0: declared epistemic signals outrank mtime heuristics.
+    Timeless notes never age out; a declared expiry is stale no matter how
+    recently the file was touched; a dangling superseded_by joins the
+    supersession catalog."""
+
+    def test_timeless_note_exempt_from_staleness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_file(root / "law.md",
+                        "---\ntype: note\nupdated: 2024-01-01\n"
+                        "freshness: timeless\n---\n\nnever ages")
+            _write_file(root / "old.md",
+                        "---\ntype: note\nupdated: 2024-01-01\n---\n\nages")
+            out = detect_staleness(list(walk_project(root)), TODAY)
+            names = [e["file"] for e in out]
+            self.assertIn("old.md", names)
+            self.assertNotIn("law.md", names)
+
+    def test_declared_expiry_beats_fresh_mtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_file(root / "expired.md",
+                        "---\ntype: note\nupdated: 2026-05-30\n"
+                        "valid_until: 2026-05-01\n---\n\nrecently touched, expired")
+            out = detect_staleness(list(walk_project(root)), TODAY)
+            self.assertEqual(len(out), 1)
+            e = out[0]
+            self.assertEqual(e["file"], "expired.md")
+            self.assertEqual(e.get("reason"), "declared validity expired")
+
+    def test_dangling_superseded_by_joins_supersession_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_file(root / "old-decision.md",
+                        "---\ntype: decision\nstatus: superseded\ndate: 2026-01-01\n"
+                        'superseded_by: "[[decisions/nonexistent]]"\n---\n\nbody')
+            out = detect_supersession_signals(list(walk_project(root)), TODAY)
+            dangling = [e for e in out if e.get("kind") == "dangling-pointer"]
+            self.assertEqual(len(dangling), 1)
+            self.assertEqual(dangling[0]["target"], "nonexistent")
+
+
 if __name__ == "__main__":
     unittest.main()

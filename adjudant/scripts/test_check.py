@@ -339,5 +339,23 @@ class TestSchemaSection(unittest.TestCase):
             _json.dumps(report)
 
 
+class TestFreshnessSection(unittest.TestCase):
+    """v0.22.0: run_check carries the freshness report (single walk shared
+    with the schema section)."""
+
+    def test_run_check_reports_freshness(self):
+        from datetime import date
+        with tempfile.TemporaryDirectory() as tmp:
+            proot = Path(tmp)
+            (proot / "notes").mkdir(parents=True)
+            (proot / "notes" / "old.md").write_text(
+                "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+                "tags:\n  - note\nvalid_until: 2026-01-15\n---\nbody\n")
+            out = run_check(proot, today=date(2026, 7, 30))
+            self.assertIn("freshness", out)
+            self.assertEqual(len(out["freshness"]["expired"]), 1)
+            self.assertEqual(out["freshness"]["counts"]["valid_until"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,7 @@ from _cost import cost_block, read_threshold, stat_walk
 from _vault_walk import (
     BUCKET_A_TYPES,
     VaultFile,
+    _wikilink_stem,
     build_vault_index,
     resolve_vault,
     resolve_wikilink,
@@ -272,21 +273,42 @@ def _session_link_targets(files: list[VaultFile]) -> set[str]:
 def detect_staleness(
     files: list[VaultFile], today: _dt.date, *, stale_days: int = DEFAULT_STALE_DAYS
 ) -> list[dict]:
-    """Content-type files whose best-known date is older than the threshold."""
+    """Content-type files whose best-known date is older than the threshold.
+
+    Declared epistemic signals outrank the mtime heuristic (v0.22.0):
+    `freshness: timeless` never ages out on the clock, and an expired
+    `valid_until` is stale no matter how recently the file was touched.
+    """
     out: list[dict] = []
     for f in files:
         if f.file_type not in CONTENT_TYPES:
             continue
-        age = _age_days(f, today)
-        if age is None or age <= stale_days:
+        fields = f.frontmatter.fields
+        fr = fields.get("freshness")
+        if isinstance(fr, str) and fr.strip() == "timeless":
             continue
-        out.append({
+        declared_expired_days: Optional[int] = None
+        vu = fields.get("valid_until")
+        if isinstance(vu, str) and vu.strip():
+            try:
+                vu_date = _dt.datetime.strptime(vu.strip(), "%Y-%m-%d").date()
+                if vu_date < today:
+                    declared_expired_days = (today - vu_date).days
+            except ValueError:
+                pass  # malformed declaration is schema drift's finding
+        age = _age_days(f, today)
+        if declared_expired_days is None and (age is None or age <= stale_days):
+            continue
+        entry = {
             "file": str(f.rel_path),
             "type": f.file_type,
             "date": str(_file_date(f)),
-            "age_days": age,
+            "age_days": age if age is not None else declared_expired_days,
             "excerpt_head": _first_excerpt(f.body),
-        })
+        }
+        if declared_expired_days is not None:
+            entry["reason"] = "declared validity expired"
+        out.append(entry)
     out.sort(key=lambda x: x["age_days"], reverse=True)
     return out
 
@@ -323,6 +345,20 @@ def detect_supersession_signals(files: list[VaultFile], today: _dt.date) -> list
                 "shared_links": shared_links,
                 "older_has_superseded_marker": older_marked,
             })
+    # Dangling declared supersession (v0.22.0): a frontmatter superseded_by
+    # whose target resolves to no file in the project. Distinguishable shape
+    # via kind — the pair entries above carry no kind.
+    stems = {f.path.stem for f in files}
+    for f in files:
+        if f.file_type not in ("decision", "note", "doc"):
+            continue
+        val = f.frontmatter.fields.get("superseded_by")
+        if val is None:
+            continue
+        target = _wikilink_stem(val)
+        if target is not None and target not in stems:
+            out.append({"kind": "dangling-pointer",
+                        "file": str(f.rel_path), "target": target})
     return out
 
 
