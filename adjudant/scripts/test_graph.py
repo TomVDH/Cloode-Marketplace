@@ -275,6 +275,78 @@ class TestTiersAndFence(unittest.TestCase):
         self.assertTrue(block.endswith("```\n"))
 
 
+class TestCliErrorHandling(unittest.TestCase):
+    """Every reachable bad input must produce the `error: ...` line the CLI
+    emits everywhere else, never a Python traceback. graph.py is shelled out to
+    by the skill: a traceback is noise the model has to interpret."""
+
+    def _project(self, root: Path, deck_text: str) -> Path:
+        _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+        _write(root / "board" / "board-data.json", deck_text)
+        return root
+
+    def _assert_clean_failure(self, root: Path) -> str:
+        rc, _so, err = _run_cli(["--mode", "board", "--project-dir", str(root)])
+        self.assertEqual(rc, 1)
+        self.assertIn("error:", err)
+        self.assertNotIn("Traceback", err)
+        return err
+
+    def test_deck_root_is_a_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(Path(tmp).resolve(), "[]")
+            self.assertIn("JSON object", self._assert_clean_failure(root))
+
+    def test_deck_root_is_null(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(Path(tmp).resolve(), "null")
+            self.assertIn("JSON object", self._assert_clean_failure(root))
+
+    def test_deck_columns_is_not_a_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(Path(tmp).resolve(), '{"columns": "backlog", "cards": []}')
+            self.assertIn("arrays", self._assert_clean_failure(root))
+
+    def test_deck_card_is_not_an_object(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(Path(tmp).resolve(),
+                                 '{"columns": [], "cards": ["T-1"]}')
+            self.assertIn("JSON object", self._assert_clean_failure(root))
+
+    def test_deck_is_not_json_at_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(Path(tmp).resolve(), "{not json")
+            self._assert_clean_failure(root)
+
+    def test_missing_deck_is_a_friendly_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            self.assertIn("scaffold", self._assert_clean_failure(root))
+
+    def test_unresolvable_project_is_a_friendly_error(self):
+        # A code repo with no breadcrumb: the verb must say so, not traceback.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "pyproject.toml").write_text("[project]\nname='x'\n")
+            rc, _so, err = _run_cli(["--mode", "relations", "--project-dir", str(root)])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertNotIn("Traceback", err)
+
+    def test_out_parent_missing_and_outside_the_root_is_an_error_not_a_traceback(self):
+        # The audit's second traceback: the --out write sat OUTSIDE the try, so
+        # even a caught exception type escaped from there.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(root),
+                 "--out", str(root / ".." / "missing" / "dir" / "x.md")])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertNotIn("Traceback", err)
+
+
 class TestOutGuards(unittest.TestCase):
     """`--out` is graph.py's ONLY write. It used to be a bare `write_text` on a
     completely unvalidated path: no containment, no existing-file guard, no

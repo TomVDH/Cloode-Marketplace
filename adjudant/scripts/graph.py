@@ -215,9 +215,23 @@ def board_graph(project_dir: Path, board_data: Optional[str] = None) -> str:
     if not data_path.is_file():
         raise FileNotFoundError(
             f"no deck at {data_path} — run `board.py scaffold` first (or pass --board-data)")
-    deck: dict[str, Any] = json.loads(data_path.read_text())
+    # Shape-check before touching the deck. reference/board.md invites
+    # hand-editing board-data.json, so a wrong SHAPE (valid JSON, wrong type)
+    # is a reachable input, and it used to escape as a raw `'list' object has
+    # no attribute 'get'` traceback rather than the `error: ...` line the CLI
+    # emits everywhere else. ValueError, so the CLI's one handler covers it
+    # alongside JSONDecodeError.
+    deck: Any = json.loads(data_path.read_text(encoding="utf-8"))
+    if not isinstance(deck, dict):
+        raise ValueError(
+            f"deck root must be a JSON object, not {type(deck).__name__}: {data_path}")
     columns = deck.get("columns") or []
     cards = deck.get("cards") or []
+    if not isinstance(columns, list) or not isinstance(cards, list):
+        raise ValueError(f"deck 'columns' and 'cards' must be JSON arrays: {data_path}")
+    if not all(isinstance(x, dict) for x in (*columns, *cards)):
+        raise ValueError(
+            f"every column and card must be a JSON object: {data_path}")
     lines = ["flowchart LR"]
     card_i = 0
 
@@ -426,7 +440,13 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                     project_dir, max_nodes=args.max_nodes, include_legacy=args.include_legacy))
             else:
                 block = fenced(board_graph(project_dir, args.board_data))
-        except (OSError, json.JSONDecodeError, FileNotFoundError) as e:
+        # Wide on purpose. OSError covers FileNotFoundError; ValueError covers
+        # JSONDecodeError, UnicodeDecodeError and the deck shape checks;
+        # TypeError/AttributeError catch the remaining ways a hand-edited deck
+        # or a half-written vault file reaches an attribute that isn't there.
+        # A helper the skill shells out to must hand back a message the model
+        # can relay, never a traceback it has to interpret.
+        except (OSError, ValueError, TypeError, AttributeError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
 
