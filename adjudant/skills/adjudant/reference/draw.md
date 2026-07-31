@@ -54,6 +54,25 @@ Generating a *scaffold* from mechanical vault data is scaffolding, not content
 authoring — the "no content generation" rule below is about prose/design inside
 canvases and bases, which stays the user's job.
 
+### `--out`, the one write graph.py makes
+
+Default to stdout and paste. `--out FILE` captures the fence to a file instead,
+and it is the only write the helper performs, so it is gated:
+
+- **Contained.** The path must resolve inside the vault project or inside
+  `--project-dir`. Anywhere else is refused and nothing is written. Symlinks
+  are resolved first, so a link pointing out of the project does not slip past.
+- **No silent clobber.** An existing file is refused. `--force` replaces it and
+  copies the current contents to a dot-prefixed, timestamped sibling first
+  (`.brief.md.20260731-120000.bak`), invisible to Obsidian and to the vault
+  walkers. A backup that fails cancels the write.
+- **Atomic.** A run that fails part way leaves the target byte for byte as it
+  was.
+
+`--out` is for capturing a fence, not for authoring vault notes. A bare fence
+has no frontmatter, so an `.md` written straight into the vault this way is a
+schema-less note that `check` will report. Paste into a real note instead.
+
 ## Diagram embed points
 
 Two places a generated fence earns its keep (check topology against the
@@ -83,6 +102,10 @@ the brief is needed and `ramasse` never flags them as drift. Reserve the brief's
 
 - No breadcrumb at cwd → exit non-zero with "run `/adjudant connect` first"
 - File already exists at target path → open for editing, don't recreate
+- `graph.py --out` resolving outside the project and outside `--project-dir` →
+  exit non-zero, nothing written
+- `graph.py --out` at a path that already exists, without `--force` → exit
+  non-zero, nothing written and no backup spent
 
 ## What draw does NOT do
 

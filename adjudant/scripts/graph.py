@@ -19,23 +19,31 @@ modes, all emitting a paste-ready ```mermaid fenced block to stdout (or --out):
 
 CLI:
     python3 graph.py --project-dir PATH [--mode relations|board|tiers]
-                     [--max-nodes N] [--board-data FILE] [--out FILE]
+                     [--max-nodes N] [--board-data FILE] [--out FILE] [--force]
                      [--include-legacy]
 
 Follows the `.claude/adjudant` breadcrumb like every other helper: pass the
-CODE project root and it resolves to the vault project. Never writes into the
-vault — the only write is the optional --out file.
+CODE project root and it resolves to the vault project.
+
+Reads the vault, never mutates it. The one and only write is the optional
+`--out` file, and it is gated: contained to the invocation root or the resolved
+vault project, refused over an existing file unless `--force`, backed up before
+any replace, and written atomically. See the `--out` section below.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from _vault_walk import VaultFile, smart_project_dir, walk_project, VaultUnresolvableError
+from _vault_walk import (
+    atomic_write_text, smart_project_dir, VaultFile, VaultUnresolvableError, walk_project,
+)
 
 DEFAULT_MAX_NODES = 30
 # One classDef per file role, palette ≤ 6 (generation-rules discipline)
@@ -265,6 +273,120 @@ def fenced(mermaid: str) -> str:
     return f"```mermaid\n{mermaid}```\n"
 
 
+# ============================================================
+#  --out: the module's only write
+# ============================================================
+# graph.py reads the vault and prints. `--out` is the single exception, and it
+# used to be `Path(args.out).expanduser().write_text(block)` — no containment,
+# no existing-file guard, no backup, no atomicity. `--out ~/.zshrc`, `--out
+# ../../anything` and `--out {project}/brief.md` were all accepted, destroyed
+# the target, printed "wrote" and exited 0.
+#
+# Three guards now, in order, and the write itself goes through the shared
+# durable-write primitive board.py uses:
+#
+#   1. CONTAINMENT. The resolved path must sit inside a root the operator
+#      named: `--project-dir` (the invocation root, which defaults to cwd) or
+#      the vault project the breadcrumb resolves to. Same shape as board.py's
+#      `--dest` exemption — a destination is legal because the operator
+#      pointed at it, not because the string looked harmless.
+#   2. NO SILENT CLOBBER. An existing target is refused; `--force` replaces it
+#      but takes a backup first, and a failed backup refuses the write.
+#   3. ATOMICITY. `atomic_write_text`, so a reader never lands on a truncated
+#      middle.
+#
+# No `file_lock`: the lock primitive exists for read-modify-write cycles (the
+# deck has three concurrent writers). `--out` is a pure replace, so atomicity
+# alone is the whole guarantee, and a permanent `.{name}.lock` sidecar beside
+# every --out target would be litter in the user's repo for nothing.
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    """True when `child` is `parent` or sits under it, symlinks resolved.
+    Neither path needs to exist.
+
+    Twin of board.py's `_is_inside`; kept private in both so neither module
+    has to import the other. Change them together. Resolution matters: a
+    string check passes a `{project}/link -> /etc` symlink.
+    """
+    try:
+        c, p = Path(child).expanduser().resolve(), Path(parent).expanduser().resolve()
+    except (OSError, ValueError):
+        return False
+    return c == p or p in c.parents
+
+
+def backup_out(path: Path) -> Path:
+    """Copy an `--out` target about to be replaced to a timestamped sibling.
+
+    Never a fixed `{name}.bak`: that fixed name was the v0.19.0 board bug,
+    where a second run overwrote the only copy of the user's real file with
+    the already-destroyed one. The guard against that is the collision loop —
+    a backup NEVER lands on a path that already exists. The timestamp is
+    legibility (which copy is which), not the safety property.
+
+    Dot-prefixed and not `.md`, so the vault walkers (`rglob("*.md")`) never
+    index it, Obsidian never lists it, and `check`/`ramasse` never report it
+    as a schema-less note.
+
+    Raises OSError; callers refuse the write rather than proceed unbacked.
+    """
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = path.with_name(f".{path.name}.{stamp}.bak")
+    n = 2
+    while target.exists():                       # two --force runs in one second
+        target = path.with_name(f".{path.name}.{stamp}-{n}.bak")
+        n += 1
+    shutil.copy2(path, target)
+    return target
+
+
+def write_out(block: str, raw_out: str, roots: list[Path], *, force: bool) -> int:
+    """Write `block` to `raw_out` if every guard allows it. Returns an exit code."""
+    out = Path(raw_out).expanduser()
+    # Containment decides on the RESOLVED path (inside `_is_inside`); every
+    # later filesystem call here follows symlinks to the same inode anyway, so
+    # `out` itself stays as typed and the error messages echo what the operator
+    # wrote rather than a path they never named.
+    if not any(_is_inside(out, r) for r in roots):
+        allowed = " or ".join(str(r) for r in roots)
+        print(f"error: --out {out} resolves outside {allowed} — refusing to write "
+              f"there. Point --out inside the project (or inside --project-dir).",
+              file=sys.stderr)
+        return 1
+    if out.is_dir():
+        print(f"error: --out {out} is a directory.", file=sys.stderr)
+        return 1
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"error: could not create {out.parent}: {e}", file=sys.stderr)
+        return 1
+    if out.exists():
+        if not force:
+            print(f"error: --out {out} already exists — refusing to overwrite it. "
+                  f"Pass --force to replace it (the current contents are backed up "
+                  f"first), or choose a path that does not exist yet.", file=sys.stderr)
+            return 1
+        try:
+            bak = backup_out(out)
+        except OSError as e:
+            print(f"error: could not back up {out} before replacing it: {e}", file=sys.stderr)
+            return 1
+        print(f"[graph] backed up {out.name} -> {bak.name}", file=sys.stderr)
+    try:
+        # ValueError as well as OSError: a lone surrogate anywhere in the block
+        # (a hand-edited deck reaches this) raises UnicodeEncodeError. With a
+        # bare write_text that error arrives AFTER the destination has already
+        # been truncated; atomic_write_text leaves it byte-identical.
+        atomic_write_text(out, block)
+    except (OSError, ValueError) as e:
+        print(f"error: could not write {out}: {e}", file=sys.stderr)
+        return 1
+    print(f"[graph] wrote {out}", file=sys.stderr)
+    return 0
+
+
 def cli_main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="graph.py", description="Adjudant graph — mermaid scaffolds from vault data (read-only).")
@@ -273,12 +395,25 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES,
                         help=f"relations: node cap (default {DEFAULT_MAX_NODES})")
     parser.add_argument("--board-data", help="board: explicit board-data.json path")
-    parser.add_argument("--out", help="write the fenced block here instead of stdout")
+    parser.add_argument("--out", help="write the fenced block here instead of stdout "
+                                      "(inside the project or --project-dir)")
+    parser.add_argument("--force", action="store_true",
+                        help="--out: replace an existing file (backed up first)")
     parser.add_argument("--include-legacy", action="store_true", help="relations: include _legacy/ files")
     args = parser.parse_args(argv)
 
+    project_dir: Optional[Path] = None
     if args.mode == "tiers":
         block = fenced(tiers_graph())
+        if args.out:
+            # tiers needs no project — that is documented, and resolution
+            # failure must stay non-fatal here. But when one DOES resolve it is
+            # a legitimate --out destination (draw.md: the tiers fence belongs
+            # in a brief or doc), so resolve best-effort to widen containment.
+            try:
+                project_dir, _hint = smart_project_dir(args.project_dir)
+            except (VaultUnresolvableError, OSError, ValueError):
+                project_dir = None
     else:
         try:
             project_dir, _hint = smart_project_dir(args.project_dir)
@@ -296,10 +431,11 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             return 1
 
     if args.out:
-        Path(args.out).expanduser().write_text(block)
-        print(f"[graph] wrote {args.out}", file=sys.stderr)
-    else:
-        print(block, end="")
+        roots = [Path(args.project_dir).expanduser().resolve()]
+        if project_dir is not None:
+            roots.append(Path(project_dir).resolve())
+        return write_out(block, args.out, roots, force=args.force)
+    print(block, end="")
     return 0
 
 

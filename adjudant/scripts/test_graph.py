@@ -1,13 +1,19 @@
 """Tests for adjudant/scripts/graph.py — mermaid scaffolds from vault data."""
 
+import contextlib
+import io
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
+import graph
 from graph import (
     _q,
     board_graph,
+    cli_main,
     fenced,
     relations_graph,
     tiers_graph,
@@ -17,6 +23,28 @@ from graph import (
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+
+
+def _run_cli(argv: list[str]) -> tuple[int, str, str]:
+    """cli_main with stdout/stderr captured. Returns (rc, stdout, stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = cli_main(argv)
+    return rc, out.getvalue(), err.getvalue()
+
+
+def _baks(directory: Path) -> list[Path]:
+    """The dot-prefixed backups graph.py leaves beside an --out target."""
+    return sorted(p for p in directory.iterdir() if p.name.endswith(".bak"))
+
+
+class _FrozenClock:
+    """A `datetime` stand-in whose `now()` never advances, so two backups in a
+    row genuinely collide on the same timestamp."""
+
+    @staticmethod
+    def now() -> datetime:
+        return datetime(2026, 7, 31, 12, 0, 0)
 
 
 class TestLabelSanitiser(unittest.TestCase):
@@ -245,6 +273,183 @@ class TestTiersAndFence(unittest.TestCase):
         block = fenced("flowchart LR\n  a --> b\n")
         self.assertTrue(block.startswith("```mermaid\n"))
         self.assertTrue(block.endswith("```\n"))
+
+
+class TestOutGuards(unittest.TestCase):
+    """`--out` is graph.py's ONLY write. It used to be a bare `write_text` on a
+    completely unvalidated path: no containment, no existing-file guard, no
+    backup, no atomicity. A typo'd `--out` destroyed the target in silence."""
+
+    def test_happy_path_writes_the_fenced_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            out = root / "tiers.md"
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(root), "--out", str(out)])
+            self.assertEqual(rc, 0, err)
+            text = out.read_text()
+            self.assertTrue(text.startswith("```mermaid\n"))
+            self.assertIn("stateDiagram-v2", text)
+            self.assertIn("wrote", err)
+
+    def test_traversal_out_writes_nothing_and_exits_non_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            repo = root / "repo"
+            repo.mkdir()
+            victim = root / "victim.md"
+            victim.write_text("PRECIOUS\n")
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(repo),
+                 "--out", str(repo / ".." / "victim.md")])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertEqual(victim.read_text(), "PRECIOUS\n")
+
+    def test_absolute_out_outside_every_root_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            repo = root / "repo"
+            repo.mkdir()
+            elsewhere = root / "elsewhere"
+            elsewhere.mkdir()
+            target = elsewhere / "loot.md"
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(repo), "--out", str(target)])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertFalse(target.exists())
+
+    def test_symlink_out_of_the_root_is_refused(self):
+        # A string check alone passes here — containment must be tested on the
+        # RESOLVED path, exactly as board.py's _is_inside does.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            repo = root / "repo"
+            repo.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (repo / "link").symlink_to(outside, target_is_directory=True)
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(repo),
+                 "--out", str(repo / "link" / "loot.md")])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertFalse((outside / "loot.md").exists())
+
+    def test_existing_file_is_not_silently_destroyed(self):
+        # The audit's reproduction: `--out <project>/brief.md` replaced the
+        # project brief with a raw fence and exited 0.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            brief = root / "brief.md"
+            brief.write_text("---\ntype: project\n---\n# P\n")
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(root), "--out", str(brief)])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertEqual(brief.read_text(), "---\ntype: project\n---\n# P\n")
+            self.assertEqual(_baks(root), [])      # a refusal spends no backup
+
+    def test_force_backs_the_target_up_before_replacing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            brief = root / "brief.md"
+            brief.write_text("PRECIOUS\n")
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(root),
+                 "--out", str(brief), "--force"])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("stateDiagram-v2", brief.read_text())
+            baks = _baks(root)
+            self.assertEqual(len(baks), 1)
+            self.assertEqual(baks[0].read_text(), "PRECIOUS\n")
+            self.assertTrue(baks[0].name.startswith("."))   # invisible in Obsidian
+
+    def test_a_second_force_cannot_destroy_the_first_backup(self):
+        # board.py's old fixed `board-data.json.bak` was exactly this bug: run
+        # two overwrote the only copy of the real file with the destroyed one.
+        # The clock is frozen so both backups WANT the same name — the
+        # collision loop, not the passage of time, is what has to save them.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            brief = root / "brief.md"
+            brief.write_text("PRECIOUS\n")
+            with mock.patch.object(graph, "datetime", _FrozenClock):
+                for _ in range(2):
+                    rc, _so, err = _run_cli(
+                        ["--mode", "tiers", "--project-dir", str(root),
+                         "--out", str(brief), "--force"])
+                    self.assertEqual(rc, 0, err)
+            self.assertEqual(len(_baks(root)), 2)
+            self.assertTrue(any(b.read_text() == "PRECIOUS\n" for b in _baks(root)),
+                            "the original is no longer recoverable from any backup")
+
+    def test_a_failed_write_leaves_the_target_byte_identical(self):
+        # atomic_write_text writes a temp and os.replace()s it; a bare
+        # write_text truncates the destination FIRST, so a write that fails
+        # part-way destroys the file it was replacing. A lone surrogate — which
+        # survives json.loads and cannot be encoded to UTF-8 — makes it fail.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            deck = {"columns": [{"id": "b", "name": "B"}],
+                    "cards": [{"id": "T-1", "title": "PLACEHOLDER", "column": "b"}]}
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            _write(root / "board" / "board-data.json",
+                   json.dumps(deck).replace('"PLACEHOLDER"', '"\\ud800"'))
+            out = root / "snapshot.md"
+            out.write_text("PRECIOUS\n")
+            rc, _so, err = _run_cli(["--mode", "board", "--project-dir", str(root),
+                                     "--out", str(out), "--force"])
+            self.assertEqual(rc, 1)
+            self.assertIn("error:", err)
+            self.assertEqual(out.read_text(), "PRECIOUS\n")
+
+    def test_out_pointing_at_a_directory_is_refused_by_name(self):
+        # Without the explicit check this still fails, but as a raw
+        # `[Errno 21] Is a directory` the caller has to decode.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            target = root / "diagrams"
+            target.mkdir()
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(root), "--out", str(target)])
+            self.assertEqual(rc, 1)
+            self.assertIn(f"error: --out {target} is a directory", err)
+
+    def test_missing_parent_inside_the_root_is_created_not_tracebacked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            out = root / "deep" / "nested" / "tiers.md"
+            rc, _so, err = _run_cli(
+                ["--mode", "tiers", "--project-dir", str(root), "--out", str(out)])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("stateDiagram-v2", out.read_text())
+
+    def test_out_inside_the_resolved_vault_project_is_allowed(self):
+        # Containment is two roots: the invocation root AND the vault project
+        # the breadcrumb resolves to.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, vault = _linked_project(Path(tmp).resolve())
+            out = vault / "projects" / "demo" / "docs" / "relations.md"
+            rc, _so, err = _run_cli(
+                ["--mode", "relations", "--project-dir", str(code), "--out", str(out)])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("flowchart LR", out.read_text())
+
+
+def _linked_project(root: Path, slug: str = "demo") -> tuple[Path, Path]:
+    """A code repo with a `.claude/adjudant` breadcrumb + its vault project."""
+    vault = root / "vault"
+    (vault / "projects" / slug).mkdir(parents=True)
+    _write(vault / "Home.md", "---\ntype: vault-home\n---\n")
+    _write(vault / "projects" / slug / "brief.md",
+           f"---\ntype: project\nproject_type: coding\nslug: {slug}\n"
+           f"status: active\nupdated: 2026-05-01\n---\n\n# Demo\n")
+    code = root / "code"
+    _write(code / ".claude" / "adjudant",
+           f"vault_path: {vault}\nvault_name: vault\nslug: {slug}\nmode: project\n")
+    return code, vault
 
 
 if __name__ == "__main__":
