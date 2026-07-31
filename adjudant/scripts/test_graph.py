@@ -347,6 +347,47 @@ class TestCliErrorHandling(unittest.TestCase):
             self.assertNotIn("Traceback", err)
 
 
+class TestTruncationIsVisible(unittest.TestCase):
+    """A `%%` note inside the fence is a mermaid COMMENT: it is stripped at
+    render time, so the reader of a pasted diagram sees a confident, complete
+    looking graph that is actually partial. With `--out` the operator never
+    even sees the fence text."""
+
+    def _big_project(self, root: Path, n: int = 40) -> Path:
+        _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+        for i in range(n):
+            _write(root / "notes" / f"leaf-{i:02d}.md", "---\ntype: note\n---\n# L\n")
+        return root
+
+    def test_relations_truncation_reaches_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._big_project(Path(tmp).resolve())
+            rc, so, err = _run_cli(
+                ["--mode", "relations", "--project-dir", str(root), "--max-nodes", "5"])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("36 of 41", err)         # 40 leaves + the brief
+            self.assertIn("--max-nodes 5", err)
+            self.assertIn("omitted", err)
+            self.assertIn("%%", so)                # the in-fence note stays
+
+    def test_relations_truncation_is_reported_in_out_mode_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._big_project(Path(tmp).resolve())
+            rc, _so, err = _run_cli(
+                ["--mode", "relations", "--project-dir", str(root),
+                 "--max-nodes", "5", "--out", str(root / "r.md")])
+            self.assertEqual(rc, 0, err)
+            self.assertIn("36 of 41", err)
+            self.assertIn("wrote", err)
+
+    def test_an_uncapped_graph_says_nothing_about_truncation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._big_project(Path(tmp).resolve(), n=3)
+            rc, _so, err = _run_cli(["--mode", "relations", "--project-dir", str(root)])
+            self.assertEqual(rc, 0, err)
+            self.assertNotIn("omitted", err)
+
+
 class TestOutGuards(unittest.TestCase):
     """`--out` is graph.py's ONLY write. It used to be a bare `write_text` on a
     completely unvalidated path: no containment, no existing-file guard, no

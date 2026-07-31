@@ -102,9 +102,20 @@ def _role(vf: VaultFile) -> str:
 
 
 def relations_graph(
-    project_dir: Path, *, max_nodes: int = DEFAULT_MAX_NODES, include_legacy: bool = False
+    project_dir: Path,
+    *,
+    max_nodes: int = DEFAULT_MAX_NODES,
+    include_legacy: bool = False,
+    stats: Optional[dict[str, int]] = None,
 ) -> str:
-    """Wikilink adjacency of the vault project as a flowchart LR."""
+    """Wikilink adjacency of the vault project as a flowchart LR.
+
+    `stats`, when passed, is filled with `{"total": n, "omitted": n}` so the
+    CALLER can report truncation somewhere a human will see it. The in-fence
+    `%%` note alone is not enough: mermaid strips comments at render time.
+    """
+    if stats is not None:
+        stats.update(total=0, omitted=0)
     files = list(walk_project(project_dir, include_legacy=include_legacy))
     if not files:
         return "flowchart LR\n  empty[\"(no vault files found)\"]\n"
@@ -189,6 +200,9 @@ def relations_graph(
             keys.remove(victim)
             dropped += 1
         edges = {(a, b) for a, b in edges if a in keys and b in keys}
+
+    if stats is not None:
+        stats.update(total=len(labels), omitted=dropped)
 
     ids = {k: f"n{i}" for i, k in enumerate(sorted(keys))}
     lines = ["flowchart LR"]
@@ -285,6 +299,23 @@ def tiers_graph() -> str:
 
 def fenced(mermaid: str) -> str:
     return f"```mermaid\n{mermaid}```\n"
+
+
+def report_truncation(stats: dict[str, int], max_nodes: int, unit: str) -> None:
+    """Say on stderr that the diagram is partial. No-op when nothing was cut.
+
+    The in-fence `%% N omitted` note is a mermaid COMMENT, stripped at render
+    time, so a reader of the pasted diagram sees a confident, complete looking
+    graph with nothing to say that most of the project was cut. With `--out`
+    the operator never reads the fence text at all. stderr is the only channel
+    that reaches a human, so the fact goes to both.
+    """
+    omitted = stats.get("omitted", 0)
+    if not omitted:
+        return
+    total = stats.get("total", omitted)
+    print(f"[graph] TRUNCATED: {omitted} of {total} {unit}(s) omitted at "
+          f"--max-nodes {max_nodes}. The diagram is partial.", file=sys.stderr)
 
 
 # ============================================================
@@ -434,12 +465,16 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         except VaultUnresolvableError as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
+        stats: dict[str, int] = {}
         try:
             if args.mode == "relations":
                 block = fenced(relations_graph(
-                    project_dir, max_nodes=args.max_nodes, include_legacy=args.include_legacy))
+                    project_dir, max_nodes=args.max_nodes,
+                    include_legacy=args.include_legacy, stats=stats))
+                unit = "file"
             else:
                 block = fenced(board_graph(project_dir, args.board_data))
+                unit = "card"
         # Wide on purpose. OSError covers FileNotFoundError; ValueError covers
         # JSONDecodeError, UnicodeDecodeError and the deck shape checks;
         # TypeError/AttributeError catch the remaining ways a hand-edited deck
@@ -449,6 +484,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         except (OSError, ValueError, TypeError, AttributeError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
+        report_truncation(stats, args.max_nodes, unit)
 
     if args.out:
         roots = [Path(args.project_dir).expanduser().resolve()]
