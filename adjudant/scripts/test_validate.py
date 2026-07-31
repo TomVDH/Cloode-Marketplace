@@ -657,8 +657,15 @@ class TestBoardTemplateMarkersOnRepo(unittest.TestCase):
 
 class TestBoardTemplateMarkers(_PatchedTree):
 
-    _GOOD = ('<html><script>const DECK = /*BOARD_DATA_START*/{"cards": []}'
+    _GOOD = ('<html><script>const DECK = /*BOARD_DATA_START*/'
+             '{"columns": [{"id": "backlog", "name": "Backlog"}], "cards": []}'
              '/*BOARD_DATA_END*/;</script></html>')
+
+    def _write(self, text):
+        (validate.TEMPLATES / "board.html").write_text(text)
+        r = Result()
+        validate.validate_board_template_markers(r)
+        return r
 
     def test_fails_when_template_missing(self):
         r = Result()
@@ -666,23 +673,37 @@ class TestBoardTemplateMarkers(_PatchedTree):
         self.assertTrue(any("board-template-markers" in f for f in r.failures))
 
     def test_passes_with_markers_and_valid_json(self):
-        (validate.TEMPLATES / "board.html").write_text(self._GOOD)
-        r = Result()
-        validate.validate_board_template_markers(r)
+        r = self._write(self._GOOD)
         self.assertEqual(r.failures, [], r.failures)
 
     def test_fails_when_markers_absent(self):
-        (validate.TEMPLATES / "board.html").write_text("<html>no markers</html>")
-        r = Result()
-        validate.validate_board_template_markers(r)
+        r = self._write("<html>no markers</html>")
         self.assertTrue(any("marker" in f.lower() for f in r.failures))
 
     def test_fails_when_seed_json_broken(self):
-        (validate.TEMPLATES / "board.html").write_text(
-            "<script>/*BOARD_DATA_START*/{not json}/*BOARD_DATA_END*/</script>")
-        r = Result()
-        validate.validate_board_template_markers(r)
+        r = self._write("<script>/*BOARD_DATA_START*/{not json}/*BOARD_DATA_END*/</script>")
         self.assertTrue(any("board-template-markers" in f for f in r.failures))
+
+    def test_fails_when_the_seeded_deck_has_no_columns(self):
+        # normalize() refuses a deck with no lanes, so a seed that lost its
+        # columns would ship a board that paints an error state.
+        r = self._write(self._GOOD.replace(
+            '"columns": [{"id": "backlog", "name": "Backlog"}], ', ""))
+        self.assertTrue(any("no columns" in f for f in r.failures), r.failures)
+
+    def test_fails_on_anything_fetched_off_machine(self):
+        # The board is served from disk and must work fully offline.
+        for external in ('<script src="https://cdn.example/x.js"></script>',
+                         '<link href="//fonts.example/f.css" rel="stylesheet">',
+                         "<style>body{background:url(https://evil.example/p.png)}</style>",
+                         '<style>@import "https://evil.example/x.css";</style>'):
+            with self.subTest(external=external):
+                r = self._write(self._GOOD + external)
+                self.assertTrue(any("off-machine" in f for f in r.failures), r.failures)
+
+    def test_fails_on_an_empty_catch_block(self):
+        r = self._write(self._GOOD + "<script>try{x()}catch(e){}</script>")
+        self.assertTrue(any("empty catch" in f for f in r.failures), r.failures)
 
 
 class TestTaskStatusVocabularyOnRepo(unittest.TestCase):

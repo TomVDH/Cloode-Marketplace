@@ -28,7 +28,7 @@ Validators:
  22. gitignore-includes-repo-tidy-dirs — .gitignore lists the repo-tidy dirs if either exists
  23. status-vocabulary            — _vault_walk constants, vault-standards, and brief templates all agree on the six-state vocabulary
  24. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
- 25. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON between them parses
+ 25. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
  26. task-status-vocabulary       : every board.py STATUS_TO_COLUMN alias is documented in the vault-standards status alias table
  27. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
  28. decision-status-vocabulary   : _vault_walk constants, vault-standards, and the decision template agree on the five-state note vocabulary
@@ -1010,25 +1010,59 @@ def validate_voice_lexicon(r: Result) -> None:
 
 
 BOARD_DATA_RE = re.compile(r"/\*BOARD_DATA_START\*/(.*?)/\*BOARD_DATA_END\*/", re.DOTALL)
+# A subresource fetched from off-machine: src=/href= with a scheme or a
+# protocol-relative //, the same inside a CSS url(), or any @import.
+BOARD_EXTERNAL_RE = re.compile(
+    r"""(?:src|href)\s*=\s*["']?(?:https?:)?//|url\(\s*["']?(?:https?:)?//|@import""",
+    re.IGNORECASE,
+)
+# An error nobody will ever see. persistLocal() carried the only one of these
+# and it cost every drag made while storage was blocked.
+BOARD_EMPTY_CATCH_RE = re.compile(r"catch\s*\(\s*\w*\s*\)\s*\{\s*\}")
 
 
 def validate_board_template_markers(r: Result) -> None:
     """25. board-template-markers: templates/board.html exists, both BOARD_DATA
-    markers are present, and the seeded JSON between them parses. A markerless
-    or corrupt template makes every scaffold/reseed fail at hook time."""
+    markers are present, the seeded JSON between them parses and carries at
+    least one column, the file fetches nothing from off-machine, and it
+    swallows no error silently.
+
+    The first two keep a markerless or corrupt template from failing every
+    scaffold/reseed at hook time. The last three are properties of the shipped
+    artefact rather than of any one code path, so they belong in the build:
+    the board is served from disk and must work fully offline, `normalize()`
+    refuses a deck with no lanes (a seed that lost its columns would ship a
+    board that paints an error instead of the starter deck), and an empty
+    catch block is how a failed save became invisible in the first place.
+    """
     name = "board-template-markers"
     tpl = TEMPLATES / "board.html"
     if not tpl.is_file():
         r.add_fail(name, "templates/board.html missing")
         return
-    m = BOARD_DATA_RE.search(tpl.read_text())
+    text = tpl.read_text()
+    m = BOARD_DATA_RE.search(text)
     if not m:
         r.add_fail(name, "BOARD_DATA_START/END markers missing from board.html")
         return
     try:
-        json.loads(m.group(1))
+        seed = json.loads(m.group(1))
     except json.JSONDecodeError as e:
         r.add_fail(name, f"seeded JSON between BOARD_DATA markers does not parse: {e}")
+        return
+    if not isinstance(seed, dict) or not isinstance(seed.get("columns"), list) or not seed["columns"]:
+        r.add_fail(name, "seeded deck has no columns: the shipped board would "
+                         "render an error instead of the starter deck")
+        return
+    external = BOARD_EXTERNAL_RE.search(text)
+    if external:
+        r.add_fail(name, "board.html references something off-machine "
+                         f"({external.group(0)!r}): the board is served from disk "
+                         "and must work fully offline")
+        return
+    if BOARD_EMPTY_CATCH_RE.search(text):
+        r.add_fail(name, "board.html has an empty catch block: a swallowed "
+                         "error is how a failed save became invisible")
         return
     r.add_pass(name)
 

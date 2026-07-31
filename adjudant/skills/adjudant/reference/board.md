@@ -99,19 +99,31 @@ the background, open the URL, and close with one next step: drag cards, or hit
 
 - `boardId` (defaults to the project slug) namespaces the board's browser
   `localStorage` + IndexedDB file-handle, keeping multiple boards independent.
-- `done` and `icebox` columns get `BUILT` / `PARKED` rubber-stamp overprints.
+- `done` and `icebox` columns get `BUILT` / `PARKED` rubber-stamp overprints by
+  default. A renamed or added lane sets its own: `"stamp": "SHIPPED"` (or
+  `false` for none), `"stampTone": "built"|"parked"`, `"muted": true|false`.
 - A column may carry `"wip": N` — the lane head then shows `count/N wip` and
   turns red when over the limit.
 - Cards whose `column` matches no lane (hand-edited deck, removed column) are
   never invisible — they render in a synthetic **UNFILED** lane you can drag
-  them out of.
+  them out of. That lane takes no drops, and shows no drop affordance.
+- A category colour must be a colour the browser accepts. Anything that could
+  fetch (`url(...)`) falls back to the palette hue: the board is served from
+  disk and makes no outbound request.
 - In-browser view tools (never persisted): a **filter** box narrows by
-  id/title/category/ref/note (`Esc` clears), legend keys click-toggle a
-  category filter, and a focused ticket moves one lane left/right with
-  `[` / `]`.
-- The browser's rev-guard keys on the **set of card ids** (not the date or
-  count): a re-scaffold that only moves cards between columns keeps your browser
-  state; adding/removing a card refreshes it.
+  id/title/category/ref/note (`Esc` clears), legend keys are buttons that
+  toggle a category filter, a focused ticket moves one lane left/right with
+  `[` / `]`, and on a touch screen you tap an order then tap a stage.
+- The browser persists **only the moves you made by hand**, as
+  `{cardId: {from, to}}`. Everything else re-renders from the deck on every
+  load, so a re-scaffold that re-seeds a title, category or ref is visible
+  immediately, while the lane you dragged a card into survives it. An override
+  retires as soon as the deck itself moves that card somewhere else.
+- Before writing to a connected `board-data.json` the page **re-reads it and
+  merges**, so a reseed's new cards, its icebox moves and lanes you added by
+  hand are not overwritten by a tab that has been open since before them. A
+  second tab's moves are adopted rather than clobbered. A move that no store
+  confirmed is rolled back with a visible message, never left looking saved.
 
 ## Idempotency — refresh without clobber
 

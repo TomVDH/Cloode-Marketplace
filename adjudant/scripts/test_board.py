@@ -1645,5 +1645,60 @@ class TestTemplateIsOperableWithoutAMouse(unittest.TestCase):
         self.assertIn("tapToMove()", _js_function(self.src, "ticketNode"))
 
 
+class TestTemplateRendersOnlyWhatItCanVouchFor(unittest.TestCase):
+    """Structural guards for the correctness pass. Behaviour verified in
+    Chromium; see the module comment above."""
+
+    def setUp(self):
+        self.src = _template_text()
+
+    def test_a_deck_colour_cannot_make_the_offline_board_fetch(self):
+        # A category colour lands in a custom property backing
+        # `background:var(--c)`. A deck carrying url(https://…) made a board
+        # that is supposed to be fully offline issue a real network request.
+        body = _js_function(self.src, "safeColor")
+        self.assertIn('CSS.supports("color"', body)
+        self.assertIn("FETCHING_CSS", body)
+        self.assertRegex(self.src, r"FETCHING_CSS\s*=\s*/[^/]*url")
+        self.assertIn("safeColor(colors[n]", _js_function(self.src, "normalize"))
+
+    def test_a_deck_missing_a_key_fails_visibly_instead_of_rendering_empty(self):
+        body = _js_function(self.src, "normalize")
+        self.assertIn("deck root is not a JSON object", body)
+        self.assertIn("deck has no columns", body)
+        self.assertIn("Array.isArray(d.cards)", body)
+        self.assertIn("fatal(e)", _js_function(self.src, "boot"))
+        self.assertIn("<noscript>", self.src)
+        # an unrendered page must not read as an empty one
+        self.assertIn('<b id="orderCount">—</b>', self.src)
+        self.assertIn('<b id="stageCount">—</b>', self.src)
+
+    def test_the_unfiled_lane_never_paints_a_drop_it_will_refuse(self):
+        body = _js_function(self.src, "render")
+        self.assertIn("if(droppable){", body.replace(" ", ""))
+        self.assertNotIn('col.id!=="__unfiled"', body)
+        self.assertIn("droppable:false", body.replace(" ", ""))
+
+    def test_terminal_lane_treatment_comes_from_the_column_not_two_literals(self):
+        # merge_deck deliberately preserves renamed and added lanes across a
+        # reseed; a lane renamed from `done` to `shipped` lost its stamp and its
+        # muted treatment because both keyed on the literal ids.
+        render = _js_function(self.src, "render")
+        self.assertNotIn('col.id==="done"', render)
+        self.assertNotIn('col.id==="icebox"', render)
+        self.assertIn("col.stamp", _js_function(self.src, "laneStamp"))
+        self.assertIn("col.muted", _js_function(self.src, "laneMuted"))
+
+    def test_a_drag_moves_the_card_that_was_dragged_not_the_first_id_match(self):
+        # With duplicate ids, .find(c=>c.id===id) moved the wrong card.
+        self.assertNotIn("state.cards.find(c=>c.id===id)", self.src)
+        ticket = _js_function(self.src, "ticketNode")
+        self.assertIn('setData("text/plain",String(key))', ticket.replace(", ", ","))
+        render = _js_function(self.src, "render")
+        self.assertIn("Number(ev.dataTransfer.getData", render)
+        self.assertIn("Number.isInteger(key)", render)
+        self.assertIn("duplicateIds", _js_function(self.src, "normalize"))
+
+
 if __name__ == "__main__":
     unittest.main()
