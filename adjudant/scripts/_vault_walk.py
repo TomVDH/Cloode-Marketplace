@@ -70,6 +70,9 @@ def parse_frontmatter(text: str) -> tuple[Frontmatter, str]:
     Recognizes the standard `---\\n...\\n---\\n` opening.
     """
     fm = Frontmatter()
+    # A UTF-8 BOM must not hide the block: Obsidian renders BOM'd notes fine,
+    # so without this the note silently drops out of every schema check.
+    text = text.lstrip("﻿")
     if not text.startswith("---"):
         return fm, text
 
@@ -327,6 +330,11 @@ DEFAULT_SKIP: tuple[str, ...] = (
     ".adjudant-tidy-preview", ".adjudant-tidy-backup",
     ".adjudant-port-preview", ".adjudant-port-backup",
     ".adjudant-shelf-preview", ".adjudant-shelf-backup",
+    # a project's junk drawer is not content (finding 31). `_archive` is
+    # deliberately NOT here: it names a project ZONE (projects/_archive/) the
+    # walkers must still see; the parked archive verb introduces
+    # `archived-context/` for the in-project case instead.
+    "scratch",
 )
 
 
@@ -467,6 +475,23 @@ def parse_breadcrumb(project_root: Path) -> Optional[dict]:
     return out
 
 
+def _looks_like_vault(path: Path) -> bool:
+    """A directory qualifies as a vault only with a vault marker: Obsidian's
+    `.obsidian/` config dir, adjudant's `projects/` shape, or a frontmatter
+    `Home.md` of type vault-home. `is_dir()` alone let any stale same-named
+    directory capture every write on the fallback machine."""
+    try:
+        if (path / ".obsidian").is_dir() or (path / "projects").is_dir():
+            return True
+        home = path / "Home.md"
+        if home.is_file():
+            fm, _body = parse_frontmatter(home.read_text(errors="replace"))
+            return str(fm.fields.get("type", "")).strip() == "vault-home"
+    except OSError:
+        return False
+    return False
+
+
 def _candidate_vault_paths(vault_name: str) -> list[Path]:
     """Standard macOS locations where an Obsidian vault named `vault_name`
     might live. Used as a cross-machine portability fallback when an
@@ -507,12 +532,15 @@ def resolve_vault(
       4. .claude/obsidian-bridge legacy breadcrumb `vault:` field
       5. walk up parents for `Home.md` with `type: vault-home`
     """
-    # 1. Env var override (explicit param wins; OB_VAULT read when not passed)
+    # 1. Env var override (explicit param wins; OB_VAULT read when not passed).
+    # Non-absolute values are rejected, not resolved: an override that means a
+    # different directory per process cwd would break the same-vault invariant
+    # it exists to enforce.
     if env_vault is None:
         env_vault = os.environ.get("OB_VAULT")
     if env_vault:
         p = Path(env_vault).expanduser()
-        if p.is_dir():
+        if p.is_absolute() and p.is_dir():
             return p
 
     # 2. adjudant breadcrumb absolute vault_path
@@ -522,10 +550,13 @@ def resolve_vault(
         if p.is_dir():
             return p
 
-    # 3. adjudant breadcrumb vault_name (cross-machine portability)
+    # 3. adjudant breadcrumb vault_name (cross-machine portability). This step
+    # GUESSES from a name, so a candidate must look like a vault: a stale
+    # same-named empty directory in a legacy location used to silently capture
+    # every write on the fallback machine.
     if bc and "vault_name" in bc:
         for cand in _candidate_vault_paths(bc["vault_name"]):
-            if cand.is_dir():
+            if cand.is_dir() and _looks_like_vault(cand):
                 return cand
 
     # 4. legacy OB breadcrumb
@@ -538,14 +569,16 @@ def resolve_vault(
                 if p.is_dir():
                     return p
 
-    # 5. Walk up for Home.md
+    # 5. Walk up for Home.md. The type must come from parsed FRONTMATTER —
+    # a body-wide regex made any prose Home.md that merely mentions
+    # `type: vault-home` up-tree become "the vault".
     cur = project_root.resolve()
     while cur != cur.parent:
         home = cur / "Home.md"
         if home.is_file():
             try:
-                text = home.read_text(errors="replace")
-                if re.search(r"^type:\s*vault-home", text, re.MULTILINE):
+                fm, _body = parse_frontmatter(home.read_text(errors="replace"))
+                if str(fm.fields.get("type", "")).strip() == "vault-home":
                     return cur
             except OSError:
                 pass
@@ -1092,14 +1125,21 @@ def _schema_drift_core(fields: dict, has_block: bool, parse_error: Optional[str]
     if unknown:
         out["unknown_fields"] = sorted(unknown)
     enum = STATUS_VALUES_FOR_TYPE.get(ftype)
-    if enum is not None:
+    if enum is not None and "status" in keys:
         status = fields.get("status")
-        if isinstance(status, str) and status and status not in enum:
-            if ftype == "task" and aliases and status in aliases:
-                pass  # accepted input per the alias table; the board normalizes lanes on read
-            else:
-                normalizable = ftype == "decision" and status in DECISION_STATUS_ALIASES
-                out["status_invalid"] = {"value": status, "normalizable": normalizable}
+        if isinstance(status, str) and status.strip():
+            if status not in enum:
+                if ftype == "task" and aliases and status in aliases:
+                    pass  # accepted input per the alias table; the board normalizes lanes on read
+                else:
+                    normalizable = ftype == "decision" and status in DECISION_STATUS_ALIASES
+                    out["status_invalid"] = {"value": status, "normalizable": normalizable}
+        else:
+            # Present-but-None (blank `status:`), a list, or an empty string
+            # is the same drift as a bad enum value — only the shape differs.
+            # Checking only non-empty strings made these invisible while the
+            # literal string "null" was flagged: an inconsistent trio.
+            out["status_invalid"] = {"value": status, "normalizable": False}
     if "node_type" in keys and "type" in keys:
         out["type_conflict"] = True
     if not out:
@@ -1168,12 +1208,14 @@ def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dic
 _DATED_STEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 
 
-def newest_dated_stem(folder: Path) -> Optional[str]:
+def newest_dated_stem(folder: Path, not_after: Optional[str] = None) -> Optional[str]:
     """Most recent valid YYYY-MM-DD stem prefix among .md files in folder.
 
     Calendar-validates each candidate: a malformed stem like 2026-99-01 is
     skipped rather than lexicographically beating a valid older date. None
-    only when no valid dated stem exists.
+    only when no valid dated stem exists. `not_after` (YYYY-MM-DD) bounds the
+    result: a future-dated stem (clock skew, restored backup) must not win —
+    it skewed days_quiet negative (finding 19).
     """
     if not folder.is_dir():
         return None
@@ -1185,6 +1227,8 @@ def newest_dated_stem(folder: Path) -> Optional[str]:
                 try:
                     datetime.strptime(m.group(1), "%Y-%m-%d")
                 except ValueError:
+                    continue
+                if not_after is not None and m.group(1) > not_after:
                     continue
                 dates.append(m.group(1))
     return max(dates) if dates else None
@@ -1203,7 +1247,8 @@ def suggest_status(
     (declared_valid=False) and treated as active for suggestion purposes.
     Never writes.
     """
-    last = newest_dated_stem(project_dir / "sessions")
+    last = newest_dated_stem(project_dir / "sessions",
+                             not_after=today.strftime("%Y-%m-%d"))
     days_quiet: Optional[int] = None
     if last:
         try:

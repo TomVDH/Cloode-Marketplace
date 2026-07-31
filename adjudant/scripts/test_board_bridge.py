@@ -290,5 +290,29 @@ class TestKebab(unittest.TestCase):
         self.assertLessEqual(len(board_bridge.kebab("word " * 60)), 80)
 
 
+class TestLedgerFalsyId(unittest.TestCase):
+    """Finding 31: `entry.get("id") or ""` dropped a falsy-but-real id of 0,
+    so that task silently never bridged."""
+
+    def test_numeric_zero_id_survives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.jsonl"
+            ledger.write_text(
+                json.dumps({"id": 0, "status": "created", "subject": "zeroth"})
+                + "\n"
+                + json.dumps({"id": "1", "status": "created", "subject": "first"})
+                + "\n")
+            entries = board_bridge.read_ledger(ledger)
+            self.assertIn("0", entries)
+            self.assertEqual(entries["0"]["subject"], "zeroth")
+            self.assertIn("1", entries)
+
+    def test_missing_id_still_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.jsonl"
+            ledger.write_text(json.dumps({"status": "created"}) + "\n")
+            self.assertEqual(board_bridge.read_ledger(ledger), {})
+
+
 if __name__ == "__main__":
     unittest.main()

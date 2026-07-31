@@ -277,5 +277,58 @@ class TestComputeFreshness(unittest.TestCase):
         self.assertNotIn("STALE", block)
 
 
+class TestActivityTimeParsing(unittest.TestCase):
+    """Finding 31: the activity regex matched any d:dd token, so prose like
+    "ratio 3:45" skewed the stale banner. Activity is a line that LEADS with
+    markup + a time: remember headers and session bullets."""
+
+    def test_prose_time_does_not_register_as_activity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rd = Path(tmp)
+            (rd / "today-2026-07-30.md").write_text(
+                "## 01:00 | main\nDiscussed the golden ratio 3:45 idea.\n")
+            got = pc.latest_today_activity(rd)
+            self.assertEqual((got.hour, got.minute), (1, 0))
+
+    def test_range_header_takes_the_end_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rd = Path(tmp)
+            (rd / "today-2026-07-30.md").write_text(
+                "## 18:34-23:00 | main\nwork happened\n")
+            got = pc.latest_today_activity(rd)
+            self.assertEqual((got.hour, got.minute), (23, 0))
+
+    def test_session_bullet_takes_leading_time_not_prose(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "2026-07-30.md"
+            note.write_text("## Log\n- 14:02 · discussed the 3:45 ratio\n")
+            got = pc.latest_session_activity(
+                note, datetime(2026, 7, 30))
+            self.assertEqual((got.hour, got.minute), (14, 2))
+
+
+class TestLatestSessionFutureBound(unittest.TestCase):
+    """Finding 19: `sorted(glob)[-1]` with no upper bound let a future-dated
+    note (clock skew, restored backup) permanently absorb midnight-straddle
+    appends. The glob's digit classes also admit impossible dates."""
+
+    def test_future_and_impossible_dates_are_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = Path(tmp)
+            past = sessions / "2026-01-01.md"
+            past.write_text("## Log\n")
+            (sessions / "2029-12-31.md").write_text("## Log\n")   # future
+            (sessions / "2026-99-99.md").write_text("## Log\n")   # impossible
+            got = pc.latest_session_file(sessions, "2026-07-30")
+            self.assertEqual(got, past)
+
+    def test_only_future_notes_fall_back_to_todays_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = Path(tmp)
+            (sessions / "2029-12-31.md").write_text("## Log\n")
+            got = pc.latest_session_file(sessions, "2026-07-30")
+            self.assertEqual(got, sessions / "2026-07-30.md")
+
+
 if __name__ == "__main__":
     unittest.main()

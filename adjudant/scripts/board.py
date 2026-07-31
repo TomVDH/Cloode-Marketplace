@@ -26,8 +26,10 @@ CLI:
     python3 board.py --ensure [--project-dir PATH]
 
 `--ensure` is the ambient form (hooks, session-end bridge): birth the board
-when the first real task note exists, reseed when tasks changed, write nothing
-otherwise. Verdict (created/reseeded/no-tasks/no-change) is the last stdout line.
+when the first real task note exists, reseed when tasks changed, refresh a
+stale board.html when a plugin upgrade shipped a new template, write nothing
+otherwise. Verdict (created/reseeded/html-refreshed/no-tasks/no-change) is the
+last stdout line.
 
 `scaffold` is idempotent and *refresh-without-clobber*: re-running with
 `--from-tasks` against an existing board merges the current task state into the
@@ -38,6 +40,7 @@ full rebuild). `board.html` is always refreshed from the template.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -328,6 +331,36 @@ def merge_deck(existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any
     return out
 
 
+_TEMPLATE_STAMP_PREFIX = "<!-- adjudant-template "
+
+
+def template_hash() -> Optional[str]:
+    """16-hex identity of the shipped board template; None when unreadable."""
+    try:
+        return hashlib.sha256(TEMPLATE.read_bytes()).hexdigest()[:16]
+    except OSError:
+        return None
+
+
+def _board_html_current(html_path: Path) -> bool:
+    """True when board.html exists and was rendered from the CURRENT template.
+
+    A page without a stamp (pre-hash builds) or from another template hash is
+    stale — finding 24: a plugin upgrade shipping a new template left quiet
+    projects serving the old page forever, because the ambient path
+    short-circuited on deck no-change. Unreadable template: treat the page as
+    current, there is nothing to refresh from.
+    """
+    current = template_hash()
+    if current is None:
+        return True
+    try:
+        html = html_path.read_text()
+    except OSError:
+        return False
+    return f"{_TEMPLATE_STAMP_PREFIX}{current} -->" in html
+
+
 def render_template(deck: dict[str, Any]) -> str:
     """The full board.html text with the deck injected. Raises before any file
     is written when the template is missing/markerless, so a failed render
@@ -341,7 +374,13 @@ def render_template(deck: dict[str, Any]) -> str:
     # containing `</script>` or `<!--` can't break out of the script block.
     payload_json = json.dumps(deck, indent=2).replace("<", "\\u003c")
     payload = "/*BOARD_DATA_START*/" + payload_json + "/*BOARD_DATA_END*/"
-    return MARK_RE.sub(lambda _m: payload, tpl, count=1)
+    rendered = MARK_RE.sub(lambda _m: payload, tpl, count=1)
+    # Stamp which template produced this page, so the ambient path can
+    # re-emit html-only when a plugin upgrade ships a new template.
+    stamp = template_hash()
+    if stamp:
+        rendered = rendered.rstrip("\n") + f"\n{_TEMPLATE_STAMP_PREFIX}{stamp} -->\n"
+    return rendered
 
 
 def emit_html(deck: dict[str, Any], dest_html: Path) -> None:
@@ -562,9 +601,10 @@ def ensure_board(project_dir: Path, vault_dir: Optional[Path] = None) -> str:
         ``scaffold_one`` and return ``"created"``.
       - board exists: the clobber-safe ``--from-tasks`` merge (dragged columns
         always survive), ``"reseeded"`` when the deck actually changed,
-        ``"no-change"`` otherwise. On no-change the deck file is left
-        untouched, mtime included, so frequent ambient calls never churn a
-        synced vault.
+        ``"html-refreshed"`` when only board.html was stale (template drift or
+        a vanished page — the deck is left untouched), ``"no-change"``
+        otherwise. On no-change the deck file is left untouched, mtime
+        included, so frequent ambient calls never churn a synced vault.
 
     ``vault_dir`` is accepted for callers that already resolved the vault; the
     composition itself only needs the resolved project dir. Raises on a failed
@@ -596,7 +636,20 @@ def ensure_board(project_dir: Path, vault_dir: Optional[Path] = None) -> str:
                            title=project_dir.name.replace("-", " ").title(),
                            board_id=project_dir.name)
         if _same_deck(merge_deck(existing, fresh), existing):
-            return "no-change"
+            html_path = dest / "board.html"
+            if _board_html_current(html_path):
+                return "no-change"
+            # Template drifted, or the page vanished: refresh board.html from
+            # the on-disk deck without touching board-data.json (finding 24).
+            # Degrade to "no-change" when the template cannot render — an
+            # html nicety must never break the ambient path, and returning
+            # "no-change" claims nothing that did not happen.
+            try:
+                with file_lock(data_path):
+                    emit_html(existing, html_path)
+            except (OSError, ValueError):
+                return "no-change"
+            return "html-refreshed"
     rc = scaffold_one(project_dir, dest, from_tasks=True, data=None,
                       force=False, title=None, board_id=None, vault_root=vault_dir)
     if rc != 0:

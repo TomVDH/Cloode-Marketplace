@@ -1194,5 +1194,57 @@ class TestConcurrentDeckWrites(unittest.TestCase):
                              "another process could enter the read-merge-write window")
 
 
+class TestTemplateDriftReemit(unittest.TestCase):
+    """Finding 24: ensure_board's no-change path never re-rendered board.html,
+    so a plugin upgrade shipping a new template left quiet projects serving
+    stale HTML forever. The rendered page carries a template stamp; on drift
+    (or a vanished html) the page is re-emitted without touching the deck."""
+
+    def _seeded(self, tmp: Path) -> Path:
+        project = _make_project(tmp, "demo")
+        _write(project / "tasks" / "t-01.md",
+               "---\ncode: T-01\nstatus: todo\n---\n\n# First task\n")
+        self.assertEqual(_ensure(project), "created")
+        return project
+
+    def test_rendered_html_carries_template_stamp(self):
+        import board
+        deck = {"title": "x", "cards": [], "columns": [], "categories": {}}
+        html = board.render_template(deck)
+        self.assertRegex(html, r"adjudant-template [0-9a-f]{16}")
+
+    def test_no_change_reemits_html_when_template_drifts(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp))
+            deck_path = project / "board" / "board-data.json"
+            deck_before = deck_path.read_bytes()
+            new_tpl = Path(tmp) / "board-v2.html"
+            new_tpl.write_text(board.TEMPLATE.read_text()
+                               + "\n<!-- v2-sentinel -->\n")
+            with unittest.mock.patch.object(board, "TEMPLATE", new_tpl):
+                self.assertEqual(_ensure(project), "html-refreshed")
+            html = (project / "board" / "board.html").read_text()
+            self.assertIn("v2-sentinel", html)
+            self.assertEqual(deck_path.read_bytes(), deck_before,
+                             "an html-only refresh must not touch the deck")
+
+    def test_no_change_stays_quiet_when_template_current(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp))
+            html_path = project / "board" / "board.html"
+            before = html_path.read_bytes()
+            self.assertEqual(_ensure(project), "no-change")
+            self.assertEqual(html_path.read_bytes(), before)
+
+    def test_missing_html_recreated_on_no_change_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._seeded(Path(tmp))
+            html_path = project / "board" / "board.html"
+            html_path.unlink()
+            self.assertEqual(_ensure(project), "html-refreshed")
+            self.assertTrue(html_path.is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

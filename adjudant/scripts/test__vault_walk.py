@@ -840,6 +840,8 @@ class TestVaultNameResolution(unittest.TestCase):
             (home / "Documents").mkdir()
             vault = home / "Documents" / "MyVault"
             vault.mkdir()
+            # F26: a candidate must carry a vault marker to qualify
+            (vault / ".obsidian").mkdir()
 
             code = home / "code"; code.mkdir()
             (code / ".claude").mkdir()
@@ -1416,7 +1418,7 @@ class TestAtomicWriteText(unittest.TestCase):
                 "from pathlib import Path\n"
                 "from _vault_walk import atomic_write_text\n"
                 "t = Path(sys.argv[1])\n"
-                "for i in range(40):\n"
+                "for i in range(150):\n"
                 "    c = 'AB'[i % 2]\n"
                 "    atomic_write_text(t, c * 400_000 + '\\n')\n")
             procs = [subprocess.Popen([sys.executable, str(runner), str(target)])
@@ -1432,7 +1434,11 @@ class TestAtomicWriteText(unittest.TestCase):
             for p in procs:
                 p.wait()
             self.assertEqual(bad, [], f"{len(bad)} partial reads: {bad[:3]}")
-            self.assertGreater(ok, 20)
+            # Anti-vacuity floor, not a throughput bar: it only proves the
+            # reader genuinely raced the writers. The old `> 20` was
+            # calibrated to one machine's disk speed and flaked on faster
+            # hardware where 300 writes finish before 21 reads land.
+            self.assertGreaterEqual(ok, 5)
 
 
 class TestFileLock(unittest.TestCase):
@@ -1543,6 +1549,161 @@ class TestFileLock(unittest.TestCase):
                 self.assertTrue(locked)
             # Never unlinked: deleting it races another holder onto a new inode.
             self.assertTrue(lock_path_for(target).exists())
+
+
+class TestScratchSkip(unittest.TestCase):
+    """Finding 31: a project `scratch/` dir was walked like content, so junk
+    working files skewed counts and the cost estimator."""
+
+    def test_scratch_dir_is_never_walked(self):
+        from _vault_walk import walk_project
+        with tempfile.TemporaryDirectory() as tmp:
+            proot = Path(tmp)
+            (proot / "notes").mkdir()
+            (proot / "notes" / "real.md").write_text("---\ntype: note\n---\nx\n")
+            (proot / "scratch").mkdir()
+            (proot / "scratch" / "junk.md").write_text("---\ntype: note\n---\nx\n")
+            rels = [str(vf.rel_path) for vf in walk_project(proot)]
+            self.assertTrue(any("real.md" in r for r in rels))
+            self.assertFalse(any("junk.md" in r for r in rels),
+                             "scratch/ must be in the walker skip set")
+
+
+class TestSchemaDriftStatusShape(unittest.TestCase):
+    """Finding 27: only a non-empty string status was checked, so a blank
+    `status:` (parsed None), a list value, or an empty string was invisible
+    drift while the literal string "null" was flagged - an inconsistent trio."""
+
+    def _drift(self, status_block: str):
+        from _vault_walk import schema_drift_for_text
+        text = ("---\ntype: decision\n" + status_block +
+                "date: 2026-01-01\ntags:\n  - decision\n---\nbody\n")
+        return schema_drift_for_text(text, "decisions/x.md")
+
+    def test_blank_status_is_flagged(self):
+        d = self._drift("status:\n")
+        self.assertIsNotNone(d)
+        self.assertIn("status_invalid", d)
+
+    def test_list_status_is_flagged(self):
+        d = self._drift("status:\n  - active\n  - deferred\n")
+        self.assertIsNotNone(d)
+        self.assertIn("status_invalid", d)
+
+    def test_empty_quoted_status_is_flagged(self):
+        d = self._drift('status: ""\n')
+        self.assertIsNotNone(d)
+        self.assertIn("status_invalid", d)
+
+    def test_null_string_status_stays_flagged(self):
+        d = self._drift("status: null\n")
+        self.assertIsNotNone(d)
+        self.assertIn("status_invalid", d)
+
+    def test_valid_status_stays_clean(self):
+        self.assertIsNone(self._drift("status: active\n"))
+
+
+class TestDatedStemFutureBound(unittest.TestCase):
+    """Finding 19: newest_dated_stem calendar-validates but had no upper
+    bound, so a future-dated session skewed days_quiet negative."""
+
+    def test_newest_dated_stem_bounds_to_not_after(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "2026-01-01.md").write_text("x")
+            (folder / "2029-12-31.md").write_text("x")
+            self.assertEqual(
+                newest_dated_stem(folder, not_after="2026-07-30"),
+                "2026-01-01")
+
+    def test_newest_dated_stem_unbounded_without_not_after(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "2029-12-31.md").write_text("x")
+            self.assertEqual(newest_dated_stem(folder), "2029-12-31")
+
+    def test_suggest_status_ignores_future_sessions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            pdir = _mk_project(vault, "p", sessions=["2029-12-31"])
+            got = suggest_status("active", pdir, date(2026, 7, 30))
+            self.assertIsNone(got["days_quiet"],
+                              "a future-dated session must not count as activity")
+
+
+class TestResolverHardening(unittest.TestCase):
+    """Findings 26/28/29/30: the resolver accepted anything directory-shaped.
+    A bare same-named dir captured every write on the fallback machine, a
+    prose Home.md up-tree became "the vault", a relative OB_VAULT broke the
+    same-vault invariant across cwds, and a BOM hid frontmatter entirely."""
+
+    def test_vault_name_fallback_rejects_markerless_directory(self):
+        # F26: an empty directory in a standard location must not capture.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / "Documents").mkdir()
+            (home / "Documents" / "MyVault").mkdir()   # bare: no marker
+            code = home / "code"; code.mkdir()
+            (code / ".claude").mkdir()
+            (code / ".claude" / "adjudant").write_text(
+                "vault_path: /nope/missing\nvault_name: MyVault\nslug: p\nmode: project\n")
+            with unittest.mock.patch("pathlib.Path.home", return_value=home):
+                self.assertIsNone(resolve_vault(code))
+
+    def test_vault_name_fallback_accepts_obsidian_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            vault = home / "Documents" / "MyVault"
+            (vault / ".obsidian").mkdir(parents=True)
+            code = home / "code"; code.mkdir()
+            (code / ".claude").mkdir()
+            (code / ".claude" / "adjudant").write_text(
+                "vault_path: /nope/missing\nvault_name: MyVault\nslug: p\nmode: project\n")
+            with unittest.mock.patch("pathlib.Path.home", return_value=home):
+                resolved = resolve_vault(code)
+            self.assertIsNotNone(resolved)
+            self.assertEqual(resolved.resolve(), vault.resolve())
+
+    def test_ob_vault_relative_path_is_rejected(self):
+        # F29: a relative override returned unresolved captures a different
+        # directory per cwd. It must fall through to the breadcrumb instead.
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpp = Path(tmp)
+            (tmpp / "relvault").mkdir()                 # exists relative to cwd
+            real_vault = tmpp / "RealVault"
+            (real_vault / ".obsidian").mkdir(parents=True)
+            code = tmpp / "code"; code.mkdir()
+            (code / ".claude").mkdir()
+            (code / ".claude" / "adjudant").write_text(
+                f"vault_path: {real_vault}\nslug: p\nmode: project\n")
+            before = os.getcwd()
+            os.chdir(tmp)
+            try:
+                resolved = resolve_vault(code, env_vault="relvault")
+            finally:
+                os.chdir(before)
+            self.assertEqual(resolved.resolve(), real_vault.resolve())
+
+    def test_home_md_walk_up_requires_frontmatter_type(self):
+        # F28: `type: vault-home` in prose must not make a directory the vault.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "docs"
+            proj = root / "nested" / "proj"
+            proj.mkdir(parents=True)
+            (root / "Home.md").write_text(
+                "# My notes about adjudant\n\n"
+                "A vault home is marked with\ntype: vault-home\nin frontmatter.\n")
+            self.assertIsNone(resolve_vault(proj))
+
+    def test_bom_prefixed_frontmatter_parses(self):
+        # F30: a BOM silently dropped the note out of every schema check
+        # while Obsidian rendered it fine.
+        fm, body = parse_frontmatter("﻿---\ntype: note\n---\nbody\n")
+        self.assertTrue(fm.has_block)
+        self.assertEqual(fm.fields.get("type"), "note")
+        self.assertEqual(body, "body\n")
 
 
 if __name__ == "__main__":

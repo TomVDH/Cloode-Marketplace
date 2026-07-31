@@ -88,7 +88,10 @@ def read_ledger(path: Path) -> dict[str, dict[str, Any]]:
             continue
         if not isinstance(entry, dict):
             continue
-        tid = str(entry.get("id") or "").strip()
+        # `or ""` would drop a falsy-but-real id of 0 (finding 31): only a
+        # genuinely absent id skips the entry.
+        tid_raw = entry.get("id")
+        tid = "" if tid_raw is None else str(tid_raw).strip()
         if not tid:
             continue
         entries[tid] = entry

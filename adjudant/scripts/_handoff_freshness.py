@@ -22,6 +22,13 @@ LIGHT_GREEN_MAX_H = 2.0
 LIGHT_YELLOW_MAX_H = 8.0
 
 TIME_RE = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)\b")
+# An ACTIVITY line leads with markup + a time, optionally a range partner:
+# remember headers (`## 18:34-23:00 | main`, `## 01:45 | main`) and session
+# bullets (`- 14:02 · …`). A time in prose ("ratio 3:45") must never register
+# as activity — it skewed the stale banner (finding 31).
+_ACTIVITY_LINE_RE = re.compile(
+    r"^\s*(?:#{1,6}|[-*+])\s+([01]?\d|2[0-3]):([0-5]\d)"
+    r"(?:\s*[-–—]\s*([01]?\d|2[0-3]):([0-5]\d))?")
 DATE_IN_NAME_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 # `NEXT: ...` in any leading markup form: `NEXT:`, `- NEXT:`, `**NEXT:**`, `## NEXT —`.
 # A plain hyphen only counts as the separator after whitespace, so compound
@@ -67,12 +74,20 @@ def parse_next_line(text: str) -> Optional[str]:
 
 
 def _last_time(text: str) -> Optional[tuple]:
-    """The last HH:MM appearing in text, as (hour, minute)."""
-    times = TIME_RE.findall(text)
-    if not times:
-        return None
-    h, m = times[-1]
-    return int(h), int(m)
+    """The last ACTIVITY time in text, as (hour, minute).
+
+    Only lines that lead with markup + a time count; a range header yields
+    its end time. Prose times never register (finding 31)."""
+    last: Optional[tuple] = None
+    for ln in text.splitlines():
+        m = _ACTIVITY_LINE_RE.match(ln)
+        if not m:
+            continue
+        if m.group(3) is not None:
+            last = (int(m.group(3)), int(m.group(4)))
+        else:
+            last = (int(m.group(1)), int(m.group(2)))
+    return last
 
 
 def latest_today_activity(remember_dir: Path) -> Optional[_dt.datetime]:
@@ -153,7 +168,17 @@ def latest_session_file(sessions_dir: Path, today: str) -> Path:
         candidates = sorted(sessions_dir.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md"))
     except OSError:
         candidates = []
-    return candidates[-1] if candidates else target
+    # Bound to real dates not after today (finding 19): a future-dated note
+    # (clock skew, restored backup) must never absorb straddle appends, and
+    # the digit glob admits impossible dates like 2026-99-99.
+    for cand in reversed(candidates):
+        try:
+            _dt.datetime.strptime(cand.stem, "%Y-%m-%d")
+        except ValueError:
+            continue
+        if cand.stem <= today:
+            return cand
+    return target
 
 
 def age_hours(activity: Optional[_dt.datetime], now: _dt.datetime) -> Optional[float]:
