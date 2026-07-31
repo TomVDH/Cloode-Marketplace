@@ -7,7 +7,8 @@ grep through 191 transcript files.
 
 Two fields:
   - `session_id:` (YAML list) on session notes — accumulates every conversation
-    UUID that touched the session. Stamped by the SessionStart hook + connect.py.
+    UUID that touched the session. Stamped by the SessionStart hook
+    (connect.py only scaffolds the empty list).
   - `source_session:` (scalar) on decisions/notes/docs/sources/releases/etc. —
     the conversation UUID the file was authored in. Stamped by the PostToolUse
     hook on new vault writes.
@@ -40,17 +41,53 @@ from pathlib import Path
 
 
 # A vault frontmatter file starts with `---\n` on line 1 and has a closing
-# `\n---\n` somewhere below. Anything else: skip.
+# `\n---\n` somewhere below (or `\n---` at EOF, matching parse_frontmatter's
+# grammar). Anything else: skip. A CRLF file never matches because reads are
+# newline-untranslated — stamping one would rewrite every line as LF.
 _FM_OPEN = "---\n"
 # Trailing whitespace on the fence line is tolerated, but NOT subsequent
 # newlines — eating those would silently strip the blank line a Markdown body
 # usually starts with.
-_FM_CLOSE_RE = re.compile(r"\n---[ \t]*\n", re.MULTILINE)
+_FM_CLOSE_RE = re.compile(r"\n---[ \t]*(?:\n|\Z)", re.MULTILINE)
 
 # Conservative UUID acceptance — Claude Code uses standard UUIDs, but accept
 # anything that isn't whitespace and is short enough to look like an ID. We
 # don't want to silently drop a malformed-but-real ID; we just refuse empty.
 _VALID_ID_RE = re.compile(r"^\S{4,}$")
+
+
+def _primitives():
+    """Shared write primitives, imported lazily so the no-op paths of the
+    hooks that import this module never pay the _vault_walk import cost."""
+    try:
+        from _vault_walk import atomic_write_text, file_lock
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from _vault_walk import atomic_write_text, file_lock
+    return atomic_write_text, file_lock
+
+
+def _read_text_safe(path: Path) -> str | None:
+    """Read UTF-8 with newlines untranslated; None on decode or OS errors.
+
+    `newline=""` is the CRLF guard: a translated read would let a CRLF file
+    through the `---\\n` gate and the rewrite would churn every line to LF.
+    """
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            return handle.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _write_safe(path: Path, text: str) -> bool:
+    """Atomic replace; False when the write cannot land (safe-skip)."""
+    atomic_write_text, _ = _primitives()
+    try:
+        atomic_write_text(path, text)
+    except OSError:
+        return False
+    return True
 
 
 def _split_frontmatter(text: str) -> tuple[str | None, str | None]:
@@ -84,14 +121,28 @@ def add_to_session_id_list(session_file: Path, uuid: str) -> bool:
 
     Idempotent — if `uuid` is already in the list, no-op. Creates the list if
     the field is missing. Returns True if the file was modified, False
-    otherwise. Returns False on any safe-skip (no file, no frontmatter,
-    malformed, empty uuid).
+    otherwise. Returns False on any safe-skip (no file, symlink, no
+    frontmatter, malformed, undecodable, unwritable, empty uuid).
+
+    The whole read-modify-write runs under `file_lock` with an atomic
+    replace: concurrent SessionStart hooks were measured losing 19 of 30
+    appended UUIDs on the bare write_text path.
     """
     if not _VALID_ID_RE.match(uuid or ""):
         return False
+    if session_file.is_symlink():
+        return False
     if not session_file.is_file():
         return False
-    text = session_file.read_text()
+    _, file_lock = _primitives()
+    with file_lock(session_file):
+        return _append_session_id_locked(session_file, uuid)
+
+
+def _append_session_id_locked(session_file: Path, uuid: str) -> bool:
+    text = _read_text_safe(session_file)
+    if text is None:
+        return False
     fm, body = _split_frontmatter(text)
     if fm is None:
         return False
@@ -115,8 +166,7 @@ def add_to_session_id_list(session_file: Path, uuid: str) -> bool:
             lines.pop()
         lines.append(new_block)
         new_fm = "\n".join(lines) + "\n"
-        session_file.write_text(_join_frontmatter(new_fm, body))
-        return True
+        return _write_safe(session_file, _join_frontmatter(new_fm, body))
 
     head = lines[sid_idx]
     after_colon = head.split(":", 1)[1].strip()
@@ -145,8 +195,7 @@ def add_to_session_id_list(session_file: Path, uuid: str) -> bool:
         new_fm = "\n".join(lines)
         if not new_fm.endswith("\n"):
             new_fm += "\n"
-        session_file.write_text(_join_frontmatter(new_fm, body))
-        return True
+        return _write_safe(session_file, _join_frontmatter(new_fm, body))
 
     # Inline-with-items form like `session_id: [uuid1, uuid2]`. Convert
     # the file to block form to keep one shape.
@@ -165,8 +214,7 @@ def add_to_session_id_list(session_file: Path, uuid: str) -> bool:
     new_fm = "\n".join(lines)
     if not new_fm.endswith("\n"):
         new_fm += "\n"
-    session_file.write_text(_join_frontmatter(new_fm, body))
-    return True
+    return _write_safe(session_file, _join_frontmatter(new_fm, body))
 
 
 # ============================================================
@@ -208,21 +256,26 @@ def stamp_source_session(file_path: Path, uuid: str) -> bool:
     """
     if not _VALID_ID_RE.match(uuid or ""):
         return False
+    if file_path.is_symlink():
+        return False
     if not file_path.is_file():
         return False
     if not _should_stamp_source(file_path):
         return False
-    text = file_path.read_text()
-    fm, body = _split_frontmatter(text)
-    if fm is None:
-        return False
-    if re.search(r"^source_session\s*:", fm, re.MULTILINE):
-        return False  # already stamped (even empty); never overwrite
+    _, file_lock = _primitives()
+    with file_lock(file_path):
+        text = _read_text_safe(file_path)
+        if text is None:
+            return False
+        fm, body = _split_frontmatter(text)
+        if fm is None:
+            return False
+        if re.search(r"^source_session\s*:", fm, re.MULTILINE):
+            return False  # already stamped (even empty); never overwrite
 
-    # Append at the end of the frontmatter block.
-    fm = fm.rstrip("\n") + f"\nsource_session: {uuid}\n"
-    file_path.write_text(_join_frontmatter(fm, body))
-    return True
+        # Append at the end of the frontmatter block.
+        fm = fm.rstrip("\n") + f"\nsource_session: {uuid}\n"
+        return _write_safe(file_path, _join_frontmatter(fm, body))
 
 
 # ============================================================
