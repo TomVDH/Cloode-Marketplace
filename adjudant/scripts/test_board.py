@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import math
 import re
 import sys
 import tempfile
@@ -1457,6 +1458,52 @@ def _js_function(src: str, name: str) -> str:
     raise AssertionError(f"function {name} not found in the board template")
 
 
+def _oklch_to_srgb(lightness: float, chroma: float, hue_deg: float) -> tuple:
+    """OKLCH to gamma-encoded sRGB. Pure stdlib: the contrast guards below need
+    real numbers, and pulling in a colour library for four constants is not a
+    trade this repo makes."""
+    h = math.radians(hue_deg)
+    a, b = chroma * math.cos(h), chroma * math.sin(h)
+    l_ = lightness + 0.3963377774 * a + 0.2158037573 * b
+    m_ = lightness - 0.1055613458 * a - 0.0638541728 * b
+    s_ = lightness - 0.0894841775 * a - 1.2914855480 * b
+    l, m, s = l_ ** 3, m_ ** 3, s_ ** 3
+    lin = (
+        4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    )
+    out = []
+    for v in lin:
+        v = max(0.0, min(1.0, v))
+        out.append(12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055)
+    return tuple(out)
+
+
+def _contrast(c1: tuple, c2: tuple) -> float:
+    """WCAG 2.x contrast ratio between two gamma-encoded sRGB triples."""
+    def lum(c):
+        chan = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+        return 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2]
+    hi, lo = max(lum(c1), lum(c2)), min(lum(c1), lum(c2))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _token(src: str, name: str, *, dark: bool = False) -> tuple:
+    """The OKLCH value of a `--token:` declaration, as sRGB.
+
+    `dark` reads the value inside the prefers-color-scheme block instead.
+    """
+    body = src
+    if dark:
+        i = src.index("@media (prefers-color-scheme: dark)")
+        body = src[i:src.index("}\n  }", i)]
+    m = re.search(rf"{re.escape(name)}\s*:\s*oklch\(\s*([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s*\)", body)
+    if not m:
+        raise AssertionError(f"{name} not found as an oklch() value ({'dark' if dark else 'light'})")
+    return _oklch_to_srgb(float(m.group(1)) / 100, float(m.group(2)), float(m.group(3)))
+
+
 class TestTemplateSavesHonestly(unittest.TestCase):
     """Structural guards for the persistence rewrite. Behaviour verified in
     Chromium; see the module comment above."""
@@ -1536,6 +1583,66 @@ class TestTemplateSavesHonestly(unittest.TestCase):
         self.assertIn("baseCols[key]", body)
         write = _js_function(self.src, "writeDisk")
         self.assertIn("baseCols=out.cards.map", write.replace(" ", ""))
+
+
+class TestTemplateIsOperableWithoutAMouse(unittest.TestCase):
+    """Structural guards for the accessibility pass. Behaviour verified in
+    Chromium; see the module comment above."""
+
+    def setUp(self):
+        self.src = _template_text()
+
+    def test_lanes_and_cards_carry_roles_and_names(self):
+        for needle in ('setAttribute("role","list")',
+                       'setAttribute("role","listitem")',
+                       'setAttribute("role","group")',
+                       'setAttribute("role","heading")',
+                       'setAttribute("aria-labelledby"',
+                       'setAttribute("aria-label"'):
+            self.assertIn(needle, self.src.replace(", ", ","), needle)
+
+    def test_a_move_is_announced_in_a_live_region(self):
+        self.assertIn('id="live"', self.src)
+        self.assertIn('role="status"', self.src)
+        self.assertIn('aria-live="polite"', self.src)
+        self.assertIn("announce(", _js_function(self.src, "applyMove"))
+
+    def test_the_legend_filter_is_a_button_not_a_bare_span(self):
+        # It was a <span> with a click handler: no focus, no keydown, no state.
+        # The footer tells people to use it.
+        body = _js_function(self.src, "render")
+        self.assertIn('el("button","k"', body.replace(", ", ","))
+        self.assertIn('setAttribute("aria-pressed"', body.replace(", ", ","))
+
+    def test_the_focus_ring_never_uses_the_category_hue(self):
+        # The eight palette hues measure 1.65:1 to 2.28:1 on --surface, under
+        # the 3:1 that SC 1.4.11 requires of a focus indicator.
+        m = re.search(r"\.ticket:focus-visible\{([^}]*)\}", self.src)
+        self.assertIsNotNone(m, ".ticket:focus-visible rule missing")
+        self.assertNotIn("var(--c)", m.group(1))
+        self.assertIn("var(--text)", m.group(1))
+
+    def test_faint_text_clears_4_5_to_1_in_both_colour_schemes(self):
+        # --text-faint carries the lane counts, the empty-lane markers, the save
+        # status and the whole footer, all at 11px, which is far below the
+        # large-text threshold, so 4.5:1 applies. It measured 3.43:1.
+        for dark in (False, True):
+            faint = _token(self.src, "--text-faint", dark=dark)
+            for surface in ("--bg", "--surface", "--surface-2"):
+                ratio = _contrast(faint, _token(self.src, surface, dark=dark))
+                self.assertGreaterEqual(
+                    round(ratio, 2), 4.5,
+                    f"--text-faint on {surface} is {ratio:.2f}:1 "
+                    f"({'dark' if dark else 'light'}), under WCAG 1.4.3")
+
+    def test_a_touch_only_device_has_a_way_to_move_a_card(self):
+        # HTML5 drag events do not fire from touch, and the bracket keys need a
+        # keyboard: without this the board is silently read-only on a phone.
+        body = _js_function(self.src, "tapToMove")
+        self.assertIn("(pointer: coarse)", body)
+        self.assertIn("(hover: hover)", body)
+        self.assertIn("tapToMove()", _js_function(self.src, "render"))
+        self.assertIn("tapToMove()", _js_function(self.src, "ticketNode"))
 
 
 if __name__ == "__main__":

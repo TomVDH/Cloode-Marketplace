@@ -15,7 +15,11 @@
     --border-strong:oklch(82% 0.005 280);
     --text:         oklch(22% 0.01 280);
     --text-dim:     oklch(45% 0.008 280);
-    --text-faint:   oklch(62% 0.005 280);
+    /* faint carries the lane counts, the empty-lane markers, the save status
+       and the whole footer, all at 11px. 62% measured 3.43:1 on --bg, under
+       the 4.5:1 normal-text floor; 53% clears it (4.70:1 at worst, on
+       --surface-2) and still reads a step below --text-dim. */
+    --text-faint:   oklch(53% 0.005 280);
     --ok:   oklch(55% 0.14 155);
     --bad:  oklch(48% 0.18 25);
     --park: oklch(62% 0.005 280);
@@ -33,7 +37,7 @@
     :root{
       --bg:oklch(10% 0.005 280); --surface:oklch(13% 0.005 280); --surface-2:oklch(16% 0.005 280);
       --border:oklch(22% 0.005 280); --border-strong:oklch(34% 0.005 280);
-      --text:oklch(94% 0.002 280); --text-dim:oklch(70% 0.003 280); --text-faint:oklch(52% 0.005 280);
+      --text:oklch(94% 0.002 280); --text-dim:oklch(70% 0.003 280); --text-faint:oklch(59% 0.005 280);
       --ok:oklch(80% 0.14 155); --bad:oklch(72% 0.18 25); --park:oklch(52% 0.005 280);
     }
   }
@@ -95,10 +99,14 @@
   .stats b{color:var(--text);font-weight:700}
   .stats .sep{color:var(--border-strong)}
   .legend{display:flex;gap:var(--sp-4);flex-wrap:wrap}
-  .legend .k{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+  /* a real <button>: keyboard-reachable, with aria-pressed carrying the toggle */
+  .legend .k{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+    font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;background:none;border:none;padding:0}
   .legend .k i{width:9px;height:9px;background:var(--c);outline:1px solid color-mix(in oklch,var(--text) 28%,transparent);outline-offset:-1px}
   .legend .k.off{opacity:.35}
   .legend .k.on{text-decoration:underline;text-underline-offset:3px}
+  .legend .k:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+  .controls button:focus-visible,.controls input#q:focus-visible,.notice button:focus-visible{outline:2px solid var(--text);outline-offset:2px}
 
   /* ── Board: ruled manifest columns ── */
   .board{display:flex;gap:0;padding:0 var(--sp-6) var(--sp-6);overflow-x:auto;align-items:flex-start}
@@ -127,7 +135,12 @@
   .ticket:active{cursor:grabbing}
   .ticket.dragging{transform:rotate(-1.4deg) scale(1.02);border-color:var(--text-dim);
     box-shadow:0 8px 22px -10px color-mix(in oklch,var(--text) 45%,transparent);z-index:5}
-  .ticket:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+  /* focus ring uses --text, never the category hue: the eight palette hues
+     measure 1.65:1 to 2.28:1 on --surface, under the 3:1 SC 1.4.11 floor, so
+     the documented keyboard alternative to dragging had no visible focus. */
+  .ticket:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+  /* touch: picked up, waiting for a stage */
+  .ticket.sel{outline:2px dashed var(--text);outline-offset:2px;background:var(--surface-2)}
 
   .t-top{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:var(--sp-2)}
   .t-id{font-family:var(--mono);font-weight:700;font-size:var(--fs-body);letter-spacing:.02em;color:var(--text)}
@@ -168,7 +181,7 @@
     </div>
     <div class="spacer"></div>
     <div class="controls">
-      <input id="q" type="search" placeholder="filter" spellcheck="false" autocomplete="off">
+      <input id="q" type="search" placeholder="filter" spellcheck="false" autocomplete="off" aria-label="Filter orders">
       <span class="conn" id="conn" aria-label="save target: local">local</span>
       <button id="connectBtn" type="button">connect file</button>
       <button id="downloadBtn" type="button">download</button>
@@ -190,12 +203,13 @@
   <button id="noticeClose" type="button" aria-label="Dismiss this message">dismiss</button>
 </div>
 <div id="live" class="sr-only" role="status" aria-live="polite"></div>
-<main class="board" id="board"></main>
+<main class="board" id="board" aria-label="Work-order stages"></main>
 <p class="foot">
-  Drag an order between stages, saved to this browser instantly. Hit
+  Drag an order between stages, saved to this browser instantly. On a touch screen, tap an order
+  to pick it up and tap a stage to put it down. Hit
   <kbd>connect file</kbd> and pick <code>board-data.json</code> to auto-save to disk (Chromium).
   Card ids and mono <code>ref ·</code> tags cross-link your codes (specs, handoffs, commits).
-  Type in <kbd>filter</kbd> (or click a legend key) to narrow; <kbd>Esc</kbd> clears.
+  Type in <kbd>filter</kbd> (or press a legend key) to narrow; <kbd>Esc</kbd> clears.
   Focus a ticket (<kbd>Tab</kbd>) and press <kbd>[</kbd> / <kbd>]</kbd> to move it a stage left / right.
   A column with <code>"wip": N</code> in <code>board-data.json</code> shows an over-limit count in red.
 </p>
@@ -228,7 +242,7 @@ const MOVES_VERSION=2;
 let state=null, fileHandle=null, catColors={};
 /* baseDeck = the deck exactly as loaded (disk or SEED), before any override.
    moves    = the ONLY thing this page persists (see readMoves). */
-let baseJson=null, baseCols=[], moves={};
+let baseJson=null, baseCols=[], moves={}, selectedKey=null;
 /* view-state only (never persisted): text filter + toggled legend category */
 let filterText="", filterCat=null;
 function errText(e){ return String((e&&e.message)||e||"unknown error"); }
@@ -476,8 +490,37 @@ function moveByKey(key,delta){
   if(j<0||j>=cols.length){ announce(cardLabel(card)+" is already in the "+(delta<0?"first":"last")+" stage."); return; }
   applyMove(key,cols[j]);
 }
+/* Touch has no HTML5 drag events at all, so on a touch-primary device the
+   board would be silently read-only. Tap an order to pick it up, tap a stage
+   to put it down. Registered only where dragging cannot work, so pointer and
+   keyboard behaviour on a desktop is unchanged. */
+function tapToMove(){
+  if(!window.matchMedia) return false;
+  return matchMedia("(pointer: coarse)").matches || !matchMedia("(hover: hover)").matches;
+}
+function select(key){
+  selectedKey=key;
+  document.querySelectorAll(".ticket").forEach(n=>{
+    const on=Number(n.dataset.key)===key;
+    n.classList.toggle("sel",on);
+    if(on) n.setAttribute("aria-current","true"); else n.removeAttribute("aria-current");
+  });
+  const card=state.cards[key];
+  if(card) announce(cardLabel(card)+" picked up. Tap a stage to move it there.");
+}
+function deselect(quiet){
+  if(selectedKey===null) return;
+  selectedKey=null;
+  document.querySelectorAll(".ticket.sel").forEach(n=>{ n.classList.remove("sel"); n.removeAttribute("aria-current"); });
+  if(!quiet) announce("Put back down.");
+}
+
 function ticketNode(card,key){
   const t=el("div","ticket"); t.draggable=true; t.tabIndex=0; t.dataset.id=card.id; t.dataset.key=String(key);
+  t.setAttribute("role","listitem");
+  t.setAttribute("aria-keyshortcuts","[ ]");
+  t.setAttribute("aria-label",cardLabel(card)+(card.category?", "+card.category:"")+", in "+colName(card.column));
+  if(selectedKey===key){ t.classList.add("sel"); t.setAttribute("aria-current","true"); }
   t.style.setProperty("--c",catColor(card.category));
   const top=el("div","t-top");
   top.appendChild(el("span","t-id",card.id));
@@ -498,6 +541,13 @@ function ticketNode(card,key){
     if(ev.key==="[") { ev.preventDefault(); moveByKey(key,-1); }
     else if(ev.key==="]") { ev.preventDefault(); moveByKey(key,1); }
   });
+  if(tapToMove()){
+    t.addEventListener("click",ev=>{
+      if(selectedKey===null){ ev.stopPropagation(); select(key); }
+      else if(selectedKey===key){ ev.stopPropagation(); deselect(); }
+      /* otherwise fall through: the lane this card sits in takes the drop */
+    });
+  }
   return t;
 }
 
@@ -509,7 +559,11 @@ function render(){
   document.getElementById("stageCount").textContent=state.columns.length;
   const lg=document.getElementById("legend"); lg.innerHTML="";
   (state.categoryNames||[]).forEach(cat=>{
-    const k=el("span","k"+(filterCat===cat?" on":(filterCat?" off":"")));
+    /* a real button: a bare span with a click handler is unreachable by
+       keyboard, and the footer tells people to use it */
+    const k=el("button","k"+(filterCat===cat?" on":(filterCat?" off":"")));
+    k.type="button";
+    k.setAttribute("aria-pressed",filterCat===cat?"true":"false");
     k.style.setProperty("--c",catColor(cat));
     k.appendChild(el("i")); k.appendChild(document.createTextNode(cat));
     k.addEventListener("click",()=>{ filterCat = (filterCat===cat) ? null : cat; render(); });
@@ -517,20 +571,31 @@ function render(){
   });
   const filtering = !!(filterText || filterCat);
   const board=document.getElementById("board"); board.innerHTML="";
+  let laneSeq=0;
   const laneNode=(col, entries, opts)=>{
     const shown=entries.filter(e=>cardMatches(e.card));
     const lane=el("div","lane"+((col.id==="done"||col.id==="icebox")?" muted":"")+((opts&&opts.cls)||""));
     lane.dataset.col=col.id;
+    lane.setAttribute("role","group");
+    const headId="lane-"+(laneSeq++)+"-nm";
     const head=el("div","lane-head");
-    head.appendChild(el("span","nm",col.name));
+    const nm=el("span","nm",col.name);
+    nm.id=headId; nm.setAttribute("role","heading"); nm.setAttribute("aria-level","2");
+    head.appendChild(nm);
+    lane.setAttribute("aria-labelledby",headId);
     // count: `shown/total` while filtering; over-limit (col.wip) shown in red
     const over = Number.isFinite(col.wip) && entries.length>col.wip;
     const ctTxt = filtering
       ? String(shown.length).padStart(2,"0")+"/"+String(entries.length).padStart(2,"0")
       : String(entries.length).padStart(2,"0") + (Number.isFinite(col.wip)?("/"+col.wip+" wip"):"");
-    head.appendChild(el("span","ct"+(over?" over":""),ctTxt));
+    const ct=el("span","ct"+(over?" over":""),ctTxt);
+    ct.setAttribute("aria-label",(filtering?shown.length+" of "+entries.length+" orders shown":entries.length+" orders")
+      +(Number.isFinite(col.wip)?(over?", over the limit of "+col.wip:", limit "+col.wip):""));
+    head.appendChild(ct);
     lane.appendChild(head);
     const body=el("div","lane-body");
+    body.setAttribute("role","list");
+    body.setAttribute("aria-labelledby",headId);
     if(!shown.length) body.appendChild(el("div","lane-empty", filtering&&entries.length ? "—  filtered" : "—  empty"));
     shown.forEach(e=>body.appendChild(ticketNode(e.card,e.key)));
     lane.appendChild(body);
@@ -540,6 +605,10 @@ function render(){
       ev.preventDefault(); lane.classList.remove("drop");
       const key=Number(ev.dataTransfer.getData("text/plain"));
       if(Number.isInteger(key) && col.id!=="__unfiled") applyMove(key,col.id);
+    });
+    if(tapToMove()) lane.addEventListener("click",()=>{
+      if(selectedKey===null||col.id==="__unfiled") return;
+      const key=selectedKey; deselect(true); applyMove(key,col.id);
     });
     board.appendChild(lane);
   };
@@ -590,6 +659,7 @@ q.addEventListener("input",()=>{ filterText=q.value.trim().toLowerCase(); render
 q.addEventListener("keydown",ev=>{
   if(ev.key==="Escape"){ q.value=""; filterText=""; filterCat=null; render(); q.blur(); }
 });
+document.addEventListener("keydown",ev=>{ if(ev.key==="Escape") deselect(true); });
 /* Another tab on the same board is another writer. Adopt its moves instead of
    letting whichever tab saves last silently win. */
 window.addEventListener("storage",ev=>{
