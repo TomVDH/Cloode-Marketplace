@@ -9,7 +9,10 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from sitrep import cli_main as sitrep_cli, run_sitrep, _next_step, _suitcase_brief
+from sitrep import (
+    cli_main as sitrep_cli, run_sitrep, _next_step, _suitcase_brief,
+    _repo_brief, _server_brief,
+)
 
 
 def _write(path: Path, content: str) -> None:
@@ -241,3 +244,73 @@ class TestSuitcaseBrief(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRepoBrief(unittest.TestCase):
+    """Git state must degrade to {present: False}, never raise — orientation
+    that can crash is worse than orientation that says 'unknown'."""
+
+    def test_absent_without_code_root(self):
+        self.assertFalse(_repo_brief(None)["present"])
+
+    def test_absent_when_not_a_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(_repo_brief(Path(tmp))["present"])
+
+    def test_reads_a_real_repo(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                   "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+            run = lambda *a: subprocess.run(["git", "-C", str(root), *a],
+                                            capture_output=True, env=env)
+            run("init", "-q", "-b", "main")
+            _write(root / "a.txt", "one\n")
+            run("add", "-A"); run("commit", "-qm", "first commit")
+            info = _repo_brief(root)
+            self.assertTrue(info["present"])
+            self.assertEqual(info["branch"], "main")
+            self.assertFalse(info["detached"])
+            self.assertEqual(info["dirty"], 0)
+            self.assertEqual(info["head"]["subject"], "first commit")
+            self.assertEqual(len(info["recent"]), 1)
+            # an untracked file counts as dirty
+            _write(root / "b.txt", "two\n")
+            self.assertEqual(_repo_brief(root)["dirty"], 1)
+
+
+class TestServerBrief(unittest.TestCase):
+    """launch.json drives the probe; a down server is an answer, not an error."""
+
+    def test_absent_without_code_root(self):
+        self.assertFalse(_server_brief(None)["present"])
+
+    def test_absent_without_launch_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(_server_brief(Path(tmp))["present"])
+
+    def test_unreadable_launch_json_does_not_raise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / ".claude" / "launch.json", "{not json")
+            out = _server_brief(root)
+            self.assertFalse(out["present"])
+
+    def test_down_server_reports_false_not_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # port 1 is reserved and never listening
+            _write(root / ".claude" / "launch.json",
+                   '{"configurations":[{"name":"x","port":1}]}')
+            out = _server_brief(root)
+            self.assertTrue(out["present"])
+            self.assertEqual(len(out["servers"]), 1)
+            self.assertFalse(out["servers"][0]["up"])
+
+    def test_entries_without_a_port_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / ".claude" / "launch.json",
+                   '{"configurations":[{"name":"noport"},{"name":"bad","port":"5184"}]}')
+            self.assertFalse(_server_brief(root)["present"])

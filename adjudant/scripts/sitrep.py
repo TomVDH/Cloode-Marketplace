@@ -19,7 +19,9 @@ import argparse
 import datetime as _dt
 import json
 import shutil
+import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
@@ -73,6 +75,83 @@ def _board_brief(project_dir: Path) -> dict[str, Any]:
     board["line"] = (f"Board: {board['open']} open ({board['doing']} in motion)"
                      + (", stale" if board.get("stale") else ""))
     return board
+
+
+def _repo_brief(code_root: Optional[Path]) -> dict[str, Any]:
+    """Code-side git state — the half of orientation the vault cannot know.
+
+    "Where were we" is only half answered by the vault: the other half is what
+    the working tree is actually doing right now. Returns `{present: False}` for
+    a non-repo, a missing git, or any git failure — orientation must never be
+    the thing that breaks.
+    """
+    if not code_root or not (code_root / ".git").exists():
+        return {"present": False}
+    if not shutil.which("git"):
+        return {"present": False, "reason": "git not on PATH"}
+
+    def g(*args: str) -> Optional[str]:
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(code_root), *args],
+                capture_output=True, text=True, timeout=5,
+            )
+            return out.stdout.strip() if out.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    branch = g("rev-parse", "--abbrev-ref", "HEAD")
+    porcelain = g("status", "--porcelain")
+    recent_raw = g("log", "-5", "--format=%h\t%ad\t%s", "--date=short")
+    recent: list[dict[str, str]] = []
+    for line in (recent_raw or "").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            recent.append({"sha": parts[0], "date": parts[1], "subject": parts[2]})
+    return {
+        "present": True,
+        "branch": branch,
+        "detached": branch == "HEAD",
+        "head": recent[0] if recent else None,
+        "dirty": len([l for l in (porcelain or "").splitlines() if l.strip()]),
+        "recent": recent,
+    }
+
+
+def _server_brief(code_root: Optional[Path]) -> dict[str, Any]:
+    """Is the project's dev server up?
+
+    Ports come from `.claude/launch.json` (the Claude Code convention) rather
+    than a guess, so this stays generic across projects. Probing is a HEAD
+    request to localhost with a hard 0.6s timeout — a dev server that is down is
+    the normal case, so a refused connection is an answer, never an error.
+    Absent launch.json => `{present: False}` and nothing is probed.
+    """
+    if not code_root:
+        return {"present": False}
+    cfg = code_root / ".claude" / "launch.json"
+    if not cfg.is_file():
+        return {"present": False}
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return {"present": False, "reason": "launch.json unreadable"}
+
+    out: list[dict[str, Any]] = []
+    for c in (data.get("configurations") or [])[:8]:  # sanity cap
+        port = c.get("port")
+        if not isinstance(port, int):
+            continue
+        url = c.get("url") or f"http://localhost:{port}"
+        req = urllib.request.Request(url, method="HEAD")
+        alive = False
+        try:
+            with urllib.request.urlopen(req, timeout=0.6) as r:
+                alive = 200 <= getattr(r, "status", 0) < 500
+        except Exception:  # noqa: BLE001 - down is an answer, not a failure
+            alive = False
+        out.append({"name": c.get("name"), "port": port, "url": url, "up": alive})
+    return {"present": bool(out), "servers": out}
 
 
 def _next_step(project_dir: Path) -> Optional[str]:
@@ -134,6 +213,8 @@ def run_sitrep(
         "were_doing": freshness["last_activity"],
         "whats_done": whats_done,
         "board": _board_brief(project_dir),
+        "repo": _repo_brief(code_root),
+        "server": _server_brief(code_root),
         "suitcase": _suitcase_brief(),
         "next_step": _next_step(project_dir),
         "open_signals": _latest_dream_signal(project_dir),

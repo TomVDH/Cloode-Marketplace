@@ -31,6 +31,14 @@ JSON output shape (top-level keys):
   column; `line` is the preformatted briefing line `Board: {open} open ({doing} in
   motion)` with `, stale` appended when the deck lags `tasks/`. No board: just
   `{present: false}`, no line
+- `repo`: `{present, branch, detached, head: {sha, date, subject}, dirty, recent[]}` —
+  code-side git state, the half of "where were we" the vault cannot know. `dirty` is
+  the count of uncommitted paths. Not a repo / no git / any git failure: `{present:
+  false}` — orientation must never be the thing that breaks
+- `server`: `{present, servers: [{name, port, url, up}]}` — dev servers declared in
+  the project's `.claude/launch.json`, each probed with a 0.6s HEAD. Ports come from
+  that file rather than a guess, so this stays generic. A server being down is the
+  normal case and reports `up: false`, never an error. No launch.json: `{present: false}`
 - `next_step` — the single NEXT action parsed from `_handoff.md` (or null)
 - `open_signals` — latest dream drift signal, if any
 - `status` — declared vs. machine-suggested lifecycle status: `declared`, `declared_valid`,
@@ -63,6 +71,15 @@ Rules:
 - OPTIONAL suitcase line, only when `suitcase.present` (doesn't count against the four
   labeled lines): render `suitcase.line` verbatim, above the board line. Skip when
   absent; details in reference/suitcase.md.
+- OPTIONAL workbench line, only when `repo.present` (doesn't count against the four
+  labeled lines): one line combining git and server, above the board line, e.g.
+  `🔧 On main at {repo.head.sha} "{subject}", tree clean · dev server up on 5184`.
+  Say `{repo.dirty} uncommitted` instead of "tree clean" when dirty, and name the
+  branch plainly when it is not the usual one (or say "detached HEAD" when
+  `repo.detached`). Omit the server clause when `server.present` is false; when a
+  declared server is down say `dev server down` — it is a fact, not a warning.
+  This is the "what is the workbench actually doing" line: it answers the questions
+  a coding session opens with, which no amount of vault reading can.
 - OPTIONAL fifth line, only when a status mismatch or nudge exists (this doesn't count against the four labeled lines above): if `status.suggested` is set, "brief says {status.declared}, looks {status.suggested}: {status.reason} → run /adjudant shelf"; else if `status.nudge` is set, render the nudge; else if `status.zone_matches` is false, flag the zone mismatch. Skip the line entirely when none apply.
 
 Adapt phrasing to be conversational; the shape above is the data layout, not a rigid
