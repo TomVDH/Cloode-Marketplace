@@ -57,6 +57,21 @@ CLASS_DEFS = {
 }
 GROUP_FOLDERS = ("sessions", "dreams")
 
+# Board mode's own palette. A deck can carry any number of lanes, but
+# mermaid-generation-rules §5 caps a diagram at 6 colours, so the lane role
+# cycles: column N takes `lane{N % 5}`. Orphans get the sixth, distinct, so a
+# card in a lane that no longer exists is visibly not in a lane.
+LANE_CLASS_DEFS = (
+    "fill:#e9f1fb,stroke:#3b7dd8,color:#122238",
+    "fill:#fdf3e3,stroke:#d9962e,color:#33250f",
+    "fill:#efe7ff,stroke:#7c5cff,color:#1d1633",
+    "fill:#e8f6ec,stroke:#2f9e57,color:#0f2b1a",
+    "fill:#f0f0f2,stroke:#8a8a94,color:#26262c",
+)
+ORPHAN_ROLE = "orphan"
+BOARD_CLASS_DEFS = {f"lane{i}": v for i, v in enumerate(LANE_CLASS_DEFS)}
+BOARD_CLASS_DEFS[ORPHAN_ROLE] = "fill:#fdeaea,stroke:#c9424a,color:#3a1315"
+
 
 EMPTY_LABEL = "(untitled)"
 
@@ -223,8 +238,25 @@ def relations_graph(
     return "\n".join(lines) + "\n"
 
 
-def board_graph(project_dir: Path, board_data: Optional[str] = None) -> str:
-    """Kanban snapshot of board-data.json as a flowchart with column subgraphs."""
+def board_graph(
+    project_dir: Path,
+    board_data: Optional[str] = None,
+    *,
+    max_nodes: int = DEFAULT_MAX_NODES,
+    stats: Optional[dict[str, int]] = None,
+) -> str:
+    """Kanban snapshot of board-data.json as a flowchart with column subgraphs.
+
+    Node-capped and classDef-styled, like relations_graph. Three reference
+    files promise BOTH disciplines for graph.py output (draw.md, the
+    generated-diagrams note in content-mermaid.md, mermaid-generation-rules
+    §5/§7); board mode used to implement neither, and `--max-nodes` was
+    accepted and silently ignored here. A 200-card deck came back as a
+    205-line fence with no classDef and nothing on stderr, which is well past
+    the ~30-node ceiling §7 tells the model to refuse.
+    """
+    if stats is not None:
+        stats.update(total=0, omitted=0)
     data_path = Path(board_data).expanduser() if board_data else project_dir / "board" / "board-data.json"
     if not data_path.is_file():
         raise FileNotFoundError(
@@ -246,40 +278,66 @@ def board_graph(project_dir: Path, board_data: Optional[str] = None) -> str:
     if not all(isinstance(x, dict) for x in (*columns, *cards)):
         raise ValueError(
             f"every column and card must be a JSON object: {data_path}")
-    lines = ["flowchart LR"]
-    card_i = 0
-
-    def _card_node(c: dict[str, Any]) -> str:
-        nonlocal card_i
-        card_id = str(c.get("id", card_i))
-        title = str(c.get("title", ""))[:40]
-        label = f"{card_id} · {title}" if title else card_id
-        node = f"    c{card_i}[{_q(label)}]"
-        card_i += 1
-        return node
-
-    known_ids: set[str] = set()
-    for col_i, col in enumerate(columns):
-        col_id = str(col.get("id", col_i))
-        known_ids.add(col_id)
-        col_name = str(col.get("name", col_id))
-        lines.append(f"  subgraph col{col_i}[{_q(col_name)}]")
-        # str() both sides: a hand-edited deck with integer ids must still match
-        col_cards = [c for c in cards if str(c.get("column")) == col_id]
-        if not col_cards:
-            lines.append(f"    col{col_i}e[{_q('—')}]")
-        for c in col_cards:
-            lines.append(_card_node(c))
-        lines.append("  end")
+    # Group the cards BEFORE emitting anything: the cap has to be sized against
+    # the number of groups, and the total omission count belongs at the top of
+    # the fence, not discovered on the way down.
+    # str() both sides throughout: a hand-edited deck with integer ids must
+    # still match.
+    col_ids = [str(col.get("id", i)) for i, col in enumerate(columns)]
+    known_ids = set(col_ids)
+    grouped = [[c for c in cards if str(c.get("column")) == cid] for cid in col_ids]
     # A point-in-time record must not under-report: cards whose column matches
     # no lane get their own subgraph instead of vanishing (mirrors board.py
     # status's orphan accounting and board.html's UNFILED lane).
     orphans = [c for c in cards if str(c.get("column")) not in known_ids]
+
+    # PER-GROUP cap, not a running total. A cap that simply stopped at N cards
+    # would empty the terminal lane completely, and the terminal lane is what a
+    # snapshot is usually read for. Every lane keeps at least one card.
+    n_groups = len(grouped) + (1 if orphans else 0)
+    per_group = max(1, max_nodes // n_groups) if n_groups else max_nodes
+    omitted = sum(max(0, len(g) - per_group) for g in (*grouped, orphans))
+    if stats is not None:
+        stats.update(total=len(cards), omitted=omitted)
+
+    lines = ["flowchart LR"]
+    if omitted:
+        lines.append(f"  %% {omitted} card(s) omitted (--max-nodes {max_nodes})")
+    card_i = 0
+    classes: list[str] = []
+    used_roles: set[str] = set()
+
+    def _emit_group(group: list[dict[str, Any]], role: str) -> None:
+        nonlocal card_i
+        for c in group[:per_group]:
+            card_id = str(c.get("id", card_i))
+            title = str(c.get("title", ""))[:40]
+            label = f"{card_id} · {title}" if title else card_id
+            lines.append(f"    c{card_i}[{_q(label)}]")
+            classes.append(f"  class c{card_i} {role}")
+            used_roles.add(role)
+            card_i += 1
+        cut = len(group) - per_group
+        if cut > 0:
+            lines.append(f"    %% {cut} more card(s) omitted (--max-nodes {max_nodes})")
+
+    for col_i, col in enumerate(columns):
+        col_name = str(col.get("name", col_ids[col_i]))
+        lines.append(f"  subgraph col{col_i}[{_q(col_name)}]")
+        if not grouped[col_i]:
+            lines.append(f"    col{col_i}e[{_q('—')}]")
+        _emit_group(grouped[col_i], f"lane{col_i % len(LANE_CLASS_DEFS)}")
+        lines.append("  end")
     if orphans:
         lines.append(f"  subgraph orphaned[{_q('orphaned (unknown column)')}]")
-        for c in orphans:
-            lines.append(_card_node(c))
+        _emit_group(orphans, ORPHAN_ROLE)
         lines.append("  end")
+
+    # Role styling, generation-rules §5: one classDef per role, stamped at
+    # generation time, only for roles actually used.
+    for role in sorted(used_roles):
+        lines.append(f"  classDef {role} {BOARD_CLASS_DEFS[role]}")
+    lines.extend(classes)
     return "\n".join(lines) + "\n"
 
 
@@ -438,7 +496,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--project-dir", default=".", help="project root (breadcrumb-resolved; default cwd)")
     parser.add_argument("--mode", choices=["relations", "board", "tiers"], default="relations")
     parser.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES,
-                        help=f"relations: node cap (default {DEFAULT_MAX_NODES})")
+                        help=f"relations/board: node cap (default {DEFAULT_MAX_NODES})")
     parser.add_argument("--board-data", help="board: explicit board-data.json path")
     parser.add_argument("--out", help="write the fenced block here instead of stdout "
                                       "(inside the project or --project-dir)")
@@ -473,7 +531,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                     include_legacy=args.include_legacy, stats=stats))
                 unit = "file"
             else:
-                block = fenced(board_graph(project_dir, args.board_data))
+                block = fenced(board_graph(
+                    project_dir, args.board_data, max_nodes=args.max_nodes, stats=stats))
                 unit = "card"
         # Wide on purpose. OSError covers FileNotFoundError; ValueError covers
         # JSONDecodeError, UnicodeDecodeError and the deck shape checks;

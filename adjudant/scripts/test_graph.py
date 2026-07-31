@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime
@@ -259,6 +260,83 @@ class TestBoard(unittest.TestCase):
             with self.assertRaises(FileNotFoundError) as ctx:
                 board_graph(Path(tmp))
             self.assertIn("scaffold", str(ctx.exception))
+
+
+class TestBoardCapAndStyling(unittest.TestCase):
+    """draw.md, content-mermaid.md and mermaid-generation-rules all promise
+    graph.py output is node-capped and classDef-styled. Board mode used to do
+    neither, and `--max-nodes` was silently ignored there."""
+
+    def _deck(self, root: Path, n_cards: int, n_cols: int = 4) -> Path:
+        cols = [{"id": f"c{i}", "name": f"Lane {i}"} for i in range(n_cols)]
+        cards = [{"id": f"T-{i}", "title": f"card {i}", "column": f"c{i % n_cols}"}
+                 for i in range(n_cards)]
+        _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+        _write(root / "board" / "board-data.json",
+               json.dumps({"columns": cols, "cards": cards}))
+        return root
+
+    @staticmethod
+    def _card_nodes(g: str) -> list[str]:
+        return [ln for ln in g.splitlines() if re.match(r"^\s+c\d+\[", ln)]
+
+    def test_card_nodes_are_capped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._deck(Path(tmp).resolve(), 200)
+            g = board_graph(root, max_nodes=30)
+            self.assertLessEqual(len(self._card_nodes(g)), 30)
+            self.assertIn("omitted", g)
+
+    def test_the_cap_is_per_lane_so_no_lane_disappears(self):
+        # A cap that simply stopped at 30 cards would empty the terminal lane
+        # entirely, which is the lane a snapshot is usually read for.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._deck(Path(tmp).resolve(), 200, n_cols=4)
+            g = board_graph(root, max_nodes=12)
+            for i in range(4):
+                lane = g.split(f'subgraph col{i}[')[1].split("  end")[0]
+                self.assertTrue(self._card_nodes(lane), f"lane {i} lost every card")
+
+    def test_role_classdefs_are_stamped_and_the_palette_stays_small(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._deck(Path(tmp).resolve(), 40, n_cols=8)
+            g = board_graph(root, max_nodes=30)
+            classdefs = [ln for ln in g.splitlines() if ln.strip().startswith("classDef ")]
+            self.assertTrue(classdefs)
+            # mermaid-generation-rules section 5: palette of 6 or fewer
+            self.assertLessEqual(len(classdefs), 6)
+            self.assertTrue(any(ln.strip().startswith("class c") for ln in g.splitlines()),
+                            "no node was actually stamped with its role")
+
+    def test_orphans_are_capped_and_styled_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            deck = {"columns": [{"id": "b", "name": "B"}],
+                    "cards": [{"id": f"T-{i}", "title": f"c{i}", "column": "gone"}
+                              for i in range(50)]}
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            _write(root / "board" / "board-data.json", json.dumps(deck))
+            g = board_graph(root, max_nodes=10)
+            self.assertIn("orphaned", g)
+            self.assertLessEqual(len(self._card_nodes(g)), 10)
+            self.assertIn("classDef orphan", g)
+
+    def test_an_uncapped_deck_is_emitted_whole_with_no_omission_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._deck(Path(tmp).resolve(), 8)
+            g = board_graph(root, max_nodes=30)
+            self.assertEqual(len(self._card_nodes(g)), 8)
+            self.assertNotIn("omitted", g)
+
+    def test_cli_threads_max_nodes_into_board_mode_and_warns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._deck(Path(tmp).resolve(), 200)
+            rc, so, err = _run_cli(
+                ["--mode", "board", "--project-dir", str(root), "--max-nodes", "30"])
+            self.assertEqual(rc, 0, err)
+            self.assertLessEqual(len(self._card_nodes(so)), 30)
+            self.assertIn("of 200 card(s) omitted", err)
+            self.assertIn("--max-nodes 30", err)
 
 
 class TestTiersAndFence(unittest.TestCase):
