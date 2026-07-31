@@ -382,8 +382,16 @@ def main() -> int:
                 "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md"))
         except OSError:
             candidates = []
-        if candidates:
-            session_file = candidates[-1]
+        # Real dates not after today only (finding 19): a future-dated note
+        # must never absorb appends; the digit glob admits impossible dates.
+        for cand in reversed(candidates):
+            try:
+                datetime.strptime(cand.stem, "%Y-%m-%d")
+            except ValueError:
+                continue
+            if cand.stem <= today:
+                session_file = cand
+                break
     if session_file.exists():
         try:
             with session_file.open("a") as f:

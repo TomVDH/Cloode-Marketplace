@@ -43,8 +43,13 @@ except Exception:
     [ -f "$marker" ] && return 0
   fi
 
-  # Vault-y keywords → fire reminder
-  if printf '%s' "$prompt" | grep -qiE '\b(vault|decision|brief|handoff|obsidian|note this|document this|put in vault|record this)\b'; then
+  # Vault-y keywords → fire reminder. Distinctive words and phrase forms
+  # only: bare `brief`/`decision` fired on everyday English like "give me a
+  # brief summary" or "good decision" (finding 31) — precision over recall.
+  if printf '%s' "$prompt" | grep -qiE '\b(vault|obsidian|handoff|note this|document this|put in vault|record (this|that)|the brief|(this|that) decision)\b'; then
+    # Sweep markers from past sessions (they leaked one per session forever),
+    # then write this session's. Both best-effort.
+    find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'adjudant-reminder-*' -mtime +1 -delete 2>/dev/null || true
     # brace group: silence stderr BEFORE the > open (unwritable TMPDIR)
     if [ -n "$marker" ]; then { : > "$marker"; } 2>/dev/null || true; fi
     printf '[adjudant] Vault not linked for this project. Run `/adjudant connect` to capture this work in the vault.\n'

@@ -206,6 +206,18 @@ def append_pause_marker(project_dir: Path, session_file: Path, ts: str) -> None:
 
 
 def main() -> int:
+    # Drain stdin before anything can exit (finding 22): the PreCompact
+    # payload is unbounded and an unread payload EPIPEs the harness writer
+    # the moment this process returns. The content itself is unused — this
+    # hook is mechanical — so drain and discard. The tty guard keeps a bare
+    # interactive run from hanging; the broad except keeps a patched or
+    # closed stdin from ever crashing the hook.
+    try:
+        if not sys.stdin.isatty():
+            sys.stdin.buffer.read()
+    except (OSError, ValueError, AttributeError):
+        pass
+
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
     if not project_dir_str:
         return 0

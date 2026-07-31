@@ -527,5 +527,28 @@ class TestImportDegradation(_EnvHygiene):
             self.assertTrue((vault / "projects" / "demo" / "_handoff.md").is_file())
 
 
+class TestStdinDiscipline(_EnvHygiene):
+    """Finding 22: precompact never read stdin, so a large PreCompact payload
+    EPIPEs the harness writer the moment the hook exits. Drain first."""
+
+    def test_stdin_fully_consumed_before_exit(self):
+        hook = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "precompact.py"
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        env.pop("OB_VAULT", None)
+        proc = subprocess.Popen(
+            [sys.executable, str(hook)], stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        wrote_all = True
+        try:
+            proc.stdin.write(b"x" * 8_000_000)
+            proc.stdin.close()
+        except BrokenPipeError:
+            wrote_all = False
+        rc = proc.wait(timeout=30)
+        self.assertTrue(wrote_all, "hook exited before draining stdin (EPIPE)")
+        self.assertEqual(rc, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -500,5 +500,20 @@ class TestSlugGuard(_CommitLogCase):
         self.assertTrue((decoy / "releases" / "v0.15.0.md").is_file())
 
 
+class TestFutureSessionFallback(_CommitLogCase):
+    """Finding 19: the fallback took the lexically-latest dated note with no
+    upper bound, so a future-dated note absorbed every commit line."""
+
+    def test_commit_line_skips_future_dated_note(self):
+        future = self.project_root / "sessions" / "2029-12-31.md"
+        future.write_text("## Log\n")
+        self._land("fix(demo): a change")
+        rc = self._run(self._payload('git commit -m "fix(demo): a change"'))
+        self.assertEqual(rc, 0)
+        self.assertIn("commit: fix(demo): a change",
+                      self.session_note.read_text())
+        self.assertNotIn("commit", future.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -460,5 +460,88 @@ class TestHookProcess(_HookHarness):
             self.assertEqual(session.read_text(), "## Log\n")
 
 
+class TestFutureSessionFallback(_HookHarness):
+    """Finding 19: the midnight-straddle fallback took the lexically-latest
+    dated note unbounded, so a future-dated note absorbed every append."""
+
+    def test_log_entry_skips_future_dated_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot, session = self._fixture(Path(tmp))
+            session.unlink()                       # no note for today
+            past = proot / "sessions" / "2026-01-01.md"
+            past.write_text("## Log\n")
+            future = proot / "sessions" / "2029-12-31.md"
+            future.write_text("## Log\n")
+            note = self._note(proot, "notes/idea.md")
+            rc = self._run(project, self._payload(note))
+            self.assertEqual(rc, 0)
+            self.assertIn("[[projects/demo/notes/idea.md]]", past.read_text())
+            self.assertNotIn("idea", future.read_text())
+
+
+class TestHookCostAndWiring(unittest.TestCase):
+    """Finding 21: the unlinked no-op path must not pay the 1100-line
+    _vault_walk import (it ran on every Write/Edit machine-wide, measured
+    36.5 ms vs 18.8 ms bare), and the hook must register async like its
+    PostToolUse siblings. Finding 22 discipline: stdin drains before any
+    early exit, or a large payload EPIPEs the harness writer."""
+
+    def _env_without_project_dir(self):
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        env.pop("OB_VAULT", None)
+        return env
+
+    def test_unlinked_noop_path_skips_heavy_imports(self):
+        # -X importtime prints every imported module to stderr; an unlinked
+        # run must never touch _vault_walk or _session_stamp.
+        proc = subprocess.run(
+            [sys.executable, "-X", "importtime", str(HOOK)],
+            input="{}", capture_output=True, text=True,
+            env=self._env_without_project_dir(), timeout=30)
+        self.assertEqual(proc.returncode, 0)
+        self.assertNotIn("_vault_walk", proc.stderr)
+        self.assertNotIn("_session_stamp", proc.stderr)
+
+    def test_stdin_fully_consumed_on_unlinked_noop(self):
+        # 8 MB payload, no breadcrumb: the hook must drain stdin before its
+        # early exit or this write raises BrokenPipeError.
+        big = json.dumps({"tool_name": "Write",
+                          "tool_input": {"content": "x" * 8_000_000}})
+        proc = subprocess.Popen(
+            [sys.executable, str(HOOK)], stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env=self._env_without_project_dir())
+        wrote_all = True
+        try:
+            proc.stdin.write(big.encode())
+            proc.stdin.close()
+        except BrokenPipeError:
+            wrote_all = False
+        rc = proc.wait(timeout=30)
+        self.assertTrue(wrote_all, "hook exited before draining stdin (EPIPE)")
+        self.assertEqual(rc, 0)
+
+    def test_hooks_json_registers_vault_log_async(self):
+        hooks_file = HOOK.parents[1] / "hooks.json"
+        entries = []
+
+        def walk(obj):
+            if isinstance(obj, dict):
+                if "command" in obj and "posttooluse-vault-log.py" in str(obj.get("command")):
+                    entries.append(obj)
+                for v in obj.values():
+                    walk(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    walk(v)
+
+        walk(json.loads(hooks_file.read_text()))
+        self.assertEqual(len(entries), 1)
+        self.assertIs(entries[0].get("async"), True,
+                      "vault-log is the only sync PostToolUse hook: it blocks "
+                      "every Write/Edit machine-wide")
+
+
 if __name__ == "__main__":
     unittest.main()

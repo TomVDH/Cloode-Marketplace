@@ -195,6 +195,24 @@ class TestMidnightStraddle(_HookHarness):
             self.assertIn("compacted: straddled midnight", latest.read_text())
             self.assertNotIn("compacted", decoy.read_text())  # digit glob, not ?
 
+    def test_gist_skips_future_dated_note(self):
+        # Finding 19: an unbounded latest-glob let a future-dated note
+        # (clock skew, restored backup) absorb every straddle append.
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "code"
+            vault = Path(tmp) / "vault"
+            sessions = vault / "projects" / "demo" / "sessions"
+            sessions.mkdir(parents=True)
+            latest_real = sessions / "2020-01-02.md"
+            latest_real.write_text("## Log\n")
+            future = sessions / "2029-12-31.md"
+            future.write_text("## Log\n")
+            self._breadcrumb(project, str(vault))
+            rc = self._run_main(project, {"compaction_summary": "straddled midnight"})
+            self.assertEqual(rc, 0)
+            self.assertIn("compacted: straddled midnight", latest_real.read_text())
+            self.assertNotIn("compacted", future.read_text())
+
 
 class TestZoneAwareness(_HookHarness):
     """Audit 2026-07-27: hooks hardcoded projects/<slug> while shelf moves

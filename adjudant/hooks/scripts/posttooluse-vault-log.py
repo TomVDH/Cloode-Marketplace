@@ -24,53 +24,75 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Shared primitives live in <plugin>/scripts/. Mirror precompact's bootstrap
-# pattern, one guard per module: a broken or mid-sync module must only degrade
-# ITS OWN capability, never shadow a sibling import that succeeded.
-try:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-except Exception:  # pragma: no cover - defensive
-    pass
+# Shared primitives live in <plugin>/scripts/. Deferred behind the breadcrumb
+# gate (finding 21): this hook fires on EVERY Write/Edit machine-wide, and the
+# module-level _vault_walk import made even the unlinked no-op path pay ~37 ms.
+# One guard per module, mirroring precompact: a broken or mid-sync module must
+# only degrade ITS OWN capability, never shadow a sibling import that
+# succeeded.
+_BOOTSTRAPPED = False
+_STAMP = False
+_RESOLVER = False
 
-try:
-    from _session_stamp import stamp_source_session
-    _STAMP = True
-except Exception:  # pragma: no cover - degrade: log without stamping
-    _STAMP = False
 
-    def stamp_source_session(*_a, **_k):  # type: ignore
-        return False
+def _bootstrap() -> None:
+    """Populate the helper globals; called only once a breadcrumb names a
+    slug, so unlinked projects never pay the import."""
+    global _BOOTSTRAPPED, _STAMP, _RESOLVER
+    global stamp_source_session, find_project_dir, is_safe_slug, resolve_vault
+    if _BOOTSTRAPPED:
+        return
+    _BOOTSTRAPPED = True
 
-try:
-    from _vault_walk import find_project_dir, is_safe_slug, resolve_vault
-    _RESOLVER = True
-except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
-    _RESOLVER = False
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    except Exception:  # pragma: no cover - defensive
+        pass
 
-    def resolve_vault(_project_root, _env_vault=None):  # type: ignore
-        return None
+    try:
+        from _session_stamp import stamp_source_session as _stamp
+        stamp_source_session = _stamp
+        _STAMP = True
+    except Exception:  # pragma: no cover - degrade: log without stamping
+        _STAMP = False
 
-    # Zone-aware project resolution must not depend on the import succeeding
-    # (stdlib-free: this block runs when imports are already failing).
-    def find_project_dir(vault, slug):  # type: ignore
-        cands = [vault / "projects" / slug,
-                 vault / "projects" / "_fridge" / slug,
-                 vault / "projects" / "_archive" / slug]
-        for c in cands:
-            if (c / "brief.md").is_file():
-                return c
-        for c in cands:
-            if c.is_dir():
-                return c
-        return None
-
-    # Slug guard must not depend on the import succeeding (stdlib-free: this
-    # block runs when imports are already failing).
-    def is_safe_slug(slug):  # type: ignore
-        if not isinstance(slug, str) or not slug or len(slug) > 64:
+        def stamp_source_session(*_a, **_k):  # type: ignore
             return False
-        return slug[0] != "-" and all(
-            c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in slug)
+
+    try:
+        from _vault_walk import (find_project_dir as _fpd,
+                                 is_safe_slug as _iss,
+                                 resolve_vault as _rv)
+        find_project_dir, is_safe_slug, resolve_vault = _fpd, _iss, _rv
+        _RESOLVER = True
+    except Exception:  # pragma: no cover - degrade: breadcrumb vault_path only
+        _RESOLVER = False
+
+        def resolve_vault(_project_root, _env_vault=None):  # type: ignore
+            return None
+
+        # Zone-aware project resolution must not depend on the import
+        # succeeding (stdlib-free: this block runs when imports are already
+        # failing).
+        def find_project_dir(vault, slug):  # type: ignore
+            cands = [vault / "projects" / slug,
+                     vault / "projects" / "_fridge" / slug,
+                     vault / "projects" / "_archive" / slug]
+            for c in cands:
+                if (c / "brief.md").is_file():
+                    return c
+            for c in cands:
+                if c.is_dir():
+                    return c
+            return None
+
+        # Slug guard must not depend on the import succeeding (stdlib-free:
+        # this block runs when imports are already failing).
+        def is_safe_slug(slug):  # type: ignore
+            if not isinstance(slug, str) or not slug or len(slug) > 64:
+                return False
+            return slug[0] != "-" and all(
+                c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in slug)
 
 
 def read_breadcrumb(project_dir: Path) -> dict:
@@ -96,16 +118,28 @@ def read_breadcrumb(project_dir: Path) -> dict:
 
 
 def main() -> int:
+    # Drain stdin before anything can exit (finding 22 discipline): the
+    # payload carries the full Write content, and an unread 8 MB payload
+    # EPIPEs the harness writer when the hook returns early.
+    try:
+        raw = sys.stdin.read()
+    except OSError:
+        raw = ""
+
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if not project_dir:
         return 0
 
     info = read_breadcrumb(Path(project_dir))
     slug = info.get("slug", "")
+    if not slug:
+        return 0
+    # Past the breadcrumb gate: now pay for the helper imports (finding 21).
+    _bootstrap()
     # Repo-committed breadcrumb: reject non-kebab slugs before any path build.
     # (The resolve+relative_to containment check below already fails closed for
     # writes; this stops a traversal slug from being used at all.)
-    if not slug or not is_safe_slug(slug):
+    if not is_safe_slug(slug):
         return 0
 
     # Same 5-step resolve_vault chain as the verbs and the other hooks, so
@@ -131,7 +165,7 @@ def main() -> int:
         return 0  # project exists in no zone: never materialize it
 
     try:
-        payload = json.load(sys.stdin)
+        payload = json.loads(raw)
     except Exception:
         return 0
 
@@ -186,8 +220,16 @@ def main() -> int:
                 "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md"))
         except OSError:
             candidates = []
-        if candidates:
-            session_file = candidates[-1]
+        # Real dates not after today only (finding 19): a future-dated note
+        # must never absorb appends; the digit glob admits impossible dates.
+        for cand in reversed(candidates):
+            try:
+                datetime.strptime(cand.stem, "%Y-%m-%d")
+            except ValueError:
+                continue
+            if cand.stem <= today:
+                session_file = cand
+                break
 
     # --- Job 1: append a session-log entry (if a session note exists) ---
     if session_file.exists():
