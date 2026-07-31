@@ -32,7 +32,7 @@ The gate must judge content that is not yet on disk. `schema_drift_for_file` tak
 - Consumes: existing `FIELD_SCHEMA`, `STATUS_VALUES_FOR_TYPE`, `DECISION_STATUS_ALIASES`, `parse_frontmatter`.
 - Produces: `schema_drift_for_text(text: str, rel_path: str, aliases: Optional[set] = None) -> Optional[dict]` — same return shape as `schema_drift_for_file` (keys: `file`, `type`, and any of `missing_required`, `unknown_fields`, `status_invalid`, `type_conflict`), or `None` when clean/unjudgeable.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `adjudant/scripts/test__vault_walk.py`, inside the schema test class:
 
@@ -70,12 +70,12 @@ Add to `adjudant/scripts/test__vault_walk.py`, inside the schema test class:
 
 If `_vf` does not already accept a `rel` argument, update its definition in the same file to `def _vf(text, rel="notes/n.md")` and pass `rel_path=Path(rel)` when constructing the `VaultFile`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd adjudant/scripts && python3 -m unittest test__vault_walk -v -k schema_drift_for_text`
 Expected: FAIL with `ImportError: cannot import name 'schema_drift_for_text'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `adjudant/scripts/_vault_walk.py`, replace the body of `schema_drift_for_file` with a delegation and add the new function above it:
 
@@ -146,12 +146,12 @@ def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Opt
 
 Add both new names to the module docstring's public API list, next to the existing `schema_drift_for_file` line.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3`
 Expected: `OK`, count increased by 4. `schema_drift` and `schema_drift_for_file` behaviour must be unchanged (existing tests cover this).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add adjudant/scripts/_vault_walk.py adjudant/scripts/test__vault_walk.py
@@ -181,7 +181,7 @@ EOF
 - Consumes: `schema_drift_for_text` (Task 1), plus existing `is_safe_slug`, `find_project_dir`, `resolve_vault`.
 - Produces: a hook that exits 2 on hard schema violations and 0 otherwise. No Python API other tasks consume.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `adjudant/scripts/test_pretooluse_schema_gate.py`:
 
@@ -335,12 +335,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd adjudant/scripts && python3 -m unittest test_pretooluse_schema_gate -v`
 Expected: FAIL at module load — the hook file does not exist yet.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `adjudant/hooks/scripts/pretooluse-schema-gate.py`:
 
@@ -483,7 +483,7 @@ if __name__ == "__main__":
         sys.exit(0)
 ```
 
-- [ ] **Step 4: Wire it into hooks.json**
+- [x] **Step 4: Wire it into hooks.json**
 
 In `adjudant/hooks/hooks.json`, add a `PreToolUse` block as the first key inside `"hooks"`:
 
@@ -498,7 +498,7 @@ In `adjudant/hooks/hooks.json`, add a `PreToolUse` block as the first key inside
     }],
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd adjudant/scripts && python3 -m unittest test_pretooluse_schema_gate -v`
 Expected: PASS, 11 tests.
@@ -515,7 +515,7 @@ validator change. **Do not edit any validator in this task.** If a validator
 does fail, that is a real signal — report it rather than adjusting the
 validator to pass.
 
-- [ ] **Step 6: Verify end-to-end against a real fixture**
+- [x] **Step 6: Verify end-to-end against a real fixture**
 
 ```bash
 SP="$(mktemp -d)"; mkdir -p "$SP/vault/projects/demo/decisions" "$SP/code/.claude"
@@ -528,7 +528,7 @@ printf '{"tool_name":"Write","tool_input":{"file_path":"%s/vault/projects/demo/d
 ```
 Expected: stderr names the missing fields, `exit=2`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add adjudant/hooks/scripts/pretooluse-schema-gate.py adjudant/hooks/hooks.json adjudant/scripts/test_pretooluse_schema_gate.py adjudant/scripts/validate.py
@@ -564,7 +564,7 @@ EOF
 - Consumes: nothing.
 - Produces: `reference/internals.md` as a loadable reference; the router row that names it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `adjudant/scripts/test_validate.py`:
 
@@ -601,12 +601,12 @@ class TestSkillSplit(unittest.TestCase):
         self.assertLess(est, 2000, f"SKILL.md is ~{est} tok, budget 2000")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd adjudant/scripts && python3 -m unittest test_validate.TestSkillSplit -v`
 Expected: FAIL — `internals.md` does not exist.
 
-- [ ] **Step 3: Create internals.md**
+- [x] **Step 3: Create internals.md**
 
 Create `adjudant/skills/adjudant/reference/internals.md` with this header, then move the three sections **verbatim** out of `SKILL.md`: `## Hooks` (the full nine-row table plus its intro line), `## Python helper layer` (intro paragraph plus table), and `## Environment awareness`.
 
@@ -619,7 +619,7 @@ machinery. Running a verb does not need it - `SKILL.md` routes, and the verb's
 own reference file describes the job.
 ```
 
-- [ ] **Step 4: Trim SKILL.md**
+- [x] **Step 4: Trim SKILL.md**
 
 Delete those three sections from `adjudant/skills/adjudant/SKILL.md`. Add one row to the verb-router table (after the `shelf` row):
 
@@ -627,7 +627,7 @@ Delete those three sections from `adjudant/skills/adjudant/SKILL.md`. Add one ro
 | _(internals)_ | `reference/internals.md` | Not a verb. Hook wiring, verb-to-helper map, environment probes. Load only when the question is about adjudant's own machinery |
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3 && cd .. && python3 scripts/validate.py 2>&1 | tail -1`
 Expected: `OK` and `PASS — 30 validator(s) green`. The `reference-doc-links` and `reference-files-exist` validators cover the new file automatically.
@@ -638,7 +638,7 @@ and the marketplace entry. It does not parse the SKILL.md router table, so the
 `_(internals)_` row cannot trip it. **Do not edit any validator in this task.**
 A validator failure here is a real signal, not something to tune away.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add adjudant/skills/adjudant/SKILL.md adjudant/skills/adjudant/reference/internals.md adjudant/scripts/test_validate.py adjudant/scripts/validate.py
@@ -670,7 +670,7 @@ EOF
 - Consumes: nothing.
 - Produces: nothing consumed by later tasks. Validator 24 keeps its existing name `voice-lexicon`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `adjudant/scripts/test_validate.py`:
 
@@ -710,12 +710,12 @@ class TestDocTrim(unittest.TestCase):
         self.assertIn("delve", [w.lower() for w in validate.BANNED_LEXICON])
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd adjudant/scripts && python3 -m unittest test_validate.TestDocTrim -v`
 Expected: FAIL on the budget assertions and on `BANNED_LEXICON` not existing.
 
-- [ ] **Step 3: Move the lexicon into validate.py**
+- [x] **Step 3: Move the lexicon into validate.py**
 
 In `adjudant/scripts/validate.py`, find where `validate_voice_lexicon` currently gets its banned terms. Promote that list to a module-level constant immediately above the function, preserving every existing term:
 
@@ -730,7 +730,7 @@ BANNED_LEXICON: tuple[str, ...] = (
 
 Update `validate_voice_lexicon` to iterate `BANNED_LEXICON`.
 
-- [ ] **Step 4: Trim voice.md**
+- [x] **Step 4: Trim voice.md**
 
 Replace the enumerated banned-term list in `adjudant/skills/adjudant/reference/voice.md` with:
 
@@ -746,7 +746,7 @@ no self-congratulation. Write the sentence a competent colleague would write.
 
 Keep every other section (tone, pushback contract, ELI modes, glazing ban, typography) unchanged.
 
-- [ ] **Step 5: Trim vault-standards.md**
+- [x] **Step 5: Trim vault-standards.md**
 
 Rewrite so each rule states its shape once and names its enforcer. Keep in full: folder layout, file-naming patterns, wikilink form examples, and any hand-authoring guidance with no mechanical enforcer. Compress to shape-plus-pointer: the per-type frontmatter key lists (now in `FIELD_SCHEMA`), the tag bucket enumerations (enforced by `tidy.normalize_tags` and validator 1), and the status vocabularies (validators 23 and 28).
 
@@ -770,7 +770,7 @@ A write that violates the schema is blocked before it lands, so the shapes
 below are orientation, not a checklist to hold in your head.
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3 && cd .. && python3 scripts/validate.py 2>&1 | tail -1`
 Expected: `OK` and `PASS — 30 validator(s) green`. Validator 24 must still fail on a banned term — confirm with:
@@ -780,7 +780,7 @@ cd adjudant && printf 'Let us delve into this.\n' >> skills/adjudant/reference/s
 ```
 Expected: the validator reports a failure, then the file is restored.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add adjudant/skills/adjudant/reference/vault-standards.md adjudant/skills/adjudant/reference/voice.md adjudant/scripts/validate.py adjudant/scripts/test_validate.py
@@ -820,7 +820,7 @@ EOF
   `{"surfaces": [{"file": str, "tokens": int, "budget": Optional[int], "over": bool}], "total": int, "over_count": int}`.
   `repo_scan.run_scan` gains a `"token_budget"` key holding exactly that dict.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `adjudant/scripts/test_token_budget.py`:
 
@@ -883,12 +883,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd adjudant/scripts && python3 -m unittest test_token_budget -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'token_budget'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `adjudant/scripts/token_budget.py`:
 
@@ -975,12 +975,12 @@ if __name__ == "__main__":
     sys.exit(cli_main())
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd adjudant/scripts && python3 -m unittest test_token_budget -v`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Wire into `check repo`**
+- [x] **Step 5: Wire into `check repo`**
 
 In `adjudant/scripts/repo_scan.py`, import the module near the other local imports:
 
@@ -995,7 +995,7 @@ In `run_scan`, add the key to the returned dict (alongside the existing keys):
             Path(__file__).resolve().parent.parent / "skills" / "adjudant"),
 ```
 
-- [ ] **Step 6: Document the section**
+- [x] **Step 6: Document the section**
 
 In `adjudant/skills/adjudant/reference/check.md`, under the `repo` target description, add:
 
@@ -1007,12 +1007,12 @@ In `adjudant/skills/adjudant/reference/check.md`, under the `repo` target descri
   fails a build, and an over-budget surface is a prompt to look, not an error.
 ```
 
-- [ ] **Step 7: Run full suite and validators**
+- [x] **Step 7: Run full suite and validators**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3 && cd .. && python3 scripts/validate.py 2>&1 | tail -1`
 Expected: `OK` and `PASS — 30 validator(s) green`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add adjudant/scripts/token_budget.py adjudant/scripts/test_token_budget.py adjudant/scripts/repo_scan.py adjudant/skills/adjudant/reference/check.md
@@ -1041,7 +1041,7 @@ EOF
 
 **Interfaces:** none.
 
-- [ ] **Step 1: Measure the real result**
+- [x] **Step 1: Measure the real result**
 
 ```bash
 cd adjudant && for f in skills/adjudant/SKILL.md skills/adjudant/reference/voice.md skills/adjudant/reference/vault-standards.md skills/adjudant/reference/check.md; do
@@ -1051,7 +1051,7 @@ python3 scripts/token_budget.py | python3 -c "import json,sys; d=json.load(sys.s
 ```
 Record the actual numbers; use them in the next step rather than the spec's estimates.
 
-- [ ] **Step 2: Update the README surface table**
+- [x] **Step 2: Update the README surface table**
 
 In `adjudant/README.md`, update the `Hooks` row to say **ten entries across nine events** (PreToolUse joins), and update the test count from the suite output. Add a row:
 
@@ -1065,11 +1065,11 @@ Add a `PreToolUse` row to the hooks table in the Hooks section:
 | PreToolUse (Write) | `hooks/scripts/pretooluse-schema-gate.py` | Validates proposed frontmatter against `FIELD_SCHEMA` before a vault write lands; blocks on missing required fields or a `type`/`node_type` conflict (stderr names the expected shape), warns on unknown fields, fails open on anything infrastructural. Write-only: an Edit payload carries no resulting file |
 ```
 
-- [ ] **Step 3: Update plugin.json and marketplace.json descriptions**
+- [x] **Step 3: Update plugin.json and marketplace.json descriptions**
 
 In both `adjudant/.claude-plugin/plugin.json` and the adjudant entry in `.claude-plugin/marketplace.json`, replace the phrase `Nine vault-aware hook entries across eight events` with `Ten vault-aware hook entries across nine events, including a PreToolUse schema gate that checks a note's frontmatter before it lands`.
 
-- [ ] **Step 4: Record the measured result in the spec**
+- [x] **Step 4: Record the measured result in the spec**
 
 Using the real numbers from Step 1 (do NOT write placeholder text to disk —
 measure first, then write the finished table in a single edit), append to the
@@ -1093,19 +1093,19 @@ Substitute every `<...>` with the Step 1 output as you write the block. A spec
 that predicts without recording is half a document; a spec containing a
 literal `<measured>` is worse than either.
 
-- [ ] **Step 5: Bump the version**
+- [x] **Step 5: Bump the version**
 
 ```bash
 python3 scripts/bump_plugin_version.py adjudant 0.17.0
 ```
 This writes `plugin.json`, `scripts/command-metadata.json`, `SKILL.md` frontmatter, and the `marketplace.json` entry atomically.
 
-- [ ] **Step 6: Final verification**
+- [x] **Step 6: Final verification**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -s . -p "test_*.py" 2>&1 | tail -3 && cd .. && python3 scripts/validate.py 2>&1 | tail -1`
 Expected: `OK` and `PASS — 30 validator(s) green`.
 
-- [ ] **Step 7: Commit the release**
+- [x] **Step 7: Commit the release**
 
 ```bash
 git add -A adjudant/ .claude-plugin/ docs/
