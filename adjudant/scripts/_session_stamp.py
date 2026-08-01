@@ -227,6 +227,7 @@ _NEVER_STAMP_NAMES = {
     "_handoff.md",
     "_index.md",
     "_iteration.md",
+    "MEMORY.md",   # aggregate perma-memory: many sessions append, none authored it
 }
 _NEVER_STAMP_PREFIXES = ("_index-",)
 

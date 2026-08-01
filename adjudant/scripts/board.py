@@ -27,10 +27,11 @@ CLI:
     python3 board.py --ensure [--project-dir PATH]
 
 `--ensure` is the ambient form (hooks, session-end bridge): birth the board
-when the first real task note exists, reseed when tasks changed, refresh a
+when the first real task note exists, reseed when tasks changed, push a lane
+dragged on any board surface back into the task note's `status:`, refresh a
 stale board.html when a plugin upgrade shipped a new template, write nothing
-otherwise. Verdict (created/reseeded/html-refreshed/no-tasks/no-change) is the
-last stdout line.
+otherwise. Verdict (created/reseeded/tasks-synced/html-refreshed/no-tasks/
+no-change) is the last stdout line.
 
 `scaffold` is idempotent and *refresh-without-clobber*: re-running with
 `--from-tasks` against an existing board merges the current task state into the
@@ -137,16 +138,16 @@ def _today() -> str:
     return date.today().isoformat()
 
 
-def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
-    """Build cards from `{project}/tasks/*.md` frontmatter + first heading.
+def _iter_task_notes(project_dir: Path):
+    """Yield `(path, fields, body, card_id)` per real task note.
 
-    One card per task note. `_index.md` and roadmap/index files (frontmatter
-    `type: tasks`) are skipped — they are not per-card task notes.
+    The single source of the card-id rule. The deck writer and the write-back
+    reader both walk through here, so they can never disagree about which note
+    is which card - a disagreement would write a lane into the wrong note.
     """
     tasks = project_dir / "tasks"
     if not tasks.is_dir():
-        return []
-    cards: list[dict[str, Any]] = []
+        return
     seen: dict[str, str] = {}  # card id -> source filename (duplicate detection)
     for f in sorted(tasks.iterdir()):
         if not f.is_file() or f.suffix != ".md" or f.name == "_index.md":
@@ -168,11 +169,6 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
         fields = fm.fields
         if str(fields.get("type", "") or "").strip().lower() == "tasks":
             continue  # roadmap/index file, not a per-card task note
-        status = _clean_scalar(fields.get("status")).lower()
-        category = _clean_scalar(fields.get("category"))
-        if not category:
-            tags = _as_list(fields.get("tags"))
-            category = next((t for t in tags if t not in ("task", "tasks")), None)
         # Duplicate ids corrupt the merge (last-wins) and the board UI (drag
         # moves the wrong ticket) — disambiguate deterministically and warn.
         cid = _clean_scalar(fields.get("code")) or _clean_scalar(fields.get("id")) or f.stem
@@ -187,6 +183,22 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
                   f"({seen[orig]}, {f.name}) — using '{cid}' for {f.name}",
                   file=sys.stderr)
         seen[cid] = f.name
+        yield f, fields, body, cid
+
+
+def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
+    """Build cards from `{project}/tasks/*.md` frontmatter + first heading.
+
+    One card per task note. `_index.md` and roadmap/index files (frontmatter
+    `type: tasks`) are skipped — they are not per-card task notes.
+    """
+    cards: list[dict[str, Any]] = []
+    for f, fields, body, cid in _iter_task_notes(project_dir):
+        status = _clean_scalar(fields.get("status")).lower()
+        category = _clean_scalar(fields.get("category"))
+        if not category:
+            tags = _as_list(fields.get("tags"))
+            category = next((t for t in tags if t not in ("task", "tasks")), None)
         cards.append({
             "id": cid,
             "title": _clean_scalar(fields.get("title")) or _first_heading(body) or f.stem,
@@ -197,6 +209,97 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
             "source": "task",  # provenance: merge_deck iceboxes only task-seeded cards
         })
     return cards
+
+
+# The lane a status lands in is many-to-one (five spellings reach `done`),
+# so the way back needs one canonical status per lane. A lane with no entry
+# here (a custom lane you added) is never written back: there is no status
+# that means it.
+CANONICAL_STATUS_FOR_COLUMN = {
+    "backlog": "todo",
+    "next": "next",
+    "doing": "doing",
+    "review": "review",
+    "done": "done",
+    "icebox": "icebox",
+}
+
+
+def _rewrite_status(path: Path, status: str) -> bool:
+    """Set `status:` inside the task note's frontmatter. Everything else in
+    the file - other fields, their order, the body, the line endings - is
+    left exactly as it was. Safe-skips instead of raising, like every other
+    ambient write path."""
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            text = handle.read()
+    except (OSError, UnicodeDecodeError):
+        return False
+    lines = text.split("\n")
+    if not lines or lines[0].rstrip() != "---":
+        return False
+    close = None
+    for i in range(1, len(lines)):
+        if lines[i].rstrip() == "---":
+            close = i
+            break
+    if close is None:
+        return False
+    for i in range(1, close):
+        if re.match(r"^status\s*:", lines[i]):
+            eol = "\r" if lines[i].endswith("\r") else ""
+            lines[i] = f"status: {status}{eol}"
+            break
+    else:
+        eol = "\r" if lines[close].endswith("\r") else ""
+        lines.insert(close, f"status: {status}{eol}")
+    try:
+        with file_lock(path):
+            atomic_write_text(path, "\n".join(lines))
+    except OSError:
+        return False
+    return True
+
+
+def sync_deck_to_tasks(project_dir: Path, deck: dict[str, Any]) -> list[dict[str, Any]]:
+    """Write a dragged card's lane back into its task note's `status:`.
+
+    The board is a VIEW of the vault, but a drag happens in the view. Without
+    this, `merge_deck`'s dragged-column-wins rule means the note is ignored
+    forever: the deck says done, the note says todo, and `check`, `dream`,
+    `ramasse` and the sitrep board line all read the note. The board would
+    lie about the vault, silently and permanently.
+
+    Only writes when the note's own status maps to a DIFFERENT lane than the
+    deck has, so both an input alias (`wip` sitting in doing) and a
+    distinction the lane cannot express (`blocked` sitting in review) survive
+    untouched. Cards with no task note - hand-added on the board - are never
+    materialized into notes; that is `board_bridge`'s job, not this one.
+
+    Returns one row per note actually rewritten.
+    """
+    lanes = {str(c.get("id")) for c in deck.get("columns", [])}
+    column_of: dict[str, str] = {}
+    for card in deck.get("cards", []):
+        cid = str(card.get("id") or "").strip()
+        col = str(card.get("column") or "").strip()
+        if cid and col:
+            column_of[cid] = col
+    changed: list[dict[str, Any]] = []
+    for path, fields, _body, cid in _iter_task_notes(project_dir):
+        col = column_of.get(cid)
+        if col is None or col not in lanes:
+            continue
+        target = CANONICAL_STATUS_FOR_COLUMN.get(col)
+        if target is None:
+            continue
+        status = _clean_scalar(fields.get("status")).lower()
+        if STATUS_TO_COLUMN.get(status, "backlog") == col:
+            continue
+        if _rewrite_status(path, target):
+            changed.append({"file": path.name, "id": cid,
+                            "from": status or "(unset)", "to": target})
+    return changed
 
 
 def build_deck(
@@ -784,6 +887,15 @@ def ensure_board(project_dir: Path, vault_dir: Optional[Path] = None) -> str:
                            title=project_dir.name.replace("-", " ").title(),
                            board_id=project_dir.name)
         if _same_deck(merge_deck(existing, fresh), on_disk):
+            # The deck is settled, but a lane a card was DRAGGED into may
+            # still be unrepresented in tasks/. Reporting "no-change" while
+            # the note stays stale is the lie this closes.
+            synced = sync_deck_to_tasks(project_dir, on_disk)
+            if synced:
+                for row in synced:
+                    print(f"[board] {row['file']}: status {row['from']} -> {row['to']} "
+                          f"(from the board)", file=sys.stderr)
+                return "tasks-synced"
             html_path = dest / "board.html"
             if _board_html_current(html_path):
                 return "no-change"
@@ -802,6 +914,13 @@ def ensure_board(project_dir: Path, vault_dir: Optional[Path] = None) -> str:
                       force=False, title=None, board_id=None, vault_root=vault_dir)
     if rc != 0:
         raise RuntimeError(f"board reseed failed for {project_dir} (rc {rc})")
+    # A reseed can carry a drag too (a kanban move folded in above, or a
+    # browser move on a card whose note also changed): the written deck is
+    # the truth to push back into tasks/.
+    try:
+        sync_deck_to_tasks(project_dir, json.loads(data_path.read_text()))
+    except (OSError, json.JSONDecodeError):
+        pass  # the reseed itself succeeded; a failed push-back is next run's
     return "reseeded"
 
 

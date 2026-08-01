@@ -77,6 +77,7 @@ FILE_TYPES_REQUIRING_TEMPLATE = {
     "release": "release.md",
     "dream-report": "dream-report.md",
     "task": "task.md",
+    "memory": "memory.md",
     # project has 4 variants
     "project": [
         "project-brief-coding.md",

@@ -333,9 +333,11 @@ DEFAULT_SKIP: tuple[str, ...] = (
     ".adjudant-shelf-preview", ".adjudant-shelf-backup",
     # a project's junk drawer is not content (finding 31). `_archive` is
     # deliberately NOT here: it names a project ZONE (projects/_archive/) the
-    # walkers must still see; the parked archive verb introduces
-    # `archived-context/` for the in-project case instead.
-    "scratch",
+    # walkers must still see; remise's `archived-context/` covers the
+    # in-project case - archived volume leaves every walk permanently, which
+    # is the point of the verb. Its preview/backup dirs ride along.
+    "scratch", "archived-context",
+    ".adjudant-remise-preview", ".adjudant-remise-backup",
 )
 
 
@@ -757,6 +759,7 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
 BUCKET_A_TYPES: frozenset[str] = frozenset({
     "decision", "session", "note", "doc", "project", "handoff",
     "index", "iteration", "release", "source", "dream-report", "task",
+    "memory",
 })
 BUCKET_A_TYPES_PLUS_HOME: frozenset[str] = BUCKET_A_TYPES | {"vault-home"}
 
@@ -841,7 +844,7 @@ FRIDGE_NUDGE_DAYS = 180
 DECISION_STATUS_VALUES: tuple[str, ...] = (
     "active", "superseded", "reversed", "implemented", "deferred")
 TASK_STATUS_VALUES: tuple[str, ...] = (
-    "todo", "doing", "review", "blocked", "done", "icebox")
+    "todo", "next", "doing", "review", "blocked", "done", "icebox")
 ITERATION_STATUS_VALUES: tuple[str, ...] = (
     "drafting", "on-shelf", "picked", "parked", "rejected", "superseded")
 
@@ -879,6 +882,13 @@ FRESHNESS_VALUES: tuple[str, ...] = ("timeless", "dated", "pointer")
 _EPISTEMIC_OPTIONAL: frozenset[str] = frozenset({
     "freshness", "certainty", "validity_context", "valid_from", "valid_until",
 })
+
+# MEMORY.md heading starter set (remise promotion targets). Unknown headings
+# are legal - the escape hatch - but these four are what the analysis pass
+# reaches for first, and validator 36 holds them to template + reference.
+MEMORY_HEADINGS: tuple[str, ...] = (
+    "Decisions that held", "Preferences", "Gotchas", "Domain facts",
+)
 
 FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
     "decision": {
@@ -939,6 +949,13 @@ FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
                                "status", "created", "updated", "tags"}),
         "optional": frozenset({"repo", "stack", "marketplace", "extra_folders",
                                "relations", "codename", "cssclasses"}),
+    },
+    "memory": {
+        # Per-project perma-memory (remise promotion target). Timeless by
+        # construction: epistemic fields are deliberately absent - declaring
+        # freshness on the file that never stales would be a contradiction.
+        "required": frozenset({"type", "updated", "tags"}),
+        "optional": frozenset({"source_session"}) | _CONTENT_OPTIONAL,
     },
     "index": {
         "required": frozenset({"type", "tags"}),

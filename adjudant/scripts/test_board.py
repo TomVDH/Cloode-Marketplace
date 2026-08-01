@@ -1700,5 +1700,153 @@ class TestTemplateRendersOnlyWhatItCanVouchFor(unittest.TestCase):
         self.assertIn("duplicateIds", _js_function(self.src, "normalize"))
 
 
+class TestDeckToTaskWriteBack(unittest.TestCase):
+    """v1.0.0: a drag on ANY board surface must reach the vault.
+
+    Before this, merge_deck's dragged-column-wins rule meant a card moved in
+    the browser or in Obsidian diverged from its task note permanently and
+    silently: the deck said done, the note said todo, and check/dream/sitrep
+    all read the note. The board lied about the vault."""
+
+    def _project(self, tmp: Path, status: str = "todo") -> Path:
+        project = _make_project(tmp, "demo")
+        _write(project / "tasks" / "t-01.md",
+               f"---\ntype: task\ncode: T-01\nstatus: {status}\ncategory: build\n"
+               f"tags:\n  - task\n---\n\n# Ship the thing\n\nbody line\n")
+        return project
+
+    def _note(self, project: Path) -> Path:
+        return project / "tasks" / "t-01.md"
+
+    def _status_of(self, project: Path) -> str:
+        for ln in self._note(project).read_text().splitlines():
+            if ln.startswith("status:"):
+                return ln.split(":", 1)[1].strip()
+        return ""
+
+    def _drag(self, project: Path, column: str) -> dict:
+        deck_p = project / "board" / "board-data.json"
+        deck = json.loads(deck_p.read_text())
+        deck["cards"][0]["column"] = column
+        deck_p.write_text(json.dumps(deck, indent=2))
+        return deck
+
+    def test_drag_writes_canonical_status_back(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            self.assertEqual(_ensure(project), "created")
+            deck = self._drag(project, "done")
+            changed = board.sync_deck_to_tasks(project, deck)
+            self.assertEqual(len(changed), 1)
+            self.assertEqual(self._status_of(project), "done")
+
+    def test_next_lane_writes_next(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            _ensure(project)
+            deck = self._drag(project, "next")
+            board.sync_deck_to_tasks(project, deck)
+            self.assertEqual(self._status_of(project), "next")
+
+    def test_blocked_survives_the_review_lane(self):
+        # `blocked` already maps to the review column, so a card sitting in
+        # review is NOT divergent - rewriting it to `review` would silently
+        # destroy the distinction the author made.
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp), status="blocked")
+            _ensure(project)
+            deck = json.loads((project / "board" / "board-data.json").read_text())
+            self.assertEqual(deck["cards"][0]["column"], "review")
+            self.assertEqual(board.sync_deck_to_tasks(project, deck), [])
+            self.assertEqual(self._status_of(project), "blocked")
+
+    def test_input_alias_survives_when_lane_agrees(self):
+        # vault-standards: aliases are accepted on input and never rewritten.
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp), status="wip")
+            _ensure(project)
+            deck = json.loads((project / "board" / "board-data.json").read_text())
+            self.assertEqual(board.sync_deck_to_tasks(project, deck), [])
+            self.assertEqual(self._status_of(project), "wip")
+
+    def test_no_divergence_leaves_the_file_byte_identical(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            _ensure(project)
+            before = self._note(project).read_bytes()
+            deck = json.loads((project / "board" / "board-data.json").read_text())
+            self.assertEqual(board.sync_deck_to_tasks(project, deck), [])
+            self.assertEqual(self._note(project).read_bytes(), before)
+
+    def test_rewrite_preserves_other_fields_and_body(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            _ensure(project)
+            deck = self._drag(project, "icebox")
+            board.sync_deck_to_tasks(project, deck)
+            text = self._note(project).read_text()
+            for keep in ("type: task", "code: T-01", "category: build",
+                         "# Ship the thing", "body line", "  - task"):
+                self.assertIn(keep, text)
+            self.assertEqual(text.count("status:"), 1)
+
+    def test_hand_added_card_never_creates_a_note(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            _ensure(project)
+            deck = json.loads((project / "board" / "board-data.json").read_text())
+            deck["cards"].append({"id": "HAND-1", "title": "typed on the board",
+                                  "column": "doing"})
+            self.assertEqual(board.sync_deck_to_tasks(project, deck), [])
+            self.assertFalse((project / "tasks" / "HAND-1.md").exists())
+
+    def test_undecodable_note_is_skipped_not_fatal(self):
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            _ensure(project)
+            deck = self._drag(project, "done")
+            (project / "tasks" / "broken.md").write_bytes(b"---\ntype: task\n\xff\xfe\n")
+            changed = board.sync_deck_to_tasks(project, deck)
+            self.assertEqual(len(changed), 1)   # the good one still syncs
+
+    def test_ensure_reports_the_write_back_instead_of_no_change(self):
+        # The lie this fixes: a drag with no task-file change reseeded to
+        # "no-change" while the note went stale.
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            _ensure(project)
+            self._drag(project, "done")
+            verdict = _ensure(project)
+            self.assertEqual(verdict, "tasks-synced")
+            self.assertEqual(self._status_of(project), "done")
+
+    def test_kanban_drag_reaches_the_task_note(self):
+        # The full chain: Obsidian drag -> kanban.md -> deck -> task note.
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            rc, _ = _scaffold(project, project / "board", from_tasks=True,
+                              data=None, force=False, title=None,
+                              board_id=None, kanban=True)
+            self.assertEqual(rc, 0)
+            kb = project / "board" / "kanban.md"
+            deck_p = project / "board" / "board-data.json"
+            text = kb.read_text().replace("- [ ] **T-01** Ship the thing\n", "")
+            kb.write_text(text.replace("## Doing\n",
+                                       "## Doing\n\n- [ ] **T-01** Ship the thing\n"))
+            future = deck_p.stat().st_mtime + 60
+            os.utime(kb, (future, future))
+            _ensure(project)
+            self.assertEqual(self._status_of(project), "doing")
+
+
 if __name__ == "__main__":
     unittest.main()

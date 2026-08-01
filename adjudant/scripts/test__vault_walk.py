@@ -1044,8 +1044,19 @@ class TestFieldSchema(unittest.TestCase):
                          ("active", "superseded", "reversed", "implemented", "deferred"))
 
     def test_task_status_values_locked(self):
+        # v1.0.0: `next` joined the vocabulary so every board lane has a
+        # status that means it - the write-back has nothing to write
+        # otherwise, and the Next lane would diverge silently forever.
         self.assertEqual(TASK_STATUS_VALUES,
-                         ("todo", "doing", "review", "blocked", "done", "icebox"))
+                         ("todo", "next", "doing", "review", "blocked",
+                          "done", "icebox"))
+
+    def test_every_board_lane_has_a_canonical_status(self):
+        from board import CANONICAL_STATUS_FOR_COLUMN, DEFAULT_COLUMNS
+        for col in DEFAULT_COLUMNS:
+            status = CANONICAL_STATUS_FOR_COLUMN.get(col["id"])
+            self.assertIsNotNone(status, f"lane {col['id']} has no status")
+            self.assertIn(status, TASK_STATUS_VALUES)
 
     def test_iteration_status_values_locked(self):
         self.assertEqual(ITERATION_STATUS_VALUES,
@@ -1668,6 +1679,53 @@ class TestFreshnessReport(unittest.TestCase):
             self.assertEqual(rep["counts"]["certainty"], 1)
             self.assertEqual(rep["expired"], [])
             self.assertEqual(rep["dangling_supersession"], [])
+
+
+class TestMemoryType(unittest.TestCase):
+    """remise groundwork: MEMORY.md is a schema type that never stales,
+    never carries epistemic fields, and never gets walked into archives."""
+
+    def test_memory_schema_shape(self):
+        self.assertIn("memory", FIELD_SCHEMA)
+        self.assertEqual(FIELD_SCHEMA["memory"]["required"],
+                         frozenset({"type", "updated", "tags"}))
+        from _vault_walk import _EPISTEMIC_OPTIONAL
+        self.assertFalse(_EPISTEMIC_OPTIONAL & FIELD_SCHEMA["memory"]["optional"],
+                         "memory is timeless by construction; epistemic fields are contradictory")
+
+    def test_memory_headings_constant(self):
+        from _vault_walk import MEMORY_HEADINGS
+        self.assertEqual(MEMORY_HEADINGS,
+                         ("Decisions that held", "Preferences",
+                          "Gotchas", "Domain facts"))
+
+    def test_memory_exempt_from_freshness_and_staleness(self):
+        from datetime import date
+        from _vault_walk import freshness_report, walk_project
+        with tempfile.TemporaryDirectory() as tmp:
+            proot = Path(tmp)
+            (proot / "MEMORY.md").write_text(
+                "---\ntype: memory\nupdated: 2020-01-01\ntags:\n  - memory\n---\n\n"
+                "## Gotchas\n\n- 2020-01-01 · old but never stale\n")
+            files = list(walk_project(proot))
+            rep = freshness_report(files, date(2026, 8, 1))
+            self.assertEqual(rep["counts"], {k: 0 for k in rep["counts"]})
+
+    def test_archived_context_and_remise_dirs_skipped(self):
+        from _vault_walk import walk_project
+        with tempfile.TemporaryDirectory() as tmp:
+            proot = Path(tmp)
+            (proot / "notes").mkdir()
+            (proot / "notes" / "live.md").write_text("---\ntype: note\n---\nx\n")
+            for d in ("archived-context/sessions", ".adjudant-remise-preview",
+                      ".adjudant-remise-backup"):
+                p = proot / d
+                p.mkdir(parents=True)
+                (p / "buried.md").write_text("---\ntype: note\n---\nx\n")
+            rels = [str(vf.rel_path) for vf in walk_project(proot)]
+            self.assertTrue(any("live.md" in r for r in rels))
+            self.assertFalse(any("buried.md" in r for r in rels),
+                             "archived and remise working dirs must never be walked")
 
 
 class TestObsidianCliProbe(unittest.TestCase):

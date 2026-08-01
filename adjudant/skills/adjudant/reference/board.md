@@ -167,6 +167,29 @@ on the last stdout line:
 | `reseeded` | deck existed and the clobber-safe `--from-tasks` merge changed it |
 | `no-change` | merge would change nothing; deck untouched, mtime included (no sync churn) |
 | `html-refreshed` | only board.html was stale (template drift or vanished page); deck untouched |
+| `tasks-synced` | the deck was settled but a dragged lane was missing from `tasks/`: the notes were updated to match (see below) |
+
+### The board writes back (v1.0.0)
+
+The board is a view of the vault, but a drag happens in the view. So every
+lane change on **any** surface is pushed back into the task note's `status:`:
+a browser drag, an Obsidian kanban drag folded in by the read-back, or a deck
+you edited by hand. Without this the note stayed stale forever, because the
+merge deliberately keeps the dragged column, and `check`, `dream`, `ramasse`
+and the sitrep board line all read the note rather than the deck.
+
+- Each lane has exactly one canonical status (`CANONICAL_STATUS_FOR_COLUMN`),
+  which is why `next` is part of the task vocabulary: a lane no status can
+  express is a lane that diverges silently.
+- A note is rewritten **only** when its own status maps to a different lane
+  than the deck has. So an input alias (`wip` sitting in doing) and a
+  distinction the lane cannot express (`blocked` sitting in review) both
+  survive untouched, per the never-rewrite-aliases rule.
+- Only `status:` changes; other fields, their order, the body and the line
+  endings are left exactly as they were. The write is atomic and locked.
+- Cards with no task note (hand-added on the board) are never materialized
+  into notes here; that is `board_bridge`'s job.
+- It converges: once the note matches, the next run reports `no-change`.
 
 ### Kanban surface (v0.23.0)
 

@@ -28,7 +28,7 @@ Project membership is the folder path (`projects/[zone/]slug/…`), never a fron
 
 ## 2. Tag schema (locked 2026-05-25)
 
-Bare tags only, no prefix. Every file carries exactly one file-type tag matching its `type:`; `Home.md` is the lone exception (`type: vault-home`, no tag). **Bucket A** (the twelve file-type tags), **B** (custom types migrated from `cabinet/*` by `/adjudant ramasse`) and **D** (deprecated: `ob/*`, leftover `cabinet/*`, project-slug tags, vague topicals, crew names) are enumerated in `_vault_walk.py` and applied by `tidy.normalize_tags`.
+Bare tags only, no prefix. Every file carries exactly one file-type tag matching its `type:`; `Home.md` is the lone exception (`type: vault-home`, no tag). **Bucket A** (thirteen file-type tags), **B** (custom types migrated from `cabinet/*` by `/adjudant ramasse`) and **D** (deprecated: `ob/*`, leftover `cabinet/*`, project-slug tags, vague topicals, crew names) are enumerated in `_vault_walk.py` and applied by `tidy.normalize_tags`.
 
 **Bucket C**, topical tags, is judgment with no enforcer: optional, queryable, sparing. Established clusters are `#content/` plus one of `seafood-companies`, `blog`, `page`, `hardware`, `personnel`, `videos`, `workflows`, `features`. A new topical needs all three: namespaced (`category/value`), queryable (you would filter on it), used across three or more files. Project kind is not a tag: it is `project_type:` on the brief, one of `coding | knowledge | plugin | tinkerage`. `cssclasses:` is an Obsidian CSS class, not a tag, and tag normalization leaves it alone.
 
@@ -40,9 +40,9 @@ Doc vs decision, the common mix-up. A decision has a date-prefixed filename, liv
 
 ## 4. Naming rules
 
-Names are strict, but only some are checked: `ramasse_scan` flags doc case and date-prefix, decision date-prefix, session filename, and `.canvas`/`.base` kebab-case. The rest are on you. The ones you choose by hand: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); iteration, the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
+Only some names are checked: `ramasse_scan` flags doc and decision date-prefix, doc case, session filename, and `.canvas`/`.base` kebab-case. The rest are on you: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); iteration, the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
 
-`status:` on a task note takes exactly one of `todo` | `doing` | `review` | `blocked` | `done` | `icebox`. Aliases are accepted on input and never rewritten; the board maps them to lanes (mirrors `board.py` `STATUS_TO_COLUMN`):
+`status:` on a task note takes one of `todo` | `next` | `doing` | `review` | `blocked` | `done` | `icebox`, one per board lane. Aliases are accepted on input and never rewritten; the board maps them to lanes (mirrors `board.py` `STATUS_TO_COLUMN`), and a card dragged on any board surface writes its lane's canonical status back here:
 
 | Alias | Board column |
 |---|---|
@@ -67,13 +67,13 @@ Body links carry the full path and a display alias: `[[projects/{slug}/brief|{di
 
 ## 7. Content style
 
-Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `/adjudant dream` flags suspected violations for review. The banned-term list lives in `reference/voice.md` and `validate.py`.
+Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `dream` flags suspects. The banned-term list lives in `reference/voice.md` and `validate.py`.
 
 ## 8. Project status and zones (locked 2026-07-16)
 
 `status:` on a brief takes exactly one of `active` | `stale` | `fridge` | `done` | `dead` | `seed`, and picking between them is judgment. `active`: being worked. `stale`: declared active but quiet past `stale_after_days` (default 30), the only machine-suggested state. `fridge`: deliberately paused, intent to return. `done`: shipped and complete, a success rather than an abandonment. `dead`: abandoned. `seed`: captured idea, not yet started.
 
-Placement follows status: `projects/` holds active, stale and seed; `projects/_fridge/` holds fridge; `projects/_archive/` holds done and dead. Transitions run only through `/adjudant shelf` (see `reference/shelf.md`), which moves the folder and rewrites `[[projects/…]]` prefixes vault-wide, so full-path wikilinks survive a zone move. The `[[{slug}/brief|{slug}]]` index-row form resolves across zones by Obsidian suffix matching and is never rewritten.
+Placement follows status: `projects/` holds active, stale and seed; `projects/_fridge/` holds fridge; `projects/_archive/` holds done and dead. Transitions run only through `/adjudant shelf`, which moves the folder and rewrites `[[projects/…]]` prefixes vault-wide, so full-path wikilinks survive a zone move. The `[[{slug}/brief|{slug}]]` index-row form resolves across zones by Obsidian suffix matching and is never rewritten.
 
 ## 9. Decision status vocabulary (locked 2026-07-27)
 
