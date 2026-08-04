@@ -1731,6 +1731,12 @@ class TestDeckToTaskWriteBack(unittest.TestCase):
         deck_p.write_text(json.dumps(deck, indent=2))
         return deck
 
+    def _edit_note(self, project: Path, status: str) -> None:
+        """Set `status:` the way a human editing in Obsidian would."""
+        note = self._note(project)
+        note.write_text(re.sub(r"(?m)^status:.*$", f"status: {status}",
+                               note.read_text()))
+
     def test_drag_writes_canonical_status_back(self):
         import board
         with tempfile.TemporaryDirectory() as tmp:
@@ -1826,6 +1832,55 @@ class TestDeckToTaskWriteBack(unittest.TestCase):
             self._drag(project, "done")
             verdict = _ensure(project)
             self.assertEqual(verdict, "tasks-synced")
+            self.assertEqual(self._status_of(project), "done")
+
+    def test_a_note_edited_in_obsidian_is_not_reverted(self):
+        # The inverse of the v1.0.0 bug, and worse because it WRITES: the
+        # deck's column outranked a fresh human edit, so marking a task done
+        # in Obsidian was silently rolled back by the next ambient hook.
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp), status="doing")
+            _ensure(project)
+            self._edit_note(project, "done")
+            _ensure(project)
+            self.assertEqual(self._status_of(project), "done")
+
+    def test_a_note_edit_moves_the_card_on_the_board(self):
+        # Same event, other store: the board must follow the note, not
+        # discard it. Reverting the note and leaving the deck put is what
+        # made the two stores disagree permanently.
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp), status="doing")
+            _ensure(project)
+            self._edit_note(project, "done")
+            _ensure(project)
+            deck = json.loads((project / "board" / "board-data.json").read_text())
+            self.assertEqual(deck["cards"][0]["column"], "done")
+
+    def test_a_drag_still_wins_when_the_note_did_not_move(self):
+        # Regression guard on v1.0.0's actual fix: teaching the note to win
+        # must not cost the board its own authority over a real drag.
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp), status="todo")
+            _ensure(project)
+            self._drag(project, "done")
+            _ensure(project)
+            self.assertEqual(self._status_of(project), "done")
+
+    def test_a_legacy_deck_without_provenance_writes_nothing(self):
+        # A deck seeded before provenance existed cannot say WHICH store
+        # moved. An unattended write path with no preview and no backup must
+        # not guess: leave both stores alone and record the ancestor instead.
+        import board
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp), status="done")
+            _ensure(project)
+            deck_p = project / "board" / "board-data.json"
+            deck = json.loads(deck_p.read_text())
+            deck["cards"][0].pop("taskStatus", None)     # pre-provenance deck
+            deck["cards"][0]["column"] = "doing"
+            deck_p.write_text(json.dumps(deck, indent=2))
+            self.assertEqual(board.sync_deck_to_tasks(project, deck), [])
             self.assertEqual(self._status_of(project), "done")
 
     def test_kanban_drag_reaches_the_task_note(self):

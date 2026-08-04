@@ -207,6 +207,11 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
             "related": _as_list(fields.get("related")),
             "notes": _clean_scalar(fields.get("note")),
             "source": "task",  # provenance: merge_deck iceboxes only task-seeded cards
+            # The note's status as of this read. Carried into the deck so the
+            # NEXT merge has a common ancestor: without it, deck != note is a
+            # symptom with two causes (the board moved, or the note moved) and
+            # nothing can tell them apart. See merge_deck.
+            "taskStatus": status,
         })
     return cards
 
@@ -280,11 +285,13 @@ def sync_deck_to_tasks(project_dir: Path, deck: dict[str, Any]) -> list[dict[str
     """
     lanes = {str(c.get("id")) for c in deck.get("columns", [])}
     column_of: dict[str, str] = {}
+    ancestor_of: dict[str, Any] = {}
     for card in deck.get("cards", []):
         cid = str(card.get("id") or "").strip()
         col = str(card.get("column") or "").strip()
         if cid and col:
             column_of[cid] = col
+            ancestor_of[cid] = card.get("taskStatus")
     changed: list[dict[str, Any]] = []
     for path, fields, _body, cid in _iter_task_notes(project_dir):
         col = column_of.get(cid)
@@ -296,6 +303,17 @@ def sync_deck_to_tasks(project_dir: Path, deck: dict[str, Any]) -> list[dict[str
         status = _clean_scalar(fields.get("status")).lower()
         if STATUS_TO_COLUMN.get(status, "backlog") == col:
             continue
+        # Divergence alone does not license a write: it is equally the
+        # signature of a drag and of a human editing the note. Only the
+        # ancestor separates them.
+        ancestor = ancestor_of.get(cid)
+        if ancestor is None:
+            # Deck seeded before provenance existed. This path is ambient,
+            # unattended, and has no preview or backup, so it does not guess -
+            # the reseed records the ancestor and the next run decides.
+            continue
+        if ancestor != status:
+            continue  # the note moved; merge_deck already moved the card to match
         if _rewrite_status(path, target):
             changed.append({"file": path.name, "id": cid,
                             "from": status or "(unset)", "to": target})
@@ -394,7 +412,16 @@ def merge_deck(existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any
         ec = ex_by_id.get(cid)
         if ec is not None:
             fc = dict(fc)
-            fc["column"] = ec.get("column", fc.get("column"))
+            # Three-way merge. `taskStatus` on the on-disk card is the note's
+            # status the last time the two stores agreed - the common ancestor.
+            # Unchanged ancestor means only the board can have moved, so the
+            # drag wins; a changed one means the human edited the note in
+            # Obsidian, and the note wins. Keeping the deck unconditionally
+            # (the pre-1.0.1 rule) discarded that edit, and then
+            # sync_deck_to_tasks wrote the stale lane back over it.
+            ancestor = ec.get("taskStatus")
+            if ancestor is None or ancestor == fc.get("taskStatus"):
+                fc["column"] = ec.get("column", fc.get("column"))
             if ec.get("notes"):
                 fc["notes"] = ec["notes"]
         merged.append(fc)

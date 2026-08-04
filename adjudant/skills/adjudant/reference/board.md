@@ -93,9 +93,14 @@ the background, open the URL, and close with one next step: drag cards, or hit
   "columns": [{ "id": "backlog", "name": "Backlog" }, ...],
   "categories": ["build", "docs", "infra"],
   "cards": [{ "id": "X-01", "title": "...", "column": "backlog",
-              "category": "build", "related": ["SPEC-001"], "notes": "" }]
+              "category": "build", "related": ["SPEC-001"], "notes": "",
+              "source": "task", "taskStatus": "todo" }]
 }
 ```
+
+- `taskStatus` is the task note's `status:` as of the last reconcile — the
+  common ancestor the three-way merge needs. A deck without it is pre-1.0.1
+  and reconciles as "unknown", never as "the board moved".
 
 - `boardId` (defaults to the project slug) namespaces the board's browser
   `localStorage` + IndexedDB file-handle, keeping multiple boards independent.
@@ -185,6 +190,17 @@ and the sitrep board line all read the note rather than the deck.
   than the deck has. So an input alias (`wip` sitting in doing) and a
   distinction the lane cannot express (`blocked` sitting in review) both
   survive untouched, per the never-rewrite-aliases rule.
+- **Divergence alone does not license a write (v1.0.1).** Deck ≠ note is
+  equally the signature of a drag and of a human editing the note in
+  Obsidian, and v1.0.0 read every such case as a drag: marking a task done in
+  Obsidian was silently reverted by the next ambient hook, and the log line
+  said "from the board" about a card nobody had touched. `taskStatus` is the
+  common ancestor that separates the two. Unchanged since the last reconcile
+  → only the board can have moved, the drag wins and the note is rewritten.
+  Changed → the human moved it, the note wins and `merge_deck` moves the card
+  instead. Absent (a pre-1.0.1 deck) → neither store is trusted: this path is
+  ambient and has no preview or backup, so it records the ancestor and lets
+  the next run decide rather than guessing once, destructively.
 - Only `status:` changes; other fields, their order, the body and the line
   endings are left exactly as they were. The write is atomic and locked.
 - Cards with no task note (hand-added on the board) are never materialized
