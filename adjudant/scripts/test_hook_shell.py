@@ -208,21 +208,29 @@ class TestSessionStartHook(unittest.TestCase):
             self.assertEqual(r.returncode, 0)
             self.assertIn("session resumed", note.read_text())
 
-    def test_placeholder_nudge_in_context_until_replaced(self):
-        # The intent placeholder had no owner: three code sites create it,
-        # nothing fills it. The hook's context must hand the job to the model.
+    def test_session_start_no_longer_nags_about_the_intent_line(self):
+        # The nag moved to UserPromptSubmit: at SessionStart there is no
+        # purpose to record yet, and this hook re-runs on resume and compact,
+        # so it fired early and repeatedly. See test_user_prompt_reminder.
         with tempfile.TemporaryDirectory() as tmp:
             project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
-            r1 = _run("session-start.sh", project, home)
-            self.assertIn("Intent line is still the placeholder", r1.stdout)
-            session_file = (home / "vault" / "projects" / "demo" / "sessions"
-                            / f"{date.today().isoformat()}.md")
-            session_file.write_text(
-                session_file.read_text().replace(
-                    "{One-line intent. Frozen after first write.}",
-                    "Fix the handoff mirror guard."))
-            r2 = _run("session-start.sh", project, home)
-            self.assertNotIn("Intent line is still the placeholder", r2.stdout)
+            r = _run("session-start.sh", project, home,
+                     stdin='{"session_id":"sess-x","source":"startup"}')
+            self.assertNotIn("Intent line is still the placeholder", r.stdout)
+
+    def test_session_start_hands_the_session_path_to_the_per_turn_hook(self):
+        # The per-turn hook cannot re-derive this without a second copy of the
+        # zone-aware lookup, and two copies drift.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
+            _run("session-start.sh", project, home,
+                 stdin='{"session_id":"sess-x","source":"startup"}')
+            pointer = home / "adjudant-session-sess-x"
+            self.assertTrue(pointer.is_file(), "no session pointer written")
+            self.assertEqual(
+                pointer.read_text().strip(),
+                str(home / "vault" / "projects" / "demo" / "sessions"
+                    / f"{date.today().isoformat()}.md"))
 
     # --- ambient board: counts line + suitcase pointer ---
 
@@ -586,18 +594,21 @@ class TestZoneAwareness(unittest.TestCase):
                     self.assertFalse(ghost.exists(),
                                      "no phantom active-zone project may be created")
 
-    def test_intent_nudge_names_the_zone_aware_path(self):
-        # The zone conversion missed the intent-placeholder nudge: it still
-        # said projects/<slug>/sessions/, a path that does not exist for a
-        # shelved project and contradicts the 'created' line right above it.
+    def test_session_pointer_names_the_zone_aware_path(self):
+        # The zone conversion once missed the intent nudge: it said
+        # projects/<slug>/sessions/, a path that does not exist for a shelved
+        # project. The nudge moved to the per-turn hook, so the guard moves to
+        # the pointer it now reads - same bug, same shape, new address.
         with tempfile.TemporaryDirectory() as tmp:
             project, home, _ = self._shelved(Path(tmp))
-            r = _run("session-start.sh", project, home, plugin_root=True)
+            r = _run("session-start.sh", project, home, plugin_root=True,
+                     stdin='{"session_id":"sess-z","source":"startup"}')
             self.assertEqual(r.returncode, 0, r.stderr)
             today = date.today().isoformat()
-            self.assertIn("Intent line is still the placeholder", r.stdout)
-            self.assertIn(f"projects/_fridge/demo/sessions/{today}.md", r.stdout)
-            self.assertNotIn(f"`projects/demo/sessions/{today}.md`", r.stdout)
+            pointed = (home / "adjudant-session-sess-z").read_text().strip()
+            self.assertTrue(pointed.endswith(
+                f"projects/_fridge/demo/sessions/{today}.md"), pointed)
+            self.assertNotIn("/projects/demo/sessions/", pointed)
 
     def test_session_start_archive_zone(self):
         with tempfile.TemporaryDirectory() as tmp:

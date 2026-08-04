@@ -255,13 +255,14 @@ EOF
   # else: write failed and no file exists — stay silent, claim nothing.
 
   # --- 4. Intent-line ownership: the hook creates the placeholder, the model
-  # fills it. Nudge in the context stream until someone replaces it.
-  if [ -f "$session_file" ] \
-     && grep -qF -- '{One-line intent. Frozen after first write.}' "$session_file" 2>/dev/null; then
-    # $rel_project, not projects/$slug: for a shelved project the hardcoded
-    # form names a path that does not exist and contradicts the created/resumed
-    # line printed just above.
-    printf -- "- Intent line is still the placeholder in \`%s/sessions/%s.md\`: replace it with one plain sentence once the session's purpose is clear, then leave it frozen.\n" "$rel_project" "$today"
+  # fills it. The NUDGE lives in the UserPromptSubmit hook, not here — at
+  # SessionStart there is no purpose to record yet, and this hook re-runs on
+  # every resume and compact, so it nagged early and repeatedly. All that is
+  # left here is handing the resolved path forward; re-deriving it in the
+  # per-turn hook would duplicate the zone-aware lookup, and two copies drift.
+  if [ -n "$session_id" ] && [ -f "$session_file" ]; then
+    { printf '%s\n' "$session_file" \
+        > "${TMPDIR:-/tmp}/adjudant-session-$session_id"; } 2>/dev/null || true
   fi
 
   # --- 5. Handoff freshness: surface the banner the handoff already carries.
