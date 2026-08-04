@@ -273,6 +273,48 @@ class TestUpsertIndexContent(unittest.TestCase):
         self.assertNotIn("ob/index", new)
         self.assertIn("- index", new)
 
+    def test_curated_alias_survives_the_rebuild(self):
+        # A hand-written alias is the one line of an index a human actually
+        # authored, and it is unrecoverable from the filename. Replacing it
+        # with a slug-title also contradicts the one-line-per-entry
+        # convention the rebuild exists to serve.
+        existing = (
+            "---\ntype: index\ntags:\n  - index\nupdated: 2026-05-01\n---\n\n"
+            "# Memory\n\n## Entries\n\n"
+            "- [[prefers-agents-md|Canonical repo context lives in AGENTS.md]]\n"
+        )
+        new, mode = upsert_index_content(
+            existing, "memory", [Path("prefers-agents-md.md")], "x")
+        self.assertEqual(mode, "upserted")
+        self.assertIn("[[prefers-agents-md|Canonical repo context lives in AGENTS.md]]",
+                      new)
+
+    def test_a_new_entry_still_gets_the_generated_alias(self):
+        # Preserving curated text must not stop the rebuild doing its job for
+        # entries nobody has annotated yet.
+        existing = (
+            "---\ntype: index\ntags:\n  - index\nupdated: 2026-05-01\n---\n\n"
+            "# Memory\n\n## Entries\n\n"
+            "- [[prefers-agents-md|Canonical repo context lives in AGENTS.md]]\n"
+        )
+        new, _ = upsert_index_content(
+            existing, "memory",
+            [Path("prefers-agents-md.md"), Path("in-repo-over-patch.md")], "x")
+        self.assertIn("[[in-repo-over-patch|in repo over patch]]", new)
+        self.assertIn("Canonical repo context lives in AGENTS.md", new)
+
+    def test_a_stale_alias_for_a_deleted_entry_does_not_come_back(self):
+        # Preservation is keyed on the entry still existing; a curated alias
+        # is not a reason to resurrect a file that is gone.
+        existing = (
+            "---\ntype: index\ntags:\n  - index\nupdated: 2026-05-01\n---\n\n"
+            "# Memory\n\n## Entries\n\n"
+            "- [[deleted-one|Something I wrote about a file that is gone]]\n"
+        )
+        new, _ = upsert_index_content(existing, "memory", [Path("kept.md")], "x")
+        self.assertNotIn("deleted-one", new)
+        self.assertIn("[[kept|kept]]", new)
+
     def test_upsert_table_format_leaves_body_alone(self):
         existing = (
             "---\n"
@@ -794,6 +836,36 @@ class TestSchemaPhase(unittest.TestCase):
             self.assertEqual(cs["schema_actions"]["notes/n.md"]["dropped"], ["project"])
             self.assertIn("originSessionId -> source_session",
                           cs["schema_actions"]["notes/n.md"]["renamed"])
+
+    def test_uncorroborated_type_is_reported_not_stripped(self):
+        # A Claude Code auto-memory file flattened by an external editor lands
+        # with `type: project` and nothing else a project brief has. Treating
+        # that declaration as true made tidy strip `name:`/`description:` -
+        # the two fields the memory system reads for relevance - off a file
+        # that was never a project brief. Misclassified is not drifted.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "memory" / "prefers-agents-md.md",
+               "---\nname: prefers-agents-md\n"
+               "description: Canonical repo context lives in AGENTS.md\n"
+               "type: project\n---\n\nBody.\n")
+            cs = self._preview(root)
+            self.assertNotIn("memory/prefers-agents-md.md", cs["file_proposals"])
+            act = cs["schema_actions"]["memory/prefers-agents-md.md"]
+            self.assertNotIn("dropped", act)
+            self.assertIn("project", act["unverified_type"])
+
+    def test_a_real_brief_with_drift_is_still_stripped(self):
+        # The guard must cost nothing on a file that genuinely IS its declared
+        # type: corroborated by the required fields, so the strip proceeds.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _w(root / "brief.md",
+               "---\ntype: project\nproject_type: coding\nslug: t\n"
+               "aliases:\n  - T\nstatus: active\ncreated: 2026-01-01\n"
+               "updated: 2026-01-02\nbogus: nope\ntags:\n  - project\n---\n\nB\n")
+            cs = self._preview(root)
+            self.assertEqual(cs["schema_actions"]["brief.md"]["dropped"], ["bogus"])
 
     def test_origin_session_dropped_when_source_present(self):
         with tempfile.TemporaryDirectory() as tmp:

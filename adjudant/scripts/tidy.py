@@ -40,6 +40,7 @@ from typing import Any, Optional
 
 from _cost import cost_block, read_threshold, stat_walk
 from _vault_walk import (
+    FIELD_SCHEMA,
     BUCKET_A_TYPES,
     BUCKET_B_MIGRATIONS,
     DECISION_STATUS_ALIASES,
@@ -239,8 +240,32 @@ def _sort_entries(entries: list[Path]) -> list[Path]:
     )
 
 
-def _format_entry_bullet(f: Path) -> str:
+# A bullet the rebuild could have produced tells us nothing; one with any other
+# alias is a line a human wrote, and the filename cannot reconstruct it.
+_CURATED_BULLET_RE = re.compile(r"^\s*-\s+\[\[([^\]|#]+?)(?:#[^\]|]*)?\|(.+?)\]\]\s*$")
+
+
+def harvest_aliases(section_lines: list[str]) -> dict[str, str]:
+    """`{link target: alias}` for every aliased bullet in an Entries section.
+
+    First occurrence wins, matching the rest of tidy's duplicate handling.
+    """
+    found: dict[str, str] = {}
+    for ln in section_lines:
+        m = _CURATED_BULLET_RE.match(ln)
+        if m:
+            found.setdefault(m.group(1).strip(), m.group(2).strip())
+    return found
+
+
+def _format_entry_bullet(f: Path, aliases: Optional[dict[str, str]] = None) -> str:
+    """One index row. A curated alias for this entry outranks the generated
+    one; regenerating over it discards the only authored content an index
+    holds, and `stem.replace("-", " ")` cannot get it back."""
     stem = f.stem
+    curated = (aliases or {}).get(stem)
+    if curated:
+        return f"- [[{stem}|{curated}]]"
     m = DATE_PREFIX_RE.match(stem)
     if m and m.group(1) and m.group(2):
         display = f"{m.group(1)} {m.group(2).replace('-', ' ')}"
@@ -354,9 +379,11 @@ def upsert_index_content(
     if not _section_is_bullet_list(section_lines):
         return new_text, "frontmatter_only"
 
-    # Generate new entry bullets
+    # Generate new entry bullets, carrying forward any alias a human curated
+    # for an entry that still exists.
     sorted_entries = _sort_entries(entries)
-    new_bullets = [_format_entry_bullet(f) for f in sorted_entries]
+    aliases = harvest_aliases(section_lines)
+    new_bullets = [_format_entry_bullet(f, aliases) for f in sorted_entries]
 
     # Replace section content: keep leading/trailing blank lines if any in original style
     # Use one blank before bullets, one trailing blank
@@ -513,6 +540,31 @@ def _set_frontmatter_scalar(text: str, key: str, value: str) -> str:
     return "\n".join(lines)
 
 
+def _uncorroborated_type(file_type: Optional[str], fields: dict[str, Any]) -> Optional[str]:
+    """Explain why `type:` is not to be trusted, or None when it is.
+
+    The schema strip is destructive and reads `type:` as ground truth. That
+    holds for a file adjudant wrote; it does not hold for a foreign file that
+    acquired a colliding `type:` some other way — a Claude Code auto-memory
+    note flattened by an external editor arrives as `type: project` carrying
+    none of a brief's fields, and every real field it does carry then looks
+    "unknown". Corroboration is the required set beyond `type` itself: a
+    majority present means the declaration is backed by the file, a minority
+    means the file is misclassified and the strip would be the data loss.
+    """
+    if file_type not in FIELD_SCHEMA:
+        return None
+    required = set(FIELD_SCHEMA[file_type]["required"]) - {"type"}
+    if not required:
+        return None
+    present = sum(1 for k in required if k in fields)
+    if present * 2 > len(required):
+        return None
+    return (f"type: {file_type} is not corroborated "
+            f"({len(required) - present} of {len(required)} required fields missing) "
+            f"— left untouched; retype the file or fill it in")
+
+
 # ============================================================
 # Preview build
 # ============================================================
@@ -637,13 +689,19 @@ def build_preview(
                 else:
                     renames.append(("originSessionId", "source_session"))
             drift = schema_drift_for_file(f, _TASK_STATUS_ALIASES)
-            if drift:
+            unverified = _uncorroborated_type(f.file_type, fields) if drift else None
+            if drift and not unverified:
                 for k in drift.get("unknown_fields", ()):
                     if k not in ("node_type", "originSessionId"):
                         drops.add(k)
                 si = drift.get("status_invalid")
                 if si and f.file_type == "decision" and si.get("normalizable"):
                     status_fix = (si["value"], DECISION_STATUS_ALIASES[si["value"]])
+            if unverified:
+                # Reported, never acted on. The human decides whether the file
+                # is mistyped or genuinely half-built; tidy is not entitled to
+                # strip content on the strength of a `type:` nothing backs up.
+                schema_actions[str(f.rel_path)] = {"unverified_type": unverified}
             if renames or drops or status_fix:
                 for old, new in renames:
                     modified = _rename_frontmatter_key(modified, old, new)
