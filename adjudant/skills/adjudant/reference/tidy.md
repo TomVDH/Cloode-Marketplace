@@ -46,6 +46,8 @@ Repo ops use `--project-dir` as the repo root directly (no breadcrumb).
 
    **An uncorroborated `type:` is reported, never acted on.** The strip reads `type:` as ground truth, which holds for a file adjudant wrote and not for a foreign file that acquired a colliding `type:` some other way — a Claude Code auto-memory note flattened by an external editor arrives as `type: project` carrying none of a brief's fields, so every real field it does have (`name:`, `description:` — exactly what the memory system reads for relevance) looks "unknown" and gets stripped. Corroboration is the required set beyond `type` itself: a majority present means the file backs its own declaration and the strip proceeds; a minority means it is misclassified, and tidy emits an `unverified_type` line instead of touching it. Retype the file or fill it in.
 
+   To repair memory notes already flattened, `scripts/renest_memory.py preview <dir>` lists them and `apply` puts `metadata.type` back, backing each file up first. The flattening preserves the value, so the repair is mechanical — but only while `name:`/`description:` are still on the file, so run it before applying any tidy preview computed under 1.0.0.
+
 ## Run
 
 > Render the JSON `cost` block as one line: `cost: ~{est_read_tokens/1000}k tokens, {files} files`.
