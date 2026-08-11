@@ -68,6 +68,8 @@ except Exception:
   # not leak \r into paths/slugs (it used to create phantom `slug\r/` dirs).
   vault_path=$(sed -n 's/^vault_path[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
   slug=$(sed -n 's/^slug[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
+  local voice_knob
+  voice_knob=$(sed -n 's/^voice[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
 
   [ -z "$slug" ] && return 0
   # The breadcrumb is a REPO-COMMITTED file: a cloned repo can carry any slug.
@@ -116,6 +118,28 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
 
   # --- 2. Inject context block ---
   printf '## Adjudant\n\n'
+
+  # Voice first: it governs everything printed after it, and everything said
+  # for the rest of the session. The validators and the write gate only reach
+  # FILES; the chat is where adjudant is actually read, and nothing was setting
+  # its register. i-have-adhd ships `disable-model-invocation: true`, so its
+  # ten rules stay inert unless someone types /i-have-adhd — this hook is the
+  # only thing that speaks into every session regardless.
+  #
+  # Condensed hard against a 120-token budget (validated in test_hook_shell):
+  # it loads every session on top of a context block that already costs. The
+  # full contract is reference/voice.md; this is the part that changes what the
+  # next sentence looks like. Off via `voice: off` in the breadcrumb (per
+  # project, syncs across machines) or ADJUDANT_VOICE_DISABLE=1 (one machine).
+  case "${voice_knob:-on}" in
+    off|false|0|no) : ;;
+    *)
+      if [ "${ADJUDANT_VOICE_DISABLE:-0}" != "1" ]; then
+        printf -- '- Voice: lead with the action, not preamble. Never "Great question", "Hope this helps", "Let me know if", "Uh oh". Number multi-step work, cap lists at five, restate state each turn. Time estimates in real units. Errors as cause and fix. No em dashes, no filler superlatives, no self-congratulation. Say what a competent colleague would say, then stop.\n'
+      fi
+      ;;
+  esac
+
   printf -- '- Vault: `%s` (linked to project `%s`)\n' "$(basename "$vault_path")" "$slug"
 
   # AGENTS.md + CLAUDE.md detection

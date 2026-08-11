@@ -63,6 +63,54 @@ class TestSessionStartHook(unittest.TestCase):
         (project / ".claude" / "adjudant").write_text(breadcrumb.format(vault=vault))
         return project, home
 
+    def test_voice_directive_leads_the_context_block(self):
+        # The enforcement surfaces (validators, the write gate) only reach
+        # files. The chat is where adjudant is actually read, and nothing was
+        # setting its register: i-have-adhd ships disable-model-invocation, so
+        # its rules are inert unless someone types /i-have-adhd. The hook is
+        # the one thing that speaks into every session.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
+            r = _run("session-start.sh", project, home)
+            self.assertIn("Voice", r.stdout)
+            bullets = [l for l in r.stdout.splitlines() if l.startswith("- ")]
+            self.assertIn("Voice", bullets[0],
+                          "the directive must precede the status it governs")
+
+    def test_voice_directive_names_the_forbidden_phrases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
+            out = _run("session-start.sh", project, home).stdout
+            for phrase in ("Great question", "Hope this helps"):
+                self.assertIn(phrase, out)
+
+    def test_breadcrumb_can_turn_the_voice_directive_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nslug: demo\nvoice: off\n")
+            r = _run("session-start.sh", project, home)
+            self.assertNotIn("Voice", r.stdout)
+            self.assertIn("Vault:", r.stdout)   # the rest of the block survives
+
+    def test_env_var_can_turn_the_voice_directive_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
+            r = _run("session-start.sh", project, home,
+                     extra_env={"ADJUDANT_VOICE_DISABLE": "1"})
+            self.assertNotIn("Voice", r.stdout)
+
+    def test_voice_directive_stays_within_its_token_budget(self):
+        # It loads on every session, on top of a context block that already
+        # costs. voice.md is capped at 600 tokens for the same reason and had
+        # 7 characters of headroom; this must not quietly become a second
+        # uncapped doc.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
+            out = _run("session-start.sh", project, home).stdout
+            line = next(l for l in out.splitlines() if "Voice" in l)
+            self.assertLess(len(line) // 4, 120,
+                            f"voice directive is ~{len(line) // 4} tok, budget 120")
+
     def test_colon_breadcrumb_resolves(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")

@@ -40,7 +40,7 @@ This plugin registers 10 hook entries across 9 events (vault-aware only):
 
 | Event | Script | Purpose |
 |---|---|---|
-| SessionStart | `hooks/scripts/session-start.sh` | Discover vault, detect AGENTS.md+CLAUDE.md, init/resume session note; stamp the Claude Code conversation UUID into `session_id:` (list, idempotent on resume); no resumed marker on `compact`/`clear` sources; writes the resolved session-note path to `$TMPDIR/adjudant-session-{session_id}` for the per-turn hook to read (the intent nudge itself moved to UserPromptSubmit — this hook runs before the session has a purpose to record, and re-runs on every resume and compact, so it nagged early and repeatedly); renders a board status line when a board exists, plus a suitcase pointer on `startup` when `suitcase-brief` is on PATH; echoes the handoff freshness banner (and a STALE warning) so a red handoff cannot sit unseen |
+| SessionStart | `hooks/scripts/session-start.sh` | Leads the context block with the **voice directive** (see below) — the contract's fourth and widest surface, and the only one that reaches the chat rather than a file; off via `voice: off` in the breadcrumb or `ADJUDANT_VOICE_DISABLE=1`. Then: discover vault, detect AGENTS.md+CLAUDE.md, init/resume session note; stamp the Claude Code conversation UUID into `session_id:` (list, idempotent on resume); no resumed marker on `compact`/`clear` sources; writes the resolved session-note path to `$TMPDIR/adjudant-session-{session_id}` for the per-turn hook to read (the intent nudge itself moved to UserPromptSubmit — this hook runs before the session has a purpose to record, and re-runs on every resume and compact, so it nagged early and repeatedly); renders a board status line when a board exists, plus a suitcase pointer on `startup` when `suitcase-brief` is on PATH; echoes the handoff freshness banner (and a STALE warning) so a red handoff cannot sit unseen |
 | UserPromptSubmit | `hooks/scripts/user-prompt-reminder.sh` | Two nags with inverse audiences, branched on the breadcrumb. **Unlinked project:** smart-fire vault reminder when the prompt has vault-y keywords (at most once per session). **Linked project:** the intent-line nudge — fires from the second prompt on (by then the session has a purpose; firing at the first is the mistimed nag this replaced), at most once per session, and only while the placeholder stands, so writing the line ends it. Reads the session-note path from the pointer SessionStart drops rather than re-deriving it — a second copy of the zone-aware lookup would drift |
 ### The voice contract, and where it bites
 
@@ -50,13 +50,27 @@ comes from the `no-ai-slop` skill: banned words and sentence patterns. They do
 not overlap, so neither has to win. Both stay soft dependencies; the contract
 holds with neither installed.
 
-`scripts/_voice.py` is the single definition, and three surfaces read it:
+Four surfaces carry it. Three are mechanical and read `scripts/_voice.py`:
 
 | Surface | Enforced by | Scope |
 |---|---|---|
 | Repo docs, templates, SKILL.md | validators 24 + 33, at commit | full lexicon, all named patterns |
 | Rendered CLI output | validator 34, at commit | same, over every string literal the helpers can print, via `ast` so comments and identifiers are not hits |
 | Prose written into the vault | the PreToolUse gate, at write time | `BLOCKING_PHRASES` only: openers, closers, glazing |
+
+The fourth is the widest and is not enforcement at all. The three above reach
+files; **the chat is where adjudant is actually read**, and nothing was setting
+its register. i-have-adhd ships `disable-model-invocation: true`, so its ten
+rules stay inert unless someone types `/i-have-adhd`. SessionStart is the only
+component that speaks into every session regardless, so it leads its context
+block with a one-line voice directive that governs the whole conversation, not
+just the files touched in it.
+
+That line is capped at 120 tokens and the cap is tested. It loads every
+session on top of a context block that already costs, and voice.md is the
+cautionary tale: a 600-token budget with 7 characters of headroom. Opt out per
+project with `voice: off` in the breadcrumb (syncs across machines) or per
+machine with `ADJUDANT_VOICE_DISABLE=1`.
 
 The gate is deliberately the narrowest of the three. It refuses a write, and a
 false positive there wedges the model mid-turn, so it only blocks phrases with
