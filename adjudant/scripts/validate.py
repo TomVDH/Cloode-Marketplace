@@ -36,10 +36,13 @@ Validators:
  30. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
  31. freshness-vocabulary         : FRESHNESS_VALUES, the epistemic optional sets, and vault-standards section 10 agree
  32. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
+ 33. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
+ 34. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
 
-32 validators total.
+34 validators total.
 """
 
+import ast
 import json
 import os
 import re
@@ -47,6 +50,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _voice  # noqa: E402
 from _vault_walk import (  # noqa: E402
     DECISION_STATUS_VALUES,
     FIELD_SCHEMA,
@@ -59,6 +63,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CANONICAL = ROOT / "skills" / "adjudant"
 TEMPLATES = CANONICAL / "templates"
 REFERENCE = CANONICAL / "reference"
+SCRIPTS = ROOT / "scripts"
 HARNESS_DIRS = [
     ROOT / "source" / "skills" / "adjudant",
     ROOT / ".claude" / "skills" / "adjudant",
@@ -924,27 +929,10 @@ VOICE_MD = REFERENCE / "voice.md"
 #
 # Terms are matched case-insensitively as whole words (see the pattern build
 # in validate_voice_lexicon). Add a term by adding a tuple entry.
-BANNED_LEXICON: tuple[str, ...] = (
-    "forward-thinking",
-    "load-bearing",
-    "hand-wave",        # figurative
-    "hand-wavy",
-    "hand-waving",      # figurative
-    "leverage",         # as a verb; add inflections as separate entries
-    "deep dive",
-    "delve",
-    "double-click",     # figurative
-    "game-changer",
-    "cutting-edge",
-    "seamless",
-    "journey",          # figurative
-    "empower",
-    "unlock",           # figurative
-    "elevate",          # figurative
-    "circle back",
-    "synergy",
-    "at the end of the day",
-)
+# Merged with the no-ai-slop skill's banned list and owned by `_voice`, so the
+# three surfaces that enforce this contract (repo docs here, vault writes in
+# the PreToolUse gate, rendered output in validator 34) cannot drift apart.
+BANNED_LEXICON: tuple[str, ...] = _voice.BANNED_LEXICON
 
 
 def _parse_voice_lists() -> tuple[list[str], list[str], list[str]]:
@@ -1005,6 +993,76 @@ def validate_voice_lexicon(r: Result) -> None:
     if hits:
         shown = "; ".join(hits[:8])
         more = f" (+{len(hits) - 8} more)" if len(hits) > 8 else ""
+        r.add_fail(name, shown + more)
+    else:
+        r.add_pass(name)
+
+
+def _voice_surfaces() -> list[Path]:
+    """Every prose surface adjudant ships. voice.md quotes the contract, so it
+    is the one file exempt from it."""
+    return ([CANONICAL / "SKILL.md"]
+            + sorted(TEMPLATES.glob("*.md"))
+            + [p for p in sorted(REFERENCE.glob("*.md")) if p.name != "voice.md"])
+
+
+def validate_voice_patterns(r: Result) -> None:
+    """33. voice-patterns — the named no-ai-slop sentence patterns.
+
+    The lexicon (validator 24) catches words. This catches shapes: superficial
+    `-ing` analysis clauses, binary contrasts, importance puffery, weasel
+    attribution, recap endings, rhetorical setups, faux-insight setups and
+    throat-clearing. Every pattern in `_voice.SLOP_PATTERNS` was measured
+    against these same files and scored zero false positives before it was
+    admitted; the colon-reveal pattern scored 20 and stayed a judgment rule.
+    """
+    name = "voice-patterns"
+    if not _voice.SLOP_PATTERNS:
+        r.add_fail(name, "_voice.SLOP_PATTERNS is empty")
+        return
+    hits: list[str] = []
+    for f in _voice_surfaces():
+        for kind, matched in _voice.scan(f.read_text()):
+            if kind != "lexicon":
+                hits.append(f"{f.relative_to(ROOT)}: {kind} ({matched!r})")
+    if hits:
+        shown = "; ".join(hits[:6])
+        more = f" (+{len(hits) - 6} more)" if len(hits) > 6 else ""
+        r.add_fail(name, shown + more)
+    else:
+        r.add_pass(name)
+
+
+def validate_render_voice(r: Result) -> None:
+    """34. render-voice — the voice contract reaches rendered CLI output.
+
+    voice.md has always described the shape of what the verbs print, and
+    nothing checked it: the contract bound the docs about the code, not the
+    code. Every string literal in the helpers is prose a user reads, so it is
+    held to the same lexicon and patterns. Scanned via `ast` rather than regex
+    over source, so a banned word in a comment or an identifier is not a hit -
+    only text that can actually be printed.
+    """
+    name = "render-voice"
+    # `_voice` defines the lexicon and `validate` reports it: both legitimately
+    # contain every banned term as data.
+    skip = {"_voice.py", "validate.py"}
+    hits: list[str] = []
+    for f in sorted(SCRIPTS.glob("*.py")):
+        if f.name.startswith("test_") or f.name in skip:
+            continue
+        try:
+            tree = ast.parse(f.read_text())
+        except (SyntaxError, OSError) as exc:
+            r.add_fail(name, f"{f.name} did not parse: {exc}")
+            return
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                for kind, matched in _voice.scan(node.value):
+                    hits.append(f"{f.name}:{node.lineno}: {kind} ({matched!r})")
+    if hits:
+        shown = "; ".join(hits[:6])
+        more = f" (+{len(hits) - 6} more)" if len(hits) > 6 else ""
         r.add_fail(name, shown + more)
     else:
         r.add_pass(name)
@@ -1185,6 +1243,8 @@ def main() -> int:
     validate_hook_zone_awareness(r)
     validate_freshness_vocabulary(r)
     validate_base_dashboards(r)
+    validate_voice_patterns(r)
+    validate_render_voice(r)
     return r.report()
 
 
