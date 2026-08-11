@@ -109,10 +109,16 @@ class TestRepoWalk(unittest.TestCase):
                    "---\nstatus: done\n---\n# spec\n")
             import os
             import time
+            # Age is measured against `today`, so the mtime must be relative to
+            # THAT date, not to the wall clock. Mixing the two made the test a
+            # time bomb: it asserted a 60-day-old file and silently became a
+            # 25-day-old one as real time drifted past the frozen date, then
+            # started failing ~2026-08-06.
+            today = date(2026, 7, 7)
             old = root / "docs" / "superpowers" / "plans" / "old.md"
-            past = time.time() - 60 * 86400
+            past = time.mktime(today.timetuple()) - 60 * 86400
             os.utime(old, (past, past))
-            ages = {a["path"]: a for a in rw.plan_file_ages(root, date(2026, 7, 7), stale_days=30)}
+            ages = {a["path"]: a for a in rw.plan_file_ages(root, today, stale_days=30)}
             self.assertTrue(any("old.md" in k and v["stale"] for k, v in ages.items()))
             # a doc with a completion marker is not listed as stale
             self.assertFalse(any("done.md" in k and v["stale"] for k, v in ages.items()))
