@@ -40,6 +40,14 @@ try:
 except Exception:  # pragma: no cover - degrade: gate disabled, never blocks
     _READY = False
 
+# Imported separately: the voice half degrades on its own. A missing or
+# unreadable voice.md leaves BLOCKING_PHRASES empty, which blocks nothing,
+# rather than taking the schema gate down with it.
+try:
+    import _voice
+except Exception:  # pragma: no cover - degrade: voice check disabled
+    _voice = None
+
 # The gate exists to catch model drift in hand-authored notes. These four are
 # not that vector. brief.md is written by connect and port, _index.md by
 # connect and tidy's index rebuilder, _handoff.md by sync and precompact.
@@ -66,6 +74,36 @@ def read_breadcrumb(project_dir: Path) -> dict:
         k, v = line.split(sep, 1)
         info[k.strip()] = v.strip()
     return info
+
+
+def _voice_verdict(content: str, rel) -> int:
+    """Block a vault write carrying a conversational tic, else allow.
+
+    Surface 2 of the voice contract (reference/voice.md). A note lives for
+    years and nothing sweeps its prose afterwards: tidy repairs frontmatter and
+    structure, never sentences. This hook is the last point where the text can
+    still be fixed in the turn that wrote it.
+
+    Deliberately narrower than validator 24. Blocking is expensive - a false
+    positive wedges the model mid-write - so only `_voice.BLOCKING_PHRASES`
+    qualifies: openers, closers and glazing that have no technical reading at
+    all. A banned word like `robust` is worth a commit-time failure, not a
+    refused note. Fails open on any import or scan problem, like every other
+    infrastructural path in this gate.
+    """
+    if _voice is None:
+        return 0
+    try:
+        hits = _voice.scan_blocking(content)
+    except Exception:
+        return 0
+    if not hits:
+        return 0
+    named = ", ".join(repr(h) for h in hits[:4])
+    print(f"adjudant voice gate: {rel} carries {named}.", file=sys.stderr)
+    print("  Vault prose has no openers, closers or glazing. State the thing "
+          "and stop. See reference/voice.md.", file=sys.stderr)
+    return 2
 
 
 def main() -> int:
@@ -117,9 +155,10 @@ def main() -> int:
     try:
         drift = schema_drift_for_text(content, str(rel))
     except Exception:
-        return 0
+        drift = None
+
     if not drift:
-        return 0
+        return _voice_verdict(content, rel)
 
     ftype = drift.get("type")
     hard = []
@@ -142,7 +181,7 @@ def main() -> int:
         return 2
     # Everything else in `drift` (unknown fields, status values) is tidy's and
     # check's territory. Saying so here would go to /dev/null on an exit 0.
-    return 0
+    return _voice_verdict(content, rel)
 
 
 if __name__ == "__main__":

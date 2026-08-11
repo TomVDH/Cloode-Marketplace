@@ -111,6 +111,72 @@ class TestBlocks(_GateHarness):
             self.assertEqual(rc, 0)
 
 
+class TestVoiceGate(_GateHarness):
+    """Surface 2 of the voice contract: prose landing in the vault.
+
+    A note lives for years and nothing sweeps its prose afterwards - tidy is
+    frontmatter and structure only. The gate is the one point where the text
+    can still be corrected in the same turn that wrote it.
+
+    The bar is narrower than a validator's on purpose. A false positive here
+    wedges the model mid-write, so only conversational tics with no technical
+    reading block; a merely banned word is commit-time business.
+    """
+
+    def test_a_glazing_phrase_blocks_the_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            note = GOOD_NOTE.replace("Body.", "Great question. The parser is fine.")
+            rc, err = self._run_capturing(
+                project, self._payload(proot / "notes" / "n.md", note))
+            self.assertEqual(rc, 2)
+            self.assertIn("Great question", err)
+
+    def test_the_block_names_the_phrase_and_the_fix(self):
+        # stderr is the gate's only channel, and only on a non-zero exit.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            note = GOOD_NOTE.replace("Body.", "Hope this helps with the parser.")
+            _, err = self._run_capturing(
+                project, self._payload(proot / "notes" / "n.md", note))
+            self.assertIn("voice", err.lower())
+            self.assertIn("Hope this helps", err)
+
+    def test_a_merely_banned_word_does_not_block(self):
+        # `robust` is worth fixing at commit time, not worth refusing a note.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            note = GOOD_NOTE.replace("Body.", "A robust parser, utilized daily.")
+            self.assertEqual(self._run(project, self._payload(
+                proot / "notes" / "n.md", note)), 0)
+
+    def test_a_phrase_inside_a_code_fence_does_not_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            note = GOOD_NOTE.replace("Body.", "```\nGreat question\n```")
+            self.assertEqual(self._run(project, self._payload(
+                proot / "notes" / "n.md", note)), 0)
+
+    def test_a_schema_failure_still_outranks_voice(self):
+        # Frontmatter is objectively wrong; voice is a quality judgment. The
+        # message the model gets back must be the one it can act on first.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._fixture(Path(tmp))
+            bad = "---\ntype: decision\n---\n\nGreat question. Body.\n"
+            rc, err = self._run_capturing(
+                project, self._payload(proot / "decisions" / "d.md", bad))
+            self.assertEqual(rc, 2)
+            self.assertIn("missing required", err)
+
+    def test_a_write_outside_the_project_is_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, _ = self._fixture(Path(tmp))
+            outside = Path(tmp) / "elsewhere" / "n.md"
+            note = GOOD_NOTE.replace("Body.", "Great question.")
+            self.assertEqual(self._run(
+                project, self._payload(outside, note)), 0)
+
+
 class TestAllows(_GateHarness):
 
     def test_conformant_note_allowed(self):
