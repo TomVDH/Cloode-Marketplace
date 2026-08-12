@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-`onnozelaer-claude-marketplace` — personal Claude Code plugin marketplace by Tom Vanderheyden (Onnozelaer). Hosts multiple plugins; each plugin is self-contained in its own directory.
+`toolshed` — personal Claude Code plugin marketplace by Tom Vanderheyden. Hosts multiple plugins; each plugin is self-contained in its own directory. (GitHub repo: `TomVDH/toolshed`, renamed from `onnozelaer-claude-marketplace`; GitHub redirects the old path.)
 
 ## Project Structure
 
@@ -10,9 +10,9 @@
 │   └── marketplace.json     # Marketplace manifest — source of truth for every plugin's version + description
 ├── adjudant/                # Vault editor/writer + project initializer, /adjudant with eleven verbs and a three-tier cleanup model (successor to the retired obsidian-bridge)
 ├── cabinet-of-imd/          # Crew/persona flavor layer (functionality sunset; character-only)
-├── cli-wrapper-helper/      # Operating language for agent-built helper CLIs (bash TUI + python helper)
-├── gemineye/                # Sandboxed Gemini second opinion via the agy CLI
-├── iteration-shelf/         # Terminal-aesthetic in-browser design review boards
+├── tui-toolbox/             # Operating language for agent-built helper CLIs (bash TUI + python helper); formerly cli-wrapper-helper
+├── gemineye/                # Sandboxed Gemini second opinion via the agy CLI (SUNSET 2026-08-12: unlisted from marketplace, kept in tree)
+├── iteration-shelf/         # Terminal-aesthetic in-browser design review boards (SUNSET 2026-08-12: unlisted from marketplace, kept in tree)
 ├── docs/                    # historical design docs, plans, and specs; archived material under docs/archive/
 ├── scripts/                 # repo-root tooling: bump_plugin_version.py, check_marketplace_versions.py + tests
 ├── .github/workflows/       # validate.yml: CI rerun of the local validators on push/PR

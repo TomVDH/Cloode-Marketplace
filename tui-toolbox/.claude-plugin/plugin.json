@@ -1,12 +1,12 @@
 {
-  "name": "cli-wrapper-helper",
+  "name": "tui-toolbox",
   "version": "2.0.1",
   "description": "The shared operating language for agent-built helper CLIs — one visual + interaction + safety language across interactive bash TUIs and python helper scripts, so every tool an agent builds looks, feels, and behaves the same.",
   "author": {
     "name": "Onnozelaer"
   },
-  "homepage": "https://github.com/TomVDH/onnozelaer-claude-marketplace/tree/main/cli-wrapper-helper",
-  "repository": "https://github.com/TomVDH/onnozelaer-claude-marketplace",
+  "homepage": "https://github.com/TomVDH/toolshed/tree/main/tui-toolbox",
+  "repository": "https://github.com/TomVDH/toolshed",
   "license": "MIT",
   "keywords": [
     "bash",

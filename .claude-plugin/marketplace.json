@@ -1,7 +1,7 @@
 {
-  "name": "onnozelaer-claude-marketplace",
-  "version": "1.4.0",
-  "description": "Personally created Claude Code plugins by Onnozelaer.",
+  "name": "toolshed",
+  "version": "1.5.0",
+  "description": "A toolshed of small, sharp Claude Code plugins by Tom Vanderheyden.",
   "owner": {
     "name": "Onnozelaer"
   },
@@ -13,28 +13,16 @@
       "description": "The Cabinet of IMD Agents — a flavour layer for Claude Code. Eight college classmates with distinct personalities, voices, disciplines, and pairings serve as specialised web-development agents. v3.0.0 sunsets all functionality (vault writes, session anchors, gate enforcement, state hooks) and keeps only character, voice, and working disciplines. Persistence is delegated to the adjudant plugin when active."
     },
     {
-      "name": "iteration-shelf",
-      "version": "0.1.1",
-      "source": "./iteration-shelf",
-      "description": "Terminal-aesthetic review boards for in-browser design iteration. Generates a curated shelf and a monster index from a JSON manifest — self-contained HTML, zero build step, on-demand iframe loading, sidebar outliner, and a warn-gate that keeps the browser from stalling on 100+ iterations. Explicit invocation only. Plugs into standalone design skills when installed; persistence via the adjudant plugin, with optional Cabinet voice flavour."
-    },
-    {
-      "name": "cli-wrapper-helper",
+      "name": "tui-toolbox",
       "version": "2.0.1",
-      "source": "./cli-wrapper-helper",
+      "source": "./tui-toolbox",
       "description": "The shared operating language for agent-built helper CLIs — one visual + interaction + safety language across interactive bash TUIs and python helper scripts, so every tool an agent builds looks, feels, and behaves the same."
     },
     {
-      "name": "gemineye",
-      "version": "0.6.0",
-      "source": "./gemineye",
-      "description": "A review-only, sandboxed second opinion from a Gemini-family model via the Antigravity CLI (agy). Eight subcommands (review, megareview, wip, sanity, name, compare, save, harvest) with pinned Gemini models so the answer never silently comes from another model family; the reviewer is read-trusted to the project root, write-sandboxed, and proposes edits as code blocks that Claude applies. Pairs with adjudant for vault context and persisted reviews."
-    },
-    {
       "name": "adjudant",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "source": "./adjudant",
-      "description": "Obsidian vault editor/writer and project initializer. One command, /adjudant, with eleven verbs — connect, port, sync, check, sitrep, tidy, ramasse, dream, draw, board, shelf — each backed by a stdlib-only Python helper that follows the .claude/adjudant breadcrumb to the vault (cross-machine via vault_name fallback and OB_VAULT). Locked three-tier cleanup model: tidy (surface mechanical, routine), ramasse (deep structural, sparing), dream (semantic content/knowledge refresh, judgment-heavy). draw creates canvases, bases, and mermaid diagrams — hand-authored or generated from vault data; board scaffolds a self-hosted drag-to-move kanban seeded from tasks/ with an optional obsidian-kanban-format twin (kanban.md), and a drag on any board surface writes its lane back into the task note so the vault never disagrees with the board, and connect provisions .base dashboards; shelf manages the six-state project lifecycle across vault zones; the board is ambient, born on the first task note and passively reseeded by hooks. Ten vault-aware hook entries across nine events include a PreToolUse schema gate that blocks a vault write against FIELD_SCHEMA before it lands, and keep session notes, a freshness-headed handoff, the kanban deck, and vault release records current; per-file session stamping is breadcrumb opt-in. Note frontmatter is schema-locked via FIELD_SCHEMA with an opt-in epistemic freshness layer (timeless/dated/pointer, certainty, validity windows) that check reports and dream consumes — check reports drift, tidy strips and migrates it after preview — and vault standards plus output shape are drift-guarded by 32 validators and 1119 tests whose guards are mutation-proven: every safety guard has a test that fails when the guard is removed. Pairs with hookify and Gemineye; i-have-adhd is a soft dependency for output shape."
+      "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with eleven verbs: connect and port onboard a project; sync, check, and sitrep report on it; tidy, ramasse, and dream clean it in three escalating tiers; draw builds diagrams and canvases; board runs a self-hosted kanban; and shelf moves projects through their lifecycle. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify."
     }
   ]
 }

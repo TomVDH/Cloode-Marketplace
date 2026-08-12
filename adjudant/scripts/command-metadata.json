@@ -1,80 +1,80 @@
 {
   "name": "adjudant",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "verbs": [
     {
       "name": "connect",
-      "description": "Onboard project to vault via a contract flow: infer (slug/type/status/vault), confirm one card (5 required fields + per-agent artifact disclosure incl. GEMINI.md), apply with receipt. Idempotent.",
+      "description": "Link a project to its vault. Infers slug, type, and status, confirms one card of required fields, applies with a receipt. Idempotent.",
       "argumentHint": "(no args)",
       "reference": "reference/connect.md",
       "weight": "light"
     },
     {
       "name": "port",
-      "description": "Migrate any legacy project (raw, obsidian-bridge, hand-authored) to adjudant compliance. Two-phase: preview, then apply with backup. Idempotent.",
+      "description": "Migrate a legacy project (raw, obsidian-bridge, or hand-authored) into adjudant's layout. Previews first, then applies with a backup. Idempotent.",
       "argumentHint": "(no args)",
       "reference": "reference/port.md",
       "weight": "medium"
     },
     {
       "name": "sync",
-      "description": "Push project state to vault — refresh brief, mirror handoff, refresh project index.",
+      "description": "Push project state to the vault: refresh the brief, mirror the handoff, update the project index row.",
       "argumentHint": "(no args)",
       "reference": "reference/sync.md",
       "weight": "light"
     },
     {
       "name": "check",
-      "description": "Read-only summary — project + vault snapshot, schema compliance; [vault|repo|all] also audits repo structure (versions, symlinks, registration, stale plans). check.py/repo_scan.py scan, Claude renders. Never writes.",
+      "description": "Read-only health report for the project and vault, including schema drift. [vault|repo|all] also audits repo structure. Never writes.",
       "argumentHint": "[vault|repo|all]",
       "reference": "reference/check.md",
       "weight": "medium"
     },
     {
       "name": "sitrep",
-      "description": "ELI5 orientation briefing for re-orienting after a break — where we were, what's done, where the vault is, where to start. Read-only (sitrep.py scans, Claude renders).",
+      "description": "Plain-language orientation after a break: where you left off, what is done, where the vault is, and what to do next. Read-only.",
       "argumentHint": "(no args)",
       "reference": "reference/sitrep.md",
       "weight": "medium"
     },
     {
       "name": "tidy",
-      "description": "Surface mechanical sweep — indexes, tags, wikilink form, updated:, frontmatter schema strip/migrate. Routine. Two-phase preview → apply, idempotent; [vault|repo|all] also repairs adopted-plugin harness symlinks.",
+      "description": "Routine surface sweep: indexes, tags, wikilink form, updated dates, off-schema frontmatter. Previews then applies. [vault|repo|all] adds repo symlinks.",
       "argumentHint": "[vault|repo|all]",
       "reference": "reference/tidy.md",
       "weight": "medium"
     },
     {
       "name": "ramasse",
-      "description": "Deep structural clean — folders, schema, file types, naming, broken-wikilink triage. Sparing (quarterly). ramasse_scan.py analyses; superpowers plans + executes.",
+      "description": "Deep structural clean: folder shape, schema, file types, naming, and broken wikilinks. Sparing, roughly quarterly. Previews then applies.",
       "argumentHint": "(no args)",
       "reference": "reference/ramasse.md",
       "weight": "heavy"
     },
     {
       "name": "dream",
-      "description": "Content/knowledge/memory refresh — the third, semantic cleanup tier. dream.py (read-only) emits a 10-category staleness/contradiction/redundancy catalog; Claude judges, superpowers executes with backups.",
+      "description": "Semantic refresh, the deepest tier: surfaces stale, contradictory, redundant, or orphaned content as candidates you judge before anything changes.",
       "argumentHint": "(no args)",
       "reference": "reference/dream.md",
       "weight": "heavy"
     },
     {
       "name": "draw",
-      "description": "Create visual artefacts — canvas, base, or mermaid diagram (hand-authored or generated from vault data via graph.py).",
+      "description": "Create a canvas, base, or mermaid diagram, either hand-authored or generated from vault data.",
       "argumentHint": "<canvas|base|diagram> <name|type>",
       "reference": "reference/draw.md",
       "weight": "light"
     },
     {
       "name": "board",
-      "description": "Scaffold a self-hosted work-order kanban (single-file HTML, drag-to-move, disk-persisted) seeded from tasks/. Re-seeding merges without clobbering dragged columns; --project SLUG or --all for other projects.",
+      "description": "Scaffold a self-hosted kanban seeded from tasks/: drag to move, saved to disk. Re-seeding keeps your dragged cards. Use --project SLUG or --all.",
       "argumentHint": "[scaffold|serve|status] [--project SLUG|--all] [--from-tasks] [--force]",
       "reference": "reference/board.md",
       "weight": "light"
     },
     {
       "name": "shelf",
-      "description": "Project lifecycle: status table across vault zones (list) and confirmed transitions (preview/apply): brief + status log + zone move + wikilink rewrite + index row.",
+      "description": "Project lifecycle: list status across vault zones, or move a project to a new state (brief, status log, zone move, wikilink and index rewrite).",
       "argumentHint": "[<slug> <state>] [--reason \"...\"]",
       "reference": "reference/shelf.md",
       "weight": "light"

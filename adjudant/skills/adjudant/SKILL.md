@@ -1,7 +1,7 @@
 ---
 name: adjudant
 description: Operate an Obsidian vault from a code project. `/adjudant {connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf}` — project init and migration, schema-enforced writes, three-tier cleanup (tidy/ramasse/dream), read-only status (check) and orientation (sitrep), diagrams and canvases (draw), a self-hosted kanban board, and lifecycle transitions (shelf). Also fires whenever decisions, sessions, or notes are written into a linked vault.
-version: 1.2.0
+version: 1.2.1
 user-invocable: true
 argument-hint: "[connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf] [args]"
 license: MIT
@@ -9,23 +9,23 @@ license: MIT
 
 # Adjudant
 
-Vault editor/writer and project initializer. One skill, one command, eleven verbs. Pairs with hookify for universal drift-defense hooks, and with Gemineye for Gemini-assisted review hand-off.
+Vault editor/writer and project initializer. One skill, one command, eleven verbs. Pairs with hookify for universal drift-defense hooks.
 
 ## Verb router
 
 | Verb | Loads | Purpose |
 |---|---|---|
-| `connect` | `reference/connect.md` | Rigid project init — breadcrumb, AGENTS.md+CLAUDE.md, vault scaffold, session note, .gitignore |
-| `port` | `reference/port.md` | Migrate any legacy project (raw / obsidian-bridge / hand-authored) to adjudant compliance via two-phase preview → apply |
-| `sync` | `reference/sync.md` | Push brief + handoff to vault |
-| `check` | `reference/check.md` | Read-only project + vault summary (consumes `check.py` JSON). `[vault\|repo\|all]` also audits repo structure — versions, symlinks, registration, stale plans — via `repo_scan.py` |
-| `sitrep` | `reference/sitrep.md` | ELI5 orientation briefing — where we were, what's done, where the vault is, where to start, **plus the workbench**: git branch/HEAD/uncommitted count, and whether the dev servers declared in `.claude/launch.json` are up. Read-only (consumes `sitrep.py` JSON). For re-orienting after a break |
-| `tidy` | `reference/tidy.md` | Surface mechanical sweep — indexes, tags, wikilink form, `updated:`, frontmatter schema strip/migrate. Routine cadence. Two-phase preview→apply (via `tidy.py`). `[vault\|repo\|all]` also repairs adopted-plugin harness symlinks via `repo_tidy.py` |
-| `ramasse` | `reference/ramasse.md` | Deep structural clean — folder shape, schema, file types, naming, doc/decision mismatches. Sparing cadence. Analysis via `ramasse_scan.py`, planning + execute via superpowers |
-| `dream` | `reference/dream.md` | Content/knowledge/memory refresh — semantic, judgment-heavy. `dream.py` (read-only) emits a 10-category comparator catalog (staleness, supersession, contradictions, redundancy, stale refs, orphans, unacted decisions, gaps, dangling scopes); Claude judges, superpowers executes |
-| `draw` | `reference/draw.md` | Create canvas / base / mermaid diagram — hand-authored or generated from vault data via `graph.py` (relations / board / tiers) |
-| `board` | `reference/board.md` | Scaffold a self-hosted work-order kanban — drag-to-move, disk-persisted, seeded from `tasks/`. `--project <slug>` for one project, `--all` for the whole vault; `status` prints terminal column counts |
-| `shelf` | `reference/shelf.md` | Project lifecycle: status table across zones (list) and confirmed transitions (preview/apply): brief + status log + zone move + wikilink rewrite + index row |
+| `connect` | `reference/connect.md` | Link a project to its vault: breadcrumb, AGENTS.md+CLAUDE.md, vault scaffold, session note, .gitignore. Idempotent |
+| `port` | `reference/port.md` | Migrate a legacy project (raw / obsidian-bridge / hand-authored) into adjudant's layout. Two-phase preview → apply |
+| `sync` | `reference/sync.md` | Push project state to the vault: brief, handoff, project index row |
+| `check` | `reference/check.md` | Read-only project + vault health, with schema drift. `[vault\|repo\|all]` also audits repo structure (versions, symlinks, registration, stale plans) |
+| `sitrep` | `reference/sitrep.md` | Plain-language orientation after a break: where you left off, what's done, where the vault is, what's next, plus git and dev-server state. Read-only |
+| `tidy` | `reference/tidy.md` | Routine surface sweep: indexes, tags, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply. `[vault\|repo\|all]` adds repo symlinks |
+| `ramasse` | `reference/ramasse.md` | Deep structural clean: folder shape, schema, file types, naming, broken wikilinks. Sparing, roughly quarterly |
+| `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: flags stale, contradictory, redundant, and orphaned content as candidates Claude judges before anything changes |
+| `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, hand-authored or generated from vault data |
+| `board` | `reference/board.md` | Scaffold a self-hosted kanban seeded from `tasks/`: drag to move, saved to disk, re-seeds without clobbering dragged cards. `--project <slug>` or `--all` |
+| `shelf` | `reference/shelf.md` | Project lifecycle: status table across zones (list) and confirmed transitions (brief + status log + zone move + wikilink rewrite + index row) |
 | _(internals)_ | `reference/internals.md` | Not a verb. Hook wiring, verb-to-helper map, environment probes. Load only when the question is about adjudant's own machinery |
 
 When a verb is invoked, load **only** the matching reference file. Do not bring all reference files into context.

@@ -1,8 +1,8 @@
-# cli-wrapper-helper
+# TUI Toolbox
 
 The shared operating language for agent-built helper CLIs. One visual, interaction, and operational-safety language across interactive bash TUIs and Python helper scripts, so every tool an agent builds looks, feels, and behaves like it came from the same hand.
 
-Ships as part of the `onnozelaer-claude-marketplace`. No binaries, no build step: two skills, five slash commands, and nine reference files.
+Ships as part of the `toolshed` marketplace. No binaries, no build step: two skills, five slash commands, and nine reference files.
 
 The language has three layers:
 
@@ -70,7 +70,7 @@ Every harvested pattern was generalized before landing: `zt_*` names went neutra
 The references must stay generic. This grep may match only italic "seen in the wild" illustration lines (the `\bhs ` term needs the word boundary; without it, ordinary words like "paths" and "widths" false-positive):
 
 ```bash
-grep -riE '\bhs |ZT_|hubspot|zena|nightly|crm' cli-wrapper-helper/references
+grep -riE '\bhs |ZT_|hubspot|zena|nightly|crm' tui-toolbox/references
 ```
 
 ### Re-harvest procedure
