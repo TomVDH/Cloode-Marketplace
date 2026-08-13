@@ -20,7 +20,7 @@
     },
     {
       "name": "adjudant",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "source": "./adjudant",
       "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with eleven verbs: connect and port onboard a project; sync, check, and sitrep report on it; tidy, ramasse, and dream clean it in three escalating tiers; draw builds diagrams and canvases; board runs a self-hosted kanban; and shelf moves projects through their lifecycle. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify."
     }
