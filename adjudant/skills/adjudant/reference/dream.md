@@ -47,7 +47,9 @@ python3 "$(dirname "$0")/../../../scripts/dream.py" \
   --out /tmp/dream-scan-{slug}.json
 ```
 
-Optional flags: `--today YYYY-MM-DD` (override "now" for age math — deterministic), `--stale-days N` (staleness threshold, default 180), `--include-legacy`.
+Optional flags: `--today YYYY-MM-DD` (override "now" for age math — deterministic), `--stale-days N` (staleness threshold, default 180), `--include-legacy`, `--folder <path>` (scope the walk to one project subtree, e.g. `decisions`).
+
+**Scoped runs.** `--folder` is the sanctioned answer when the cost gate warns on a big project: proceed on a slice instead of aborting. The estimate then covers the subtree only, and the report carries a top-level `scope` field — **render it in the header** ("dream — scoped to `decisions/`") so a narrowed run never reads as a full one. Containment-checked: a path that resolves outside the project is refused. Deliberately just this one flag; recency windows and sampling were considered and rejected (they hide exactly what dream exists to find).
 
 The JSON catalog (the **comparator catalog**) carries ten categories:
 

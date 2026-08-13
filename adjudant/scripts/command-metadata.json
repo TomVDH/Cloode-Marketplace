@@ -1,6 +1,6 @@
 {
   "name": "adjudant",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "verbs": [
     {
       "name": "connect",
@@ -46,15 +46,15 @@
     },
     {
       "name": "ramasse",
-      "description": "Deep structural clean: folder shape, schema, file types, naming, and broken wikilinks. Sparing, roughly quarterly. Previews then applies.",
-      "argumentHint": "(no args)",
+      "description": "Deep structural clean: folder shape, schema, file types, naming, and broken wikilinks. Sparing, roughly quarterly. Previews then applies. --folder scopes the walk to one subtree.",
+      "argumentHint": "[--folder <path>]",
       "reference": "reference/ramasse.md",
       "weight": "heavy"
     },
     {
       "name": "dream",
-      "description": "Semantic refresh, the deepest tier: surfaces stale, contradictory, redundant, or orphaned content as candidates you judge before anything changes.",
-      "argumentHint": "(no args)",
+      "description": "Semantic refresh, the deepest tier: surfaces stale, contradictory, redundant, or orphaned content as candidates you judge before anything changes. --folder scopes the walk to one subtree.",
+      "argumentHint": "[--folder <path>]",
       "reference": "reference/dream.md",
       "weight": "heavy"
     },
@@ -77,6 +77,20 @@
       "description": "Project lifecycle: list status across vault zones, or move a project to a new state (brief, status log, zone move, wikilink and index rewrite).",
       "argumentHint": "[<slug> <state>] [--reason \"...\"]",
       "reference": "reference/shelf.md",
+      "weight": "light"
+    },
+    {
+      "name": "advisor",
+      "description": "Toggle the proactive advisor (visible flag in the breadcrumb + AGENTS.md marker), or run its read-only context pulse.",
+      "argumentHint": "[on|off|status|pulse]",
+      "reference": "reference/advisor.md",
+      "weight": "light"
+    },
+    {
+      "name": "kebab",
+      "description": "Slugify a title into kebab-case, or --scan a project for filenames whose title breaks the vault-standards §4 naming rule. Read-only; never renames.",
+      "argumentHint": "<text> | --scan",
+      "reference": "reference/kebab.md",
       "weight": "light"
     }
   ]

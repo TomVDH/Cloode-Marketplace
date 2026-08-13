@@ -1,15 +1,15 @@
 ---
 name: adjudant
-description: Operate an Obsidian vault from a code project. `/adjudant {connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf}` — project init and migration, schema-enforced writes, three-tier cleanup (tidy/ramasse/dream), read-only status (check) and orientation (sitrep), diagrams and canvases (draw), a self-hosted kanban board, and lifecycle transitions (shelf). Also fires whenever decisions, sessions, or notes are written into a linked vault.
-version: 1.4.0
+description: Operate an Obsidian vault from a code project. `/adjudant {connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf|advisor|kebab}` — project init and migration, schema-enforced writes, three-tier cleanup (tidy/ramasse/dream), read-only status (check) and orientation (sitrep), diagrams and canvases (draw), a self-hosted kanban board, lifecycle transitions (shelf), an opt-in proactive advisor (advisor), and kebab-case naming (kebab). Also fires whenever decisions, sessions, or notes are written into a linked vault.
+version: 2.0.0
 user-invocable: true
-argument-hint: "[connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf] [args]"
+argument-hint: "[connect|port|sync|check|sitrep|tidy|ramasse|dream|draw|board|shelf|advisor|kebab] [args]"
 license: MIT
 ---
 
 # Adjudant
 
-Vault editor/writer and project initializer. One skill, one command, eleven verbs. Pairs with hookify for universal drift-defense hooks.
+Vault editor/writer and project initializer. One skill, one command, thirteen verbs. Pairs with hookify for universal drift-defense hooks.
 
 ## Verb router
 
@@ -26,6 +26,8 @@ Vault editor/writer and project initializer. One skill, one command, eleven verb
 | `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, hand-authored or generated from vault data |
 | `board` | `reference/board.md` | Scaffold a self-hosted kanban seeded from `tasks/`: drag to move, saved to disk, re-seeds without clobbering dragged cards. `--project <slug>` or `--all` |
 | `shelf` | `reference/shelf.md` | Project lifecycle: status table across zones (list) and confirmed transitions (brief + status log + zone move + wikilink rewrite + index row) |
+| `advisor` | `reference/advisor.md` | Toggle the opt-in proactive advisor (visible breadcrumb flag + AGENTS.md marker) or run its read-only context pulse. `[on\|off\|status\|pulse]` |
+| `kebab` | `reference/kebab.md` | Slugify a title, or `--scan` for filenames breaking the §4 kebab-title rule. Read-only; never renames |
 | _(internals)_ | `reference/internals.md` | Not a verb. Hook wiring, verb-to-helper map, environment probes. Load only when the question is about adjudant's own machinery |
 
 When a verb is invoked, load **only** the matching reference file. Do not bring all reference files into context.
@@ -46,7 +48,7 @@ Verb weights live in `scripts/command-metadata.json` (`weight: light | medium | 
 
 - **Heavy verbs** (`dream`, `ramasse`, `check all`): run the backing helper with `--estimate-only` FIRST. If `cost.warn` is true, stop and show the numbers ("dream would pull ~85k tokens into context: 210 files, 1.1 MB prose") and ask the user to choose: proceed, scope down (offer only where the verb has a real scoping flag), or abort. Proceed only on explicit confirmation. If `warn` is false, run normally and include the estimate as one line in the rendered output.
 - **Medium verbs** (`check`, `sitrep`, `tidy`): no pre-flight. The helper's JSON carries a `cost` block; render it as one line ("cost: ~12k tokens, 96 files").
-- **Light verbs** (`connect`, `sync`, `draw`, `board`, `shelf`): no estimate; the static weight badge is enough (`port` is medium but carries only the static badge; it has no dynamic estimate).
+- **Light verbs** (`connect`, `sync`, `draw`, `board`, `shelf`, `advisor`, `kebab`): no estimate; the static weight badge is enough (`port` is medium but carries only the static badge; it has no dynamic estimate).
 - `check all` sums two estimates: `check.py --estimate-only` plus `repo_scan.py --estimate-only`.
 - If an estimate cannot be computed (unresolvable vault or breadcrumb), treat it as `warn: true` and ask before proceeding.
 - Threshold default is 30000 estimated read tokens; per-project override via `cost_warn_tokens:` in `.claude/adjudant`.

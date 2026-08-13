@@ -341,6 +341,31 @@ DEFAULT_SKIP: tuple[str, ...] = (
 )
 
 
+def resolve_scope(project_dir: Path, folder: str) -> Path:
+    """Resolve an operator-supplied `--folder` to a contained project subdir.
+
+    The scope flag is the one narrowing the parked-work ruling blessed:
+    deliberate operator scoping, nothing inferred. But a flag that takes a path
+    takes a path that can climb, so it meets the same containment bar as every
+    other operator-supplied path in the plugin. Raises ValueError with a
+    plain sentence; callers print it and stop.
+    """
+    root = project_dir.resolve()
+    target = (root / folder).resolve()
+    if not target.is_relative_to(root) or target == root:
+        raise ValueError(
+            f"--folder {folder!r} resolves outside the project (or to its "
+            f"root); give a subfolder like 'decisions' or 'notes'")
+    if not target.is_dir():
+        raise ValueError(f"--folder {folder!r}: no such folder under {root.name}/")
+    return target
+
+
+def scope_rel(project_dir: Path, scope_dir: Path) -> str:
+    """The scope as the project-relative string reports carry (`notes/deep`)."""
+    return scope_dir.resolve().relative_to(project_dir.resolve()).as_posix()
+
+
 def walk_project(
     root: Path,
     *,

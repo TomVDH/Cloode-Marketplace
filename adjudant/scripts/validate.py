@@ -38,8 +38,9 @@ Validators:
  32. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
  33. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
  34. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
+ 35. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
 
-34 validators total.
+35 validators total.
 """
 
 import ast
@@ -1068,6 +1069,34 @@ def validate_render_voice(r: Result) -> None:
         r.add_pass(name)
 
 
+def validate_advisor_wiring(r: Result) -> None:
+    """35. advisor-wiring — the opt-in advisor's three surfaces stay wired.
+
+    The mode's whole design is visible state: a contract doc, a SessionStart
+    banner that names it, and an AGENTS.md marker the toggle stamps. Any one
+    of them silently dropping out leaves a mode that claims to watch and does
+    not — the worst version, since the user opted in expecting eyes.
+    """
+    name = "advisor-wiring"
+    problems: list[str] = []
+    doc = ROOT / "skills" / "adjudant" / "reference" / "advisor.md"
+    if not doc.is_file():
+        problems.append("reference/advisor.md missing")
+    hook = ROOT / "hooks" / "scripts" / "session-start.sh"
+    hook_text = hook.read_text() if hook.is_file() else ""
+    if "advisor_knob" not in hook_text or "reference/advisor.md" not in hook_text:
+        problems.append("session-start.sh no longer reads the advisor knob "
+                        "and points the banner at reference/advisor.md")
+    helper = ROOT / "scripts" / "advisor.py"
+    helper_text = helper.read_text() if helper.is_file() else ""
+    if "AGENTS_MARKER_PREFIX" not in helper_text:
+        problems.append("advisor.py lost its AGENTS.md marker")
+    if problems:
+        r.add_fail(name, "; ".join(problems))
+        return
+    r.add_pass(name)
+
+
 BOARD_DATA_RE = re.compile(r"/\*BOARD_DATA_START\*/(.*?)/\*BOARD_DATA_END\*/", re.DOTALL)
 # A subresource fetched from off-machine: src=/href= with a scheme or a
 # protocol-relative //, the same inside a CSS url(), or any @import.
@@ -1245,6 +1274,7 @@ def main() -> int:
     validate_base_dashboards(r)
     validate_voice_patterns(r)
     validate_render_voice(r)
+    validate_advisor_wiring(r)
     return r.report()
 
 

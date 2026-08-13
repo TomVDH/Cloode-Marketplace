@@ -467,7 +467,7 @@ class TestRamasseCost(unittest.TestCase):
                 rc = ramasse_cli(["--project-dir", str(root), "--estimate-only"])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
-            self.assertEqual(set(payload), {"cost"})
+            self.assertEqual(set(payload), {"scope", "cost"})  # scope null when unscoped
             self.assertGreaterEqual(payload["cost"]["est_read_tokens"], 2000)
 
     def test_normal_run_includes_cost(self):
@@ -482,6 +482,77 @@ class TestRamasseCost(unittest.TestCase):
             payload = json.loads(buf.getvalue())
             self.assertIn("cost", payload)
             self.assertIn("summary", payload)
+
+
+class TestFolderScope(unittest.TestCase):
+    """--folder mirrors dream's: contained subtree walk, scope named in the
+    report, subtree-honest cost. One ramasse-specific rule: folder drift is a
+    question about the project ROOT'S shape, so a scoped run skips it rather
+    than answering it against a fraction of the folders."""
+
+    def _project(self, root: Path) -> None:
+        (root / "brief.md").parent.mkdir(parents=True, exist_ok=True)
+        (root / "brief.md").write_text(
+            "---\ntype: project\nslug: t\nproject_type: coding\n"
+            "status: active\n---\n\n# T\n")
+        notes = root / "notes"
+        notes.mkdir()
+        # A §4 naming violation inside the scope (doc filename not UPPERCASE)
+        # and a sibling violation outside it.
+        (notes / "bad-doc.md").write_text(
+            "---\ntype: doc\ntitle: B\nupdated: 2026-01-01\n"
+            "tags:\n  - doc\n---\n\nN\n")
+        docs = root / "docs"
+        docs.mkdir()
+        (docs / "also-bad.md").write_text(
+            "---\ntype: doc\ntitle: A\nupdated: 2026-01-01\n"
+            "tags:\n  - doc\n---\n\nD\n" + "y" * 6000)
+
+    def _run(self, root: Path, *extra: str) -> tuple[int, dict]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = ramasse_cli(["--project-dir", str(root), *extra])
+        out = buf.getvalue()
+        return rc, (json.loads(out) if rc == 0 and out.strip() else {})
+
+    def test_scoped_run_sees_only_the_subtree_and_names_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            rc, report = self._run(root, "--folder", "notes")
+            self.assertEqual(rc, 0)
+            self.assertEqual(report["scope"], "notes")
+            names = json.dumps(report["naming_violations"])
+            self.assertIn("bad-doc.md", names)
+            self.assertNotIn("also-bad.md", names)
+
+    def test_scoped_run_skips_root_shape_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            (root / "unexpected-folder").mkdir()
+            _, full = self._run(root)
+            _, scoped = self._run(root, "--folder", "notes")
+            self.assertTrue(full["folder_drift"])          # root question, full run answers
+            self.assertEqual(scoped["folder_drift"], [])   # scoped run declines it
+
+    def test_cost_estimate_is_the_subtrees(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            _, scoped = self._run(root, "--folder", "notes")
+            _, full = self._run(root)
+            self.assertLess(scoped["cost"]["est_read_tokens"],
+                            full["cost"]["est_read_tokens"])
+
+    def test_escape_is_contained(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            self._project(root)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc, _ = self._run(root, "--folder", "..")
+            self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":

@@ -1074,6 +1074,12 @@ class TestSkillSplit(unittest.TestCase):
         est = len(self.SKILL.read_text()) // 4
         self.assertLess(est, 2000, f"SKILL.md is ~{est} tok, budget 2000")
 
+    def test_advisor_contract_within_budget(self):
+        # Loads into every advisor-on session; same discipline as voice.md.
+        doc = self.INTERNALS.parent / "advisor.md"
+        est = len(doc.read_text()) // 4
+        self.assertLess(est, 900, f"advisor.md is ~{est} tok, budget 900")
+
 
 class TestDocTrim(unittest.TestCase):
     """v0.17.0: enforceable detail lives with its enforcer, not in prose."""
@@ -1138,6 +1144,46 @@ class TestModuleDocstringRoster(unittest.TestCase):
                          "the roster must be numbered 1..N with no gaps")
         self.assertEqual([name for _, name in listed], self._called(),
                          "roster names and order must match main()'s calls")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+class TestAdvisorWiring(unittest.TestCase):
+    """35. advisor-wiring - the opt-in advisor's three surfaces stay wired:
+    the contract doc exists, the SessionStart banner names it, and the toggle
+    still stamps AGENTS.md. Any one of them silently dropping out leaves a
+    mode that claims to watch and does not."""
+
+    def test_passes_on_the_real_tree(self):
+        r = validate.Result()
+        validate.validate_advisor_wiring(r)
+        self.assertIn("advisor-wiring", r.passes)
+
+    def test_fails_when_the_banner_is_stripped(self):
+        import tempfile as _tf
+        real_hook = (Path(__file__).resolve().parent.parent
+                     / "hooks" / "scripts" / "session-start.sh")
+        with _tf.TemporaryDirectory() as tmp:
+            fake_root = Path(tmp)
+            (fake_root / "hooks" / "scripts").mkdir(parents=True)
+            stripped = "\n".join(l for l in real_hook.read_text().splitlines()
+                                  if "Advisor" not in l and "advisor" not in l)
+            (fake_root / "hooks" / "scripts" / "session-start.sh").write_text(stripped)
+            ref = fake_root / "skills" / "adjudant" / "reference"
+            ref.mkdir(parents=True)
+            (ref / "advisor.md").write_text("# Advisor\n")
+            (fake_root / "scripts").mkdir()
+            (fake_root / "scripts" / "advisor.py").write_text(
+                'AGENTS_MARKER_PREFIX = "**Adjudant advisor: on**"\n')
+            orig = validate.ROOT
+            validate.ROOT = fake_root
+            try:
+                r = validate.Result()
+                validate.validate_advisor_wiring(r)
+            finally:
+                validate.ROOT = orig
+            self.assertTrue(any("advisor-wiring" in f for f in r.failures))
 
 
 if __name__ == "__main__":

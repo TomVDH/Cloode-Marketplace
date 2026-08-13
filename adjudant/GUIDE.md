@@ -123,3 +123,49 @@ It previews the full migration into adjudant's layout, waits, and applies with a
 - **The board didn't appear.** It's born on the first real task note under `tasks/`. No tasks, no board, by design.
 - **A verb can't find the vault.** The breadcrumb is missing or points nowhere. Re-run `/adjudant connect`.
 - **You want the details.** `/adjudant check` for state, `reference/internals.md` for how the machinery is wired.
+
+## 9. The advisor (opt-in)
+
+By default adjudant only speaks when spoken to. Turn the advisor on and it
+also *notices* — open loops, missing notes, work that contradicts a decision,
+context that has gone stale:
+
+```
+/adjudant advisor on
+```
+
+The flag is visible twice: `advisor: on` in `.claude/adjudant`, and a marker
+line in AGENTS.md, so neither you nor a future session can forget it is
+active. Every session start announces it.
+
+- Urgent findings (contradicting a locked decision, diverging from the plan)
+  surface inline, at most a sentence or two, marked with `❦`.
+- Everything else is proposed as a board card or held for the next `check`.
+- Nothing is ever written without your yes.
+
+`/adjudant advisor pulse` runs the context-integrity check on demand: expired
+facts, dangling supersessions, drift between the plan and the work.
+`/adjudant advisor off` removes the flag, the marker, and the behaviour.
+
+## 10. Naming things
+
+Kebab-case is the vault's naming rule, and most of it is on you to follow.
+`kebab` answers the question you actually have at write time:
+
+```
+/adjudant kebab Fix the parser rewrite
+fix-the-parser-rewrite
+```
+
+Use it before you create a note, task, source, or decision, and the name is
+right the first time.
+
+```
+/adjudant kebab --scan
+```
+
+Scans the project for filenames whose title broke the rule and shows the
+corrected name for each. It never renames anything: renaming breaks every
+wikilink pointing at the file, and that repair belongs to `ramasse`, which
+previews it and keeps a backup. Docs are exempt, because the standard wants
+those UPPERCASE.

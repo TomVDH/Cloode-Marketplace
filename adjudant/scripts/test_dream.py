@@ -530,7 +530,7 @@ class TestDreamCost(unittest.TestCase):
                 rc = dream_cli(["--project-dir", str(root), "--estimate-only"])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
-            self.assertEqual(set(payload), {"cost"})
+            self.assertEqual(set(payload), {"scope", "cost"})  # scope null when unscoped
             self.assertGreaterEqual(payload["cost"]["est_read_tokens"], 2000)
 
     def test_normal_run_includes_cost(self):
@@ -588,6 +588,99 @@ class TestDeclaredFreshnessPrecedence(unittest.TestCase):
             dangling = [e for e in out if e.get("kind") == "dangling-pointer"]
             self.assertEqual(len(dangling), 1)
             self.assertEqual(dangling[0]["target"], "nonexistent")
+
+
+class TestFolderScope(unittest.TestCase):
+    """--folder narrows the heavy walk to one subtree. The parked-work ruling
+    blessed exactly this and nothing more: deliberate operator scoping, no
+    inferred relevance. A scoped run must say so in the report, and its cost
+    estimate must be the subtree's, or the flag would let a partial run
+    masquerade as a full one."""
+
+    def _project(self, root: Path) -> None:
+        _write_file(root / "brief.md",
+                    "---\ntype: project\nslug: t\nproject_type: coding\n"
+                    "status: active\n---\n\n# T\n")
+        # An aged open loop in notes/ and a big file in sessions/: scope to
+        # notes/ must see the first and pay for neither of the second.
+        _write_file(root / "notes" / "old.md",
+                    "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+                    "tags:\n  - note\n---\n\nTODO: still open\n")
+        _write_file(root / "sessions" / "2026-01-02.md",
+                    "---\ntype: session\ndate: 2026-01-02\nstarted: 09:00\n"
+                    "session_id: []\ntags:\n  - session\n---\n\n" + "x" * 9000)
+
+    def _run(self, root: Path, *extra: str) -> tuple[int, dict]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = dream_cli(["--project-dir", str(root),
+                            "--today", "2026-06-01", *extra])
+        out = buf.getvalue()
+        return rc, (json.loads(out) if rc == 0 and out.strip() else {})
+
+    def test_scoped_run_sees_only_the_subtree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            rc, report = self._run(root, "--folder", "notes")
+            self.assertEqual(rc, 0)
+            flagged = [c["file"] for c in report["orphan_questions"]]
+            self.assertTrue(any("old.md" in f for f in flagged))
+            everything = json.dumps(report["staleness_candidates"]
+                                    + report["orphan_questions"])
+            self.assertNotIn("sessions/", everything)
+
+    def test_report_names_its_scope(self):
+        # A scoped report that does not say so reads as a full one.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            _, scoped = self._run(root, "--folder", "notes")
+            _, full = self._run(root)
+            self.assertEqual(scoped["scope"], "notes")
+            self.assertIsNone(full["scope"])
+
+    def test_cost_estimate_is_the_subtrees(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            _, scoped = self._run(root, "--folder", "notes")
+            _, full = self._run(root)
+            self.assertLess(scoped["cost"]["est_read_tokens"],
+                            full["cost"]["est_read_tokens"])
+
+    def test_estimate_only_respects_the_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            rc_s, scoped = self._run(root, "--folder", "notes", "--estimate-only")
+            rc_f, full = self._run(root, "--estimate-only")
+            self.assertEqual((rc_s, rc_f), (0, 0))
+            self.assertLess(scoped["cost"]["est_read_tokens"],
+                            full["cost"]["est_read_tokens"])
+
+    def test_escape_is_contained(self):
+        # The flag takes a path; a path can climb. Same containment bar as
+        # every other operator-supplied path in the plugin.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            self._project(root)
+            _write_file(Path(tmp) / "outside" / "leak.md", "# leak\n")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc, _ = self._run(root, "--folder", "../outside")
+            self.assertEqual(rc, 1)
+            self.assertIn("--folder", err.getvalue())
+
+    def test_missing_folder_fails_plainly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._project(root)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc, _ = self._run(root, "--folder", "nope")
+            self.assertEqual(rc, 1)
+            self.assertIn("nope", err.getvalue())
 
 
 if __name__ == "__main__":

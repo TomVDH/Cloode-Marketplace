@@ -72,6 +72,37 @@ cautionary tale: a 600-token budget with 7 characters of headroom. Opt out per
 project with `voice: off` in the breadcrumb (syncs across machines) or per
 machine with `ADJUDANT_VOICE_DISABLE=1`.
 
+### The advisor (v2)
+
+The proactive layer, and the inverse of the voice directive's defaults:
+**opt-in, off until asked for**. Its state is deliberately visible twice —
+`advisor: on` in the breadcrumb (machine-read, repo-committed, syncs across
+machines) and a marker line in AGENTS.md (context-injected by the harness,
+readable by any human at project root). `scripts/advisor.py` owns both
+surfaces so they cannot drift; validator 35 (`advisor-wiring`) fails the
+build if the contract doc, the SessionStart banner, or the marker drops out.
+
+When on, SessionStart emits a banner (120-token cap, tested, placed after
+Voice: the register governs how observations are said before anything
+decides what to notice) pointing at `reference/advisor.md` — the standing
+contract: notice tasks/gaps/gaffes/stale-context, tier them (urgent inline,
+routine to the board or the next `check`), dry wit, `❦` lead-in, raise-once
+dedup, never auto-write. The intelligence is the model's; hooks stay
+mechanical.
+
+Two helper subcommands serve it, both riding existing machinery:
+
+- `advisor.py pulse` — read-only context-integrity check: `freshness_report`
+  (expired / dangling-supersession / unbounded facts), dream's
+  dangling-scope detector, the handoff NEXT, and the five most recent
+  decisions, with a `quiet` verdict so a healthy project produces silence.
+  Run at resume when the mode is on, or via `/adjudant advisor pulse`.
+- `advisor.py capture-task --title … [--note …]` — lands an approved
+  suggestion as `tasks/{slug}.md` via `templates/task.md` and lets
+  `ensure_board` seed the card. Dedup by slug; an existing note is never
+  touched. The same rail the session-end bridge uses, so a captured task is
+  indistinguishable from any other.
+
 The gate is deliberately the narrowest of the three. It refuses a write, and a
 false positive there wedges the model mid-turn, so it only blocks phrases with
 no technical reading at all. A merely banned word (`robust`) passes the gate

@@ -24,7 +24,7 @@ Ramasse handles everything tidy refuses to auto-fix:
 
 ## The 5-phase shape (superpowers chain)
 
-> **Cost pre-flight (locked).** Run the analyser with `--estimate-only` before the real scan. If `cost.warn` is true, stop and confirm with the user per the SKILL.md cost gate.
+> **Cost pre-flight (locked).** Run the analyser with `--estimate-only` before the real scan. If `cost.warn` is true, stop and confirm with the user per the SKILL.md cost gate. When it warns, `--folder <path>` scopes the scan to one subtree (containment-checked; the estimate follows). The report then carries `scope` — **render it in the header** so a narrowed run never reads as a full one. A scoped run skips `folder_drift`: root shape is a whole-project question.
 
 | Phase | Skill | Output |
 |---|---|---|

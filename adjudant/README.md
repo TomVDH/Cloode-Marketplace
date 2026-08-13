@@ -2,7 +2,7 @@
 
 *Every unit has someone who keeps the records straight. Now your project does too.*
 
-Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with eleven verbs. Successor to `obsidian-bridge`.
+Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with thirteen verbs. Successor to `obsidian-bridge`.
 
 **New here? Read the [walkthrough](GUIDE.md).** This page is the reference.
 
@@ -20,7 +20,7 @@ Then link your project once:
 /adjudant connect
 ```
 
-## The eleven verbs
+## The thirteen verbs
 
 | Verb | What it does |
 |---|---|
@@ -35,6 +35,8 @@ Then link your project once:
 | `/adjudant draw <canvas\|base\|diagram> <name>` | Create a canvas, base, or mermaid diagram. |
 | `/adjudant board [scaffold\|serve\|status]` | Scaffold a self-hosted kanban seeded from your tasks. |
 | `/adjudant shelf [<slug> <state>]` | Move a project through its lifecycle (active, fridge, archive). |
+| `/adjudant advisor [on\|off\|status\|pulse]` | Toggle the opt-in proactive advisor, or run its context pulse. |
+| `/adjudant kebab <text> \| --scan` | Slugify a title, or scan for filenames that broke the naming rule. |
 
 The three cleanup verbs form a locked ladder by risk:
 
@@ -60,7 +62,7 @@ dream   as needed  semantic, LLM-judged, you approve every change
 | Hooks | 10 entries across 9 events, all vault-aware |
 | Templates | 21 file-type scaffolds + `board.html` |
 | Helpers | stdlib-only Python, one per file-touching verb; no build step |
-| Drift defense | `python3 scripts/validate.py` — 34 validators, run on pre-commit |
+| Drift defense | `python3 scripts/validate.py` — 35 validators, run on pre-commit |
 | Tests | 1176; `python3 -m unittest discover -p 'test_*.py'` |
 
 Deep reference (hook wiring, the verb-to-helper map, cross-machine details) lives in [`skills/adjudant/reference/internals.md`](skills/adjudant/reference/internals.md). Vault rules (tags, frontmatter, folders, naming) live in [`reference/vault-standards.md`](skills/adjudant/reference/vault-standards.md).

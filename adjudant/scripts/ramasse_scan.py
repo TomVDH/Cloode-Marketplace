@@ -48,6 +48,8 @@ from _vault_walk import (
     resolve_vault,
     resolve_wikilink,
     smart_project_dir, VaultUnresolvableError,
+    resolve_scope,
+    scope_rel,
     walk_project,
 )
 
@@ -371,9 +373,20 @@ def run_scan(
     vault_dir: Optional[Path],
     *,
     include_legacy: bool = False,
+    scope: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Run all drift detectors. Returns the full JSON report."""
+    """Run all drift detectors. Returns the full JSON report.
+
+    `scope` (a project-relative folder) narrows every per-file detector to
+    that subtree — filtered after the walk so rel_paths keep their
+    project-root form. Folder drift is a question about the ROOT's shape, so
+    a scoped run skips it instead of answering it against a fraction of the
+    folders; the report's `scope` field says the run was narrowed.
+    """
     files = list(walk_project(project_dir, include_legacy=include_legacy))
+    if scope:
+        prefix = tuple(Path(scope).parts)
+        files = [f for f in files if f.rel_path.parts[:len(prefix)] == prefix]
     slug = _project_slug(files, project_dir)
     proj_type = _project_type(files)
     extras = _extra_folders(files)
@@ -383,7 +396,7 @@ def run_scan(
     if vault_dir and vault_dir.is_dir():
         vault_index = build_vault_index(vault_dir)
 
-    folder_drift = detect_folder_drift(project_dir, proj_type, extras)
+    folder_drift = [] if scope else detect_folder_drift(project_dir, proj_type, extras)
     index_gaps = detect_index_gaps(project_dir, files)
     fm_drift = detect_frontmatter_drift(files)
     tag_drift = detect_tag_drift(files, slug)
@@ -409,6 +422,7 @@ def run_scan(
     )
 
     return {
+        "scope": scope,
         "meta": {
             "project_dir": str(project_dir),
             "project_slug": slug,
@@ -447,6 +461,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--vault-dir", help="Vault root (default: resolved from breadcrumb)")
     parser.add_argument("--out", help="Write JSON to FILE instead of stdout")
     parser.add_argument("--include-legacy", action="store_true", help="Include _legacy/ in scan")
+    parser.add_argument("--folder", help="Scope the walk to one project subfolder "
+                        "(e.g. 'notes'); the report header states the scope")
     parser.add_argument("--estimate-only", action="store_true",
                         help="Print only the cost block (stat-only walk) and exit")
     args = parser.parse_args(argv)
@@ -467,11 +483,22 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"error: project-dir not found: {project_dir}", file=sys.stderr)
         return 1
 
+    scope: Optional[str] = None
+    scope_dir = project_dir
+    if args.folder:
+        try:
+            scope_dir = resolve_scope(project_dir, args.folder)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        scope = scope_rel(project_dir, scope_dir)
+
     code_root = Path(args.project_dir).expanduser().resolve()
-    files_n, n_bytes = stat_walk(project_dir)
+    # Scoped runs estimate the subtree they will read (same as dream.py).
+    files_n, n_bytes = stat_walk(scope_dir)
     cost = cost_block(files_n, n_bytes, read_threshold(code_root))
     if args.estimate_only:
-        print(json.dumps({"cost": cost}, indent=2))
+        print(json.dumps({"scope": scope, "cost": cost}, indent=2))
         return 0
 
     vault_dir: Optional[Path]
@@ -485,7 +512,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         print(f"warn: vault-dir not a directory: {vault_dir}", file=sys.stderr)
         vault_dir = None
 
-    report = run_scan(project_dir, vault_dir, include_legacy=args.include_legacy)
+    report = run_scan(project_dir, vault_dir, include_legacy=args.include_legacy,
+                      scope=scope)
     report["cost"] = cost
 
     payload = json.dumps(report, indent=2, default=str)

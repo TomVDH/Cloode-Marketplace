@@ -68,8 +68,9 @@ except Exception:
   # not leak \r into paths/slugs (it used to create phantom `slug\r/` dirs).
   vault_path=$(sed -n 's/^vault_path[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
   slug=$(sed -n 's/^slug[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
-  local voice_knob
+  local voice_knob advisor_knob
   voice_knob=$(sed -n 's/^voice[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
+  advisor_knob=$(sed -n 's/^advisor[:=][[:space:]]*//p' "$breadcrumb" 2>/dev/null | head -n1 | tr -d '\r' || true)
 
   [ -z "$slug" ] && return 0
   # The breadcrumb is a REPO-COMMITTED file: a cloned repo can carry any slug.
@@ -138,6 +139,20 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
         printf -- '- Voice: lead with the action, not preamble. Never "Great question", "Hope this helps", "Let me know if", "Uh oh". Number multi-step work, cap lists at five, restate state each turn. Time estimates in real units. Errors as cause and fix. No em dashes, no filler superlatives, no self-congratulation. Say what a competent colleague would say, then stop.\n'
       fi
       ;;
+  esac
+
+  # Advisor banner: opt-in (`advisor: on` in the breadcrumb; the /adjudant
+  # advisor verb also stamps a marker into AGENTS.md so the mode is visible at
+  # project root). The banner is the acute awareness Tom asked for - the model
+  # is under the advisor contract from the first turn of every session, not
+  # from whenever it happens to read the doc. After Voice: the register
+  # governs how observations are said before anything decides what to notice.
+  # Same 120-token budget discipline, tested in test_hook_shell.
+  case "${advisor_knob:-off}" in
+    on|true|1|yes)
+      printf -- '- Advisor: on. Load `reference/advisor.md` now and follow it: notice tasks, gaps, gaffes, and stale context while working. Urgent findings surface inline; the rest go to the board or the next check. Run a context pulse at resume.\n'
+      ;;
+    *) : ;;
   esac
 
   printf -- '- Vault: `%s` (linked to project `%s`)\n' "$(basename "$vault_path")" "$slug"

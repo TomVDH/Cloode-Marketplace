@@ -52,6 +52,8 @@ from _vault_walk import (
     resolve_vault,
     resolve_wikilink,
     smart_project_dir, VaultUnresolvableError,
+    resolve_scope,
+    scope_rel,
     walk_project,
 )
 
@@ -709,10 +711,21 @@ def run_dream(
     orphan_question_days: int = DEFAULT_ORPHAN_QUESTION_DAYS,
     unacted_min_age_days: int = 30,
     include_legacy: bool = False,
+    scope: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Run all content/staleness detectors. Returns the full JSON report."""
+    """Run all content/staleness detectors. Returns the full JSON report.
+
+    `scope` is a project-relative folder (`notes`, `notes/deep`): detectors
+    then see only that subtree. Filtered AFTER the walk rather than by walking
+    the subfolder directly, so every rel_path keeps its project-root form and
+    the folder-name logic in the detectors keeps working. The report carries
+    the scope so a narrowed run can never present itself as a full one.
+    """
     today = today or _dt.date.today()
     files = list(walk_project(project_dir, include_legacy=include_legacy))
+    if scope:
+        prefix = tuple(Path(scope).parts)
+        files = [f for f in files if f.rel_path.parts[:len(prefix)] == prefix]
     slug = _project_slug(files, project_dir)
     proj_type = _project_type(files)
 
@@ -745,6 +758,7 @@ def run_dream(
     )
 
     return {
+        "scope": scope,
         "meta": {
             "project_dir": str(project_dir),
             "project_slug": slug,
@@ -822,6 +836,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         help=f"Staleness age threshold in days (default: {DEFAULT_STALE_DAYS})",
     )
     parser.add_argument("--include-legacy", action="store_true", help="Include _legacy/ in scan")
+    parser.add_argument("--folder", help="Scope the walk to one project subfolder "
+                        "(e.g. 'decisions'); the report header states the scope")
     parser.add_argument("--estimate-only", action="store_true",
                         help="Print only the cost block (stat-only walk) and exit")
     args = parser.parse_args(argv)
@@ -849,11 +865,24 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"error: project-dir not found: {project_dir}", file=sys.stderr)
         return 1
 
+    scope: Optional[str] = None
+    scope_dir = project_dir
+    if args.folder:
+        try:
+            scope_dir = resolve_scope(project_dir, args.folder)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        scope = scope_rel(project_dir, scope_dir)
+
     code_root = Path(args.project_dir).expanduser().resolve()
-    files_n, n_bytes = stat_walk(project_dir)
+    # The estimate walks what the run will read: the scoped subtree when
+    # --folder is given. This is the flag's point — proceed on a slice when
+    # the full-vault estimate trips the cost gate.
+    files_n, n_bytes = stat_walk(scope_dir)
     cost = cost_block(files_n, n_bytes, read_threshold(code_root))
     if args.estimate_only:
-        print(json.dumps({"cost": cost}, indent=2))
+        print(json.dumps({"scope": scope, "cost": cost}, indent=2))
         return 0
 
     vault_dir: Optional[Path]
@@ -867,7 +896,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         print(f"warn: vault-dir not a directory: {vault_dir}", file=sys.stderr)
         vault_dir = None
 
-    report = run_dream(project_dir, vault_dir, today=today, stale_days=args.stale_days)
+    report = run_dream(project_dir, vault_dir, today=today, stale_days=args.stale_days,
+                       scope=scope)
     report["cost"] = cost
 
     payload = json.dumps(report, indent=2, default=str)

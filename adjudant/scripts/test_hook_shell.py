@@ -111,6 +111,48 @@ class TestSessionStartHook(unittest.TestCase):
             self.assertLess(len(line) // 4, 120,
                             f"voice directive is ~{len(line) // 4} tok, budget 120")
 
+    def test_advisor_banner_appears_when_the_knob_is_on(self):
+        # v2: the advisor is opt-in, but an opted-in session must be made
+        # acutely aware at start/resume - the banner is that awareness, and
+        # it points at the contract the model is now under.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nslug: demo\nadvisor: on\n")
+            out = _run("session-start.sh", project, home).stdout
+            self.assertIn("Advisor: on", out)
+            self.assertIn("reference/advisor.md", out)
+
+    def test_advisor_silent_when_off_or_unset(self):
+        # Opt-in means opt-in: no knob, no banner, no half-presence.
+        for crumb in ("vault_path: {vault}\nslug: demo\n",
+                      "vault_path: {vault}\nslug: demo\nadvisor: off\n"):
+            with tempfile.TemporaryDirectory() as tmp:
+                project, home = self._project(Path(tmp), crumb)
+                out = _run("session-start.sh", project, home).stdout
+                self.assertNotIn("Advisor", out)
+
+    def test_advisor_banner_follows_the_voice_directive(self):
+        # Voice governs how everything is said, advisor what gets noticed:
+        # the register comes first.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nslug: demo\nadvisor: on\n")
+            out = _run("session-start.sh", project, home).stdout
+            bullets = [l for l in out.splitlines() if l.startswith("- ")]
+            self.assertIn("Voice", bullets[0])
+            self.assertIn("Advisor", bullets[1])
+
+    def test_advisor_banner_stays_within_its_token_budget(self):
+        # Same discipline as the voice directive: it loads every opted-in
+        # session, so it must not grow one useful sentence at a time.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nslug: demo\nadvisor: on\n")
+            out = _run("session-start.sh", project, home).stdout
+            line = next(l for l in out.splitlines() if "Advisor" in l)
+            self.assertLess(len(line) // 4, 120,
+                            f"advisor banner is ~{len(line) // 4} tok, budget 120")
+
     def test_colon_breadcrumb_resolves(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
