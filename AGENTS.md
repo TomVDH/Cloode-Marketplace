@@ -8,7 +8,7 @@
 .
 ├── .claude-plugin/
 │   └── marketplace.json     # Marketplace manifest — source of truth for every plugin's version + description
-├── adjudant/                # Vault editor/writer + project initializer, /adjudant with eleven verbs and a three-tier cleanup model (successor to the retired obsidian-bridge)
+├── adjudant/                # Vault editor/writer + project initializer, /adjudant with thirteen verbs and a three-tier cleanup model (successor to the retired obsidian-bridge). A v3 redesign is specced: see docs/superpowers/specs/2026-09-01-adjudant-v3-design.md
 ├── cabinet-of-imd/          # Crew/persona flavor layer (functionality sunset; character-only)
 ├── tui-toolbox/             # Operating language for agent-built helper CLIs (bash TUI + python helper); formerly cli-wrapper-helper
 ├── gemineye/                # Sandboxed Gemini second opinion via the agy CLI (SUNSET 2026-08-12: unlisted from marketplace, kept in tree)
