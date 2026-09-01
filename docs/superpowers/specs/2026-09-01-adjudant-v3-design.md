@@ -920,6 +920,24 @@ parsed out of it at load time and never written a second time in Python.
 - Both `onnozelaer-claude-plugins/` and `onnozelaer-claude-marketplace/` exist.
 - Repo `AGENTS.md` says eleven verbs. Nothing checks it.
 
+## The plans
+
+This spec is executed by five plans in `docs/superpowers/plans/`. Each produces
+working, testable software on its own; they are ordered because each reads the
+one before it.
+
+| # | Plan | Covers | Deliverable |
+|---|---|---|---|
+| 1 | `2026-09-01-adjudant-v3-stop-the-bleeding.md` | Phases 0 and 1 | Adjudant stops adding files nobody asked for |
+| 2 | `2026-09-01-adjudant-v3-templates-are-the-schema.md` | Phase 2 | A note's shape is declared exactly once |
+| 3 | `2026-09-01-adjudant-v3-six-verbs.md` | Phase 3 | Thirteen verbs become six; cleanup is net-subtractive |
+| 4 | `2026-09-01-adjudant-v3-structure-and-truth.md` | Phase 4 | Lifecycle folders, walkable links, truth checks |
+| 5 | `2026-09-01-adjudant-v3-twin-generation.md` | Phase 5 | The twin becomes a build output |
+
+Plan 1 Task 1 is the one with a deadline: it back-ports code that exists only
+in the twin, and plan 5 deletes the twin's tree. Running plan 5 first would
+lose it silently.
+
 ## Execution split (Tom, 2026-09-01)
 
 Split by risk. The plan is specific enough, with file and line references and a
