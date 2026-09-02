@@ -28,9 +28,6 @@ Note schema, re-exported from _template_schema (the templates ARE the schema;
 nothing here declares a second copy):
     FIELD_SCHEMA, STATUS_VALUES_FOR_TYPE, HEADINGS_FOR_TYPE
 
-Folder constants (imported by clean):
-    PROJECT_TYPE_DEFAULT_FOLDERS, AUTO_CREATED_FOLDERS, INDEX_EXEMPT_FOLDERS
-
 CLI smoke-test mode (read-only, the module never writes):
     python3 _vault_walk.py --project-dir PATH [--vault-dir PATH] [--json]
 """
@@ -887,7 +884,7 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
 
 
 # ============================================================
-# Folder constants — single source of truth (imported by clean)
+# Folder constants — retired
 # ============================================================
 # The tag buckets used to live here: four constants, two classifiers and a
 # normaliser, maintaining a tag on every file that restated the file's own
@@ -896,30 +893,17 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
 # `tags:` block is now an ordinary unknown-field strip through FIELD_SCHEMA.
 
 
-# Per-project_type folder defaults (must align with vault-standards.md §5)
-PROJECT_TYPE_DEFAULT_FOLDERS: dict[str, dict[str, list[str]]] = {
-    "coding": {
-        "with_index": ["decisions", "notes", "tasks", "references"],
-        "no_index": ["sessions", "images"],
-    },
-    "plugin": {
-        "with_index": ["decisions", "notes", "tasks", "references", "releases"],
-        "no_index": ["sessions", "images"],
-    },
-    "knowledge": {
-        "with_index": ["notes", "sources", "references"],
-        "no_index": ["sessions"],
-    },
-    "tinkerage": {
-        "with_index": [],
-        "no_index": ["sessions"],
-    },
-}
-
-AUTO_CREATED_FOLDERS: frozenset[str] = frozenset({"dreams", "canvases", "bases", "board"})
-INDEX_EXEMPT_FOLDERS: frozenset[str] = frozenset({
-    "sessions", "images", "assets", "previews", "iterations", "_archive", "templates",
-})
+# PROJECT_TYPE_DEFAULT_FOLDERS, AUTO_CREATED_FOLDERS and INDEX_EXEMPT_FOLDERS
+# were deleted in v3. Folder layout is now one table, KIND_FOLDER in
+# _place.py, and a folder is created by the write that puts something in it.
+# The three constants existed to answer "which folders does a coding project
+# get" and "which of them skip an index" — questions that only had answers
+# because connect scaffolded folders nobody had asked for.
+#
+# The second question still has one live asker: clean's index-gap report, for
+# as long as per-folder indexes exist at all. Its list moved into clean.py,
+# next to the only code that reads it, rather than staying a shared constant
+# with one consumer.
 
 
 # ============================================================

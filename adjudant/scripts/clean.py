@@ -64,13 +64,10 @@ from typing import Any, Optional
 from _cost import cost_block, read_threshold, stat_walk
 from _scratch import BACKUP_KEEP, prune_backups, scratch_dir
 from _vault_walk import (
-    AUTO_CREATED_FOLDERS,
     FIELD_SCHEMA,
     DECISION_STATUS_ALIASES,
     DEFAULT_SKIP,
-    INDEX_EXEMPT_FOLDERS,
     MD_LINK_RE,
-    PROJECT_TYPE_DEFAULT_FOLDERS,
     VaultFile,
     build_vault_index,
     is_checkable_wikilink,
@@ -487,38 +484,17 @@ def _project_type(files: list[VaultFile]) -> Optional[str]:
     return None
 
 
-def _extra_folders(files: list[VaultFile]) -> list[str]:
-    """Read extra_folders declared in brief frontmatter."""
-    for f in files:
-        if f.rel_path == Path("brief.md"):
-            ef = f.frontmatter.fields.get("extra_folders")
-            if isinstance(ef, list):
-                return [str(x) for x in ef if x]
-            if isinstance(ef, str) and ef:
-                return [ef]
-    return []
+# detect_folder_drift and _extra_folders were deleted in v3. Drift was measured
+# against PROJECT_TYPE_DEFAULT_FOLDERS, the per-type folder scaffold; with no
+# default set there is nothing for a folder to drift from, and the brief's
+# `extra_folders:` existed only to excuse a folder from that comparison.
 
-
-def detect_folder_drift(
-    project_dir: Path,
-    project_type: Optional[str],
-    extra_folders: list[str],
-) -> list[str]:
-    """Folders present at project root that aren't in defaults + extras + auto."""
-    if not project_type or project_type not in PROJECT_TYPE_DEFAULT_FOLDERS:
-        return []
-    defaults = PROJECT_TYPE_DEFAULT_FOLDERS[project_type]
-    allowed = set(defaults["with_index"]) | set(defaults["no_index"]) | AUTO_CREATED_FOLDERS | set(extra_folders) | {"_legacy"}
-    drift = []
-    for entry in sorted(project_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-        if entry.name.startswith("."):
-            continue
-        if entry.name in allowed:
-            continue
-        drift.append(entry.name)
-    return drift
+# Folders that never carry an index. Read only by detect_index_gaps below,
+# which is the last thing in adjudant that asks the question — it moved here
+# from _vault_walk when connect stopped scaffolding indexes.
+INDEX_EXEMPT_FOLDERS: frozenset[str] = frozenset({
+    "sessions", "images", "assets", "previews", "iterations", "_archive", "templates",
+})
 
 
 def detect_index_gaps(project_dir: Path, files: list[VaultFile]) -> list[str]:
@@ -728,8 +704,7 @@ def _structural_count(structural: dict[str, Any]) -> int:
     if not structural:
         return 0
     return (
-        len(structural["folder_drift"])
-        + len(structural["frontmatter_drift"])
+        len(structural["frontmatter_drift"])
         + len(structural["type_drift"]["values"])
         + len(structural["naming_violations"])
         + len(structural["wikilink_form_violations"])
@@ -752,7 +727,6 @@ def run_deep_scan(
     to answer one question was ramasse's own cost problem.
     """
     proj_type = _project_type(files)
-    extras = _extra_folders(files)
     broken = detect_broken_wikilinks(files, vault_index) if vault_index else {
         "total_wikilinks": 0, "broken_count": 0, "broken_pct": 0.0,
         "top_broken_targets": [], "samples": [],
@@ -760,7 +734,6 @@ def run_deep_scan(
     return {
         "project_type": proj_type,
         "files_scanned": len(files),
-        "folder_drift": [] if scope else detect_folder_drift(project_dir, proj_type, extras),
         "frontmatter_drift": detect_frontmatter_drift(files),
         "type_drift": detect_type_drift(files),
         "naming_violations": (detect_naming_violations(files)
@@ -1072,7 +1045,6 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
         summary_lines.append("## Structural findings (deep pass, reported only)")
         summary_lines.append("")
         for label, key in (
-            ("Folder drift", "folder_drift"),
             ("Frontmatter drift", "frontmatter_drift"),
             ("Naming violations", "naming_violations"),
             ("Wikilink form violations", "wikilink_form_violations"),

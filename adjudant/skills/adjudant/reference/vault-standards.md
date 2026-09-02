@@ -54,7 +54,7 @@ Only some names are checked: `clean --deep` flags doc and decision date-prefix, 
 
 ## 5. Folder structure
 
-Defaults per `project_type`. `coding`: `decisions/`, `notes/`, `tasks/`, `references/`, each carrying an `_index.md`, plus `sessions/` and `images/` without one. `plugin`: the coding set plus `releases/`. `knowledge`: `notes/`, `sources/`, `references/` plus `sessions/`. `tinkerage`: `sessions/` only, optional. Anything beyond the defaults must be in the brief's `extra_folders:`; an undeclared folder is drift that `clean --deep` flags. Auto-created, so exempt: `dreams/`, `canvases/`, `bases/`, `board/`.
+A project starts as a directory and a `brief.md`. There are no default subfolders and no `extra_folders:` declaration: every folder is created by the write that puts something in it, and which folder that is comes from one table, `KIND_FOLDER` in `scripts/_place.py`, mapping each of the fifteen kinds to its folder. A kind that lives at the project root maps to no folder at all.
 
 Every folder under a project, or at vault root, holding two or more sibling `.md` files of the same conceptual type gets an `_index.md`. Exceptions: `sessions/` (ordering is the index), `images/`, `assets/`, `previews/`, and `iterations/` plus the iteration folders inside it, where build artefacts carry no frontmatter and `_iteration.md` is the only conformant file. `/adjudant clean` rebuilds an index that exists; a folder with none is reported as a gap, never filled.
 

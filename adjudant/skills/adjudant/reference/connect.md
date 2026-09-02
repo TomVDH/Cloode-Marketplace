@@ -33,10 +33,10 @@ connect never writes the key itself).
 
 1. **Breadcrumb** — write `.claude/adjudant` at project root containing `vault_path`, `vault_name`, `slug`, `mode`, `cost_warn_tokens`, `stale_after_days` (plus `stamp_source_session` when a hand-added opt-in already exists)
 2. **Context files** — provision `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` at project root from the matching templates (skip if files exist)
-3. **Vault scaffold** — create `{vault}/projects/{slug}/` with `brief.md` (from `templates/brief.md`, its `<!-- when: -->` sections resolved for the project type), per-`project_type` default subfolders, `_index.md` per subfolder
-4. **Session note** — create today's `{vault}/projects/{slug}/sessions/{YYYY-MM-DD}.md` from `templates/session.md` with frontmatter filled in
+3. **Vault scaffold** — create `{vault}/projects/active/{slug}/` with `brief.md` (from `templates/brief.md`, its `<!-- when: -->` sections resolved for the project type). No subfolders and no indexes: a folder exists once a write puts something in it.
+4. **Session note** — create today's `{vault}/projects/{zone}/{slug}/sessions/{YYYY-MM-DD}.md` from `templates/session.md` with frontmatter filled in
 5. **Gitignore** — append `.claude/adjudant` to project `.gitignore` (create file if missing)
-6. **Base dashboards** — install `templates/bases/dashboard-*.base` into `{project}/bases/` with `{slug}` templated (sessions, decisions, tasks, freshness views). Write-if-absent: an edited dashboard is never clobbered by an idempotent re-run.
+6. **Base dashboards** — install `templates/bases/dashboard-*.base` into `{project}/bases/`, each `file.inFolder(...)` filter rewritten to the project's real vault path (sessions, decisions, tasks, freshness views). Write-if-absent: an edited dashboard is never clobbered by an idempotent re-run.
 
 Also: append project row to `{vault}/projects/_index.md`.
 
@@ -84,15 +84,16 @@ Re-running on an already-connected project fills gaps; never overwrites user con
 - `project_type` not provided → inferred from repo signals (never exits non-zero for this)
 - Slug contains invalid characters (spaces, dots, uppercase) → exit non-zero with rename suggestion
 
-## Per-`project_type` default subfolders
+## Subfolders
 
-Per `reference/vault-standards.md` (single source of truth). Summary:
+There are no default subfolders. `connect` creates the project directory and
+`brief.md`, and stops.
 
-| project_type | default subfolders |
-|---|---|
-| `coding` | `decisions/`, `notes/`, `tasks/`, `references/`, `sessions/`, `images/` |
-| `plugin` | coding + `releases/` |
-| `knowledge` | `notes/`, `sources/`, `references/`, `sessions/` |
-| `tinkerage` | `sessions/` (optional) |
+Every other folder is created by the write that puts something in it, from the
+one table in `scripts/_place.py` that maps each kind to its folder. `project_type`
+still decides which `<!-- when: -->` sections the brief gets; it no longer decides
+which empty folders a project starts with.
 
-Folders beyond defaults require declaration in brief's `extra_folders: []` frontmatter field.
+This retires the brief's `extra_folders:` field. It existed to excuse a folder
+from a comparison against the per-type defaults, and there are no defaults left
+to compare against.

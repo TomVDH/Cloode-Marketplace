@@ -97,10 +97,10 @@ Per `reference/vault-standards.md`: `.canvas` and `.base` files use **strict keb
 
 ## Folders
 
-`canvases/` and `bases/` are **auto-created on first invocation** — they're in
-`AUTO_CREATED_FOLDERS` (vault-standards §5), so no `extra_folders` declaration in
-the brief is needed and `clean --deep` never flags them as drift. Reserve the brief's
-`extra_folders` for genuinely custom subfolders.
+`canvases/` and `bases/` are **created on first invocation**, like every other
+folder under a project: the write that puts something in a folder is what makes
+the folder. There is no declaration to keep in step, because there is no default
+set for a folder to be absent from.
 
 ## Fail conditions
 

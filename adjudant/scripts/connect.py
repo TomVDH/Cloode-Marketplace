@@ -43,8 +43,6 @@ from typing import Any, Optional
 
 from _render import render
 from _vault_walk import (
-    INDEX_EXEMPT_FOLDERS,
-    PROJECT_TYPE_DEFAULT_FOLDERS,
     _candidate_vault_paths,
     find_project_dir,
     parse_breadcrumb,
@@ -91,12 +89,17 @@ def slug_to_title(slug: str) -> str:
 def _project_dir(vault_path: Path, slug: str) -> Path:
     """Resolve a project's vault dir across zones (live / _fridge / _archive).
 
-    Falls back to the default live-zone path when the project doesn't exist
-    yet anywhere (fresh connect). Zone-aware so re-connecting a shelved
-    project fills gaps in place instead of forking a duplicate in
-    `projects/{slug}`.
+    Falls back to `projects/active/{slug}` when the project doesn't exist yet
+    anywhere (fresh connect). Zone-aware so re-connecting a paused project
+    fills gaps in place instead of forking a duplicate.
+
+    This fallback is the one run_connect actually takes: it resolves the dir
+    here and hands it to every writer, so a writer's own default is never
+    reached from the CLI. A bare `projects/{slug}` here would have put every
+    new project outside the four folders no matter what scaffold said.
     """
-    return find_project_dir(vault_path, slug) or (vault_path / "projects" / slug)
+    return find_project_dir(vault_path, slug) or (
+        vault_path / "projects" / "active" / slug)
 
 
 # ============================================================
@@ -434,11 +437,11 @@ def scaffold_vault_project(
     purpose: Optional[str] = None,
     proj_dir: Optional[Path] = None,
 ) -> dict[str, list[str]]:
-    """Create vault project folder, brief, subfolders, per-folder indexes.
+    """Create the vault project folder and its brief. Nothing else.
 
-    `proj_dir` lets the caller pass a zone-resolved dir (e.g. `_fridge/{slug}`)
-    so gaps are filled in place instead of forking `projects/{slug}`. Defaults
-    to the live-zone path when omitted, matching prior behavior.
+    `proj_dir` lets the caller pass a zone-resolved dir (e.g. `paused/{slug}`)
+    so gaps are filled in place instead of forking a duplicate. Defaults to
+    `projects/active/{slug}` when omitted.
 
     Returns dict with 'created' / 'preserved' filenames lists.
 
@@ -446,8 +449,17 @@ def scaffold_vault_project(
     because the zone folder is the project's state and a second answer can
     disagree with it. The value still travels into the breadcrumb and receipt.
     """
+    # The per-type folder table used to be the only thing that rejected an
+    # unknown project type, as a side effect of looking the defaults up. The
+    # table is gone; the rejection is not, because apply_when_markers would
+    # otherwise silently drop every gated section for a typo.
+    if project_type not in VALID_PROJECT_TYPES:
+        raise RuntimeError(f"unknown project_type: {project_type}")
+
     if proj_dir is None:
-        proj_dir = vault_path / "projects" / slug
+        # New projects land in active/. A project moves out of it through the
+        # guided triage in `status`, never through a scaffold.
+        proj_dir = vault_path / "projects" / "active" / slug
     created: list[str] = []
     preserved: list[str] = []
 
@@ -469,34 +481,11 @@ def scaffold_vault_project(
     else:
         preserved.append("brief.md")
 
-    # Subfolders + per-folder indexes
-    defaults = PROJECT_TYPE_DEFAULT_FOLDERS.get(project_type)
-    if not defaults:
-        raise RuntimeError(f"unknown project_type: {project_type}")
-    with_index = defaults["with_index"]
-    no_index = defaults["no_index"]
-
-    for sub in with_index + no_index:
-        sub_dir = proj_dir / sub
-        if not sub_dir.exists():
-            sub_dir.mkdir()
-            created.append(f"{sub}/")
-        idx = sub_dir / "_index.md"
-        if sub in INDEX_EXEMPT_FOLDERS:
-            continue
-        if sub in with_index and not idx.is_file():
-            heading = " ".join(w.capitalize() for w in sub.replace("-", " ").replace("_", " ").split())
-            idx_content = (
-                "---\n"
-                "type: index\n"
-                f"created: {today}\n"
-                f"updated: {today}\n"
-                "---\n\n"
-                f"# {heading}\n\n"
-                "## Entries\n\n"
-            )
-            idx.write_text(idx_content)
-            created.append(f"{sub}/_index.md")
+    # v3: no subfolders and no indexes. A folder exists when something is in
+    # it; `_place.place()` creates the one it needs at write time. connect
+    # used to make four to seven folders and drop an empty `_index.md` into
+    # each, which is where the fifteen indexes with a body under 25 bytes
+    # came from — and a scratchpad project got six folders it never used.
 
     return {"created": created, "preserved": preserved}
 
@@ -528,7 +517,7 @@ def write_session_note(
     produced a note the schema gate would reject. It now raises.
     """
     if proj_dir is None:
-        proj_dir = vault_path / "projects" / slug
+        proj_dir = vault_path / "projects" / "active" / slug
     sess_dir = proj_dir / "sessions"
     sess_dir.mkdir(parents=True, exist_ok=True)
     sess_file = sess_dir / f"{today}.md"
@@ -548,25 +537,49 @@ def write_session_note(
 # ============================================================
 
 
+def _vault_rel_project_path(proj_dir: Path, slug: str) -> str:
+    """`projects/{zone}/{slug}` as a vault-relative posix path.
+
+    Derived from the resolved directory rather than assumed, so it is right
+    for a project in any of the four lifecycle folders and for a pre-v3
+    project still sitting at `projects/{slug}`.
+    """
+    parts = proj_dir.parts
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "projects":
+            return "/".join(parts[i:])
+    return f"projects/{slug}"
+
+
 def provision_dashboards(proj_dir: Path, slug: str) -> str:
     """Install the shipped .base dashboards into {project}/bases/.
 
     Write-if-absent per file: connect is idempotent, and a dashboard the
-    human edited must never be clobbered. `{slug}` in the templates becomes
-    the real slug so the base scopes to this project only. Returns
-    "provisioned" (any file written), "present" (all already there), or
-    "no-templates" (plugin install missing the folder - degrade quietly)."""
+    human edited must never be clobbered. Returns "provisioned" (any file
+    written), "present" (all already there), or "no-templates" (plugin install
+    missing the folder - degrade quietly).
+
+    The templates say `projects/{slug}/…`, which was the project's real path
+    until v3 put every project inside a lifecycle folder. `file.inFolder` takes
+    a literal path, so the substitution is the project's actual vault-relative
+    directory: a dashboard naming a folder the project is not in returns
+    nothing at all, silently, which is worse than no dashboard.
+    """
     src = TEMPLATES / "bases"
     if not src.is_dir():
         return "no-templates"
     dest = proj_dir / "bases"
     wrote = False
+    proj_rel = _vault_rel_project_path(proj_dir, slug)
     for tpl in sorted(src.glob("dashboard-*.base")):
         target = dest / tpl.name
         if target.exists():
             continue
         dest.mkdir(parents=True, exist_ok=True)
-        target.write_text(tpl.read_text().replace("{slug}", slug))
+        target.write_text(
+            tpl.read_text()
+               .replace("projects/{slug}", proj_rel)
+               .replace("{slug}", slug))
         wrote = True
     return "provisioned" if wrote else "present"
 

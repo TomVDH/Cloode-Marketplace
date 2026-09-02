@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime
@@ -217,37 +218,40 @@ class TestProvisionContextFiles(unittest.TestCase):
 
 
 class TestScaffoldVaultProject(unittest.TestCase):
+    """v3: a folder exists when something is in it. connect used to create
+    four to seven folders up front and drop an empty _index.md into each,
+    which produced fifteen index files with a body under 25 bytes."""
 
-    def test_coding_project_creates_default_folders(self):
+    def test_creates_the_project_dir_and_the_brief_and_nothing_else(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = _make_vault(tmp)
-            result = scaffold_vault_project(vault, "my-slug", "coding", "My Slug", "2026-05-27")
-            proj_dir = vault / "projects" / "my-slug"
+            scaffold_vault_project(vault, "my-slug", "coding", "My Slug", "2026-05-27")
+            proj_dir = vault / "projects" / "active" / "my-slug"
             self.assertTrue((proj_dir / "brief.md").is_file())
-            for sub in ["decisions", "notes", "tasks", "references", "sessions", "images"]:
-                self.assertTrue((proj_dir / sub).is_dir(), f"{sub} missing")
-            # Index-required folders have _index.md, exempt ones don't
-            self.assertTrue((proj_dir / "decisions" / "_index.md").is_file())
-            self.assertFalse((proj_dir / "sessions" / "_index.md").is_file())
-            self.assertFalse((proj_dir / "images" / "_index.md").is_file())
+            self.assertEqual([p.name for p in proj_dir.iterdir()], ["brief.md"])
 
-    def test_plugin_project_includes_releases(self):
+    def test_no_index_file_is_written_anywhere(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = _make_vault(tmp)
             scaffold_vault_project(vault, "p", "plugin", "P", "2026-05-27")
-            self.assertTrue((vault / "projects" / "p" / "releases").is_dir())
-            self.assertTrue((vault / "projects" / "p" / "releases" / "_index.md").is_file())
+            self.assertEqual(list(vault.rglob("_index.md")), [])
 
-    def test_brief_has_name_and_date_substituted(self):
+    def test_new_projects_land_in_active(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            scaffold_vault_project(vault, "p", "coding", "P", "2026-05-27")
+            self.assertTrue((vault / "projects" / "active" / "p" / "brief.md").is_file())
+            self.assertFalse((vault / "projects" / "p").exists())
+
+    def test_brief_has_slug_and_date_substituted(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = _make_vault(tmp)
             scaffold_vault_project(vault, "abc", "coding", "Abc Project", "2026-05-27")
-            brief = (vault / "projects" / "abc" / "brief.md").read_text()
+            brief = (vault / "projects" / "active" / "abc" / "brief.md").read_text()
             self.assertIn("2026-05-27", brief)
             self.assertIn("# Abc Project", brief)
             # v3 dropped slug: and aliases: from the brief; the folder is the slug.
             self.assertNotIn("slug:", brief)
-            # No placeholder leftovers
             self.assertNotIn("{kebab-slug}", brief)
             self.assertNotIn("{YYYY-MM-DD}", brief)
 
@@ -258,8 +262,9 @@ class TestScaffoldVaultProject(unittest.TestCase):
             vault = _make_vault(tmp)
             scaffold_vault_project(vault, "code", "coding", "Code", "2026-05-27")
             scaffold_vault_project(vault, "know", "knowledge", "Know", "2026-05-27")
-            coding = (vault / "projects" / "code" / "brief.md").read_text()
-            knowledge = (vault / "projects" / "know" / "brief.md").read_text()
+            active = vault / "projects" / "active"
+            coding = (active / "code" / "brief.md").read_text()
+            knowledge = (active / "know" / "brief.md").read_text()
             self.assertIn("## Stack", coding)
             self.assertIn("## Constraints", coding)
             self.assertNotIn("## Stack", knowledge)
@@ -272,10 +277,28 @@ class TestScaffoldVaultProject(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vault = _make_vault(tmp)
             scaffold_vault_project(vault, "abc", "coding", "Abc", "2026-05-27")
-            brief_path = vault / "projects" / "abc" / "brief.md"
+            brief_path = vault / "projects" / "active" / "abc" / "brief.md"
             brief_path.write_text("USER EDITED")
             scaffold_vault_project(vault, "abc", "coding", "Abc 2", "2026-05-28")
             self.assertEqual(brief_path.read_text(), "USER EDITED")
+
+    def test_an_unknown_project_type_is_refused(self):
+        # The per-type folder table was the only thing that rejected a typo.
+        # Deleting it must not turn a bad type into a brief with every gated
+        # section silently missing.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            with self.assertRaises(RuntimeError):
+                scaffold_vault_project(vault, "p", "codin", "P", "2026-05-27")
+            self.assertFalse((vault / "projects" / "active" / "p").exists())
+
+    def test_reconnect_fills_no_folders_into_a_paused_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            proj_dir = vault / "projects" / "paused" / "p"
+            scaffold_vault_project(vault, "p", "coding", "P", "2026-05-27",
+                                   proj_dir=proj_dir)
+            self.assertEqual([x.name for x in proj_dir.iterdir()], ["brief.md"])
 
 
 # ============================================================
@@ -288,10 +311,11 @@ class TestWriteSessionNote(unittest.TestCase):
     def test_creates(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = _make_vault(tmp)
-            (vault / "projects" / "x").mkdir()
+            (vault / "projects" / "active" / "x").mkdir(parents=True)
             r = write_session_note(vault, "x", "2026-05-27", "09:30")
             self.assertEqual(r, "created")
-            self.assertTrue((vault / "projects" / "x" / "sessions" / "2026-05-27.md").is_file())
+            self.assertTrue((vault / "projects" / "active" / "x" / "sessions"
+                             / "2026-05-27.md").is_file())
 
     def test_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -503,11 +527,16 @@ class TestRunConnectEndToEnd(unittest.TestCase):
             )
             # Breadcrumb
             self.assertTrue((proj / ".claude" / "adjudant").is_file())
-            # Vault scaffold
-            self.assertTrue((vault / "projects" / "my-project" / "brief.md").is_file())
-            self.assertTrue((vault / "projects" / "my-project" / "decisions" / "_index.md").is_file())
+            # Vault scaffold: a real connect lands the project in active/, not
+            # in the un-zoned projects/{slug} it used before v3.
+            pdir = vault / "projects" / "active" / "my-project"
+            self.assertTrue((pdir / "brief.md").is_file())
+            self.assertFalse((vault / "projects" / "my-project").exists())
+            # No folder exists that nothing was written into. decisions/ used
+            # to arrive here holding one empty _index.md.
+            self.assertFalse((pdir / "decisions").exists())
             # Session note
-            self.assertTrue((vault / "projects" / "my-project" / "sessions" / "2026-05-27.md").is_file())
+            self.assertTrue((pdir / "sessions" / "2026-05-27.md").is_file())
             # .gitignore
             self.assertIn(".claude/adjudant", (proj / ".gitignore").read_text())
             # Projects index row
@@ -633,7 +662,7 @@ class TestContract(unittest.TestCase):
             payload = json.loads(buf.getvalue())
             self.assertIn("contract", payload)
             self.assertFalse((code / ".claude" / "adjudant").exists())
-            self.assertFalse((vault / "projects" / "proj").exists())
+            self.assertFalse((vault / "projects" / "active" / "proj").exists())
 
 
 from connect import build_receipt
@@ -689,7 +718,7 @@ class TestApplyContract(unittest.TestCase):
             self.assertIn("> Track the garden irrigation build.", agents)
             self.assertNotIn("{Project Name}", agents)
             self.assertNotIn("{slug}", agents)
-            brief = (vault / "projects" / "proj" / "brief.md").read_text()
+            brief = (vault / "projects" / "active" / "proj" / "brief.md").read_text()
             # v3 dropped status: from the brief; the zone folder is the status.
             self.assertNotIn("status:", brief)
             self.assertIn("Track the garden irrigation build.", brief)
@@ -862,21 +891,31 @@ class TestProvisionDashboards(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); vault = root / "vault"; vault.mkdir()
             self._connect(root, vault)
-            bases = vault / "projects" / "proj" / "bases"
+            pdir = vault / "projects" / "active" / "proj"
+            bases = pdir / "bases"
             names = sorted(p.name for p in bases.glob("dashboard-*.base"))
             self.assertEqual(names, ["dashboard-decisions.base",
                                      "dashboard-freshness.base",
                                      "dashboard-sessions.base",
                                      "dashboard-tasks.base"])
-            text = (bases / "dashboard-sessions.base").read_text()
-            self.assertIn('file.inFolder("projects/proj/sessions")', text)
-            self.assertNotIn("{slug}", text)
+            # The filter must name the folder the project is actually in. A
+            # dashboard scoped to a path the project left returns nothing at
+            # all, with no error to notice.
+            rel = pdir.relative_to(vault).as_posix()
+            for tpl in bases.glob("dashboard-*.base"):
+                text = tpl.read_text()
+                self.assertNotIn("{slug}", text)
+                for folder in re.findall(r'file\.inFolder\("([^"]+)"\)', text):
+                    self.assertTrue(folder.startswith(rel + "/"),
+                                    f"{tpl.name} filters on {folder}, but the "
+                                    f"project lives at {rel}")
 
     def test_edited_dashboard_never_clobbered(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); vault = root / "vault"; vault.mkdir()
             self._connect(root, vault)
-            target = vault / "projects" / "proj" / "bases" / "dashboard-tasks.base"
+            target = (vault / "projects" / "active" / "proj" / "bases"
+                      / "dashboard-tasks.base")
             target.write_text("filters: 'status == \"done\"'\n# my edit\n")
             self._connect(root, vault)   # idempotent re-run
             self.assertIn("# my edit", target.read_text())

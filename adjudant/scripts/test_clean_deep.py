@@ -19,7 +19,6 @@ from clean import (
     cli_main as clean_cli,
     detect_broken_wikilinks,
     detect_doc_decision_flags,
-    detect_folder_drift,
     detect_frontmatter_drift,
     detect_index_gaps,
     detect_artefact_naming,
@@ -83,66 +82,6 @@ def _make_minimal_project(root: Path, slug: str = "test", project_type: str = "c
     _write_file(root / "_handoff.md", "---\ntype: handoff\nupdated: 2026-05-26\n---\n\nbody")
     (root / "sessions").mkdir()
     (root / "images").mkdir()
-
-
-# ============================================================
-# Folder drift
-# ============================================================
-
-
-class TestDetectFolderDrift(unittest.TestCase):
-
-    def test_no_drift_when_only_defaults(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make_minimal_project(root)
-            (root / "decisions").mkdir()
-            (root / "notes").mkdir()
-            drift = detect_folder_drift(root, "coding", [])
-            self.assertEqual(drift, [])
-
-    def test_unexpected_folder_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make_minimal_project(root)
-            (root / "weird-folder").mkdir()
-            drift = detect_folder_drift(root, "coding", [])
-            self.assertEqual(drift, ["weird-folder"])
-
-    def test_extra_folders_allowed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make_minimal_project(root, extra_folders=["memory", "gemini"])
-            (root / "memory").mkdir()
-            (root / "gemini").mkdir()
-            drift = detect_folder_drift(root, "coding", ["memory", "gemini"])
-            self.assertEqual(drift, [])
-
-    def test_auto_created_folders_allowed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make_minimal_project(root)
-            (root / "dreams").mkdir()
-            (root / "canvases").mkdir()
-            drift = detect_folder_drift(root, "coding", [])
-            self.assertEqual(drift, [])
-
-    def test_board_folder_not_drift(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make_minimal_project(root)
-            (root / "board").mkdir()
-            drift = detect_folder_drift(root, "coding", [])
-            self.assertEqual(drift, [])
-
-    def test_dotted_folders_skipped(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make_minimal_project(root)
-            (root / ".obsidian").mkdir()
-            (root / ".trash").mkdir()
-            drift = detect_folder_drift(root, "coding", [])
-            self.assertEqual(drift, [])
 
 
 # ============================================================
@@ -541,18 +480,6 @@ class TestFolderScope(unittest.TestCase):
             names = json.dumps(report["structural_findings"]["naming_violations"])
             self.assertIn("bad-doc.md", names)
             self.assertNotIn("also-bad.md", names)
-
-    def test_scoped_run_skips_root_shape_drift(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._project(root)
-            (root / "unexpected-folder").mkdir()
-            _, full = self._run(root)
-            _, scoped = self._run(root, "--folder", "notes")
-            self.assertTrue(full["structural_findings"]["folder_drift"],
-                            "root question, a full run answers it")
-            self.assertEqual(scoped["structural_findings"]["folder_drift"], [],
-                             "a scoped run declines it")
 
     def test_cost_estimate_is_the_subtrees(self):
         with tempfile.TemporaryDirectory() as tmp:

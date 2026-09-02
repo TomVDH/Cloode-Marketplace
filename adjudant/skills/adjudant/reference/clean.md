@@ -58,7 +58,6 @@ Read-only. It proposes nothing and applies nothing: every finding needs a human 
 
 | Detector | Finds |
 |---|---|
-| folder drift | folders at project root outside the type's defaults, `extra_folders`, and the auto-created set |
 | frontmatter drift | missing block, parse error, `: null`/`~` values (§1 says omit the key) |
 | type drift | a `type:` no template declares, with counts and examples |
 | naming violations | doc filename not UPPERCASE, decision without a date prefix, session not `YYYY-MM-DD.md` (§4) |
