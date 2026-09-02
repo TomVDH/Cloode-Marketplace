@@ -14,7 +14,7 @@ Public API:
     extract_inline_tags(body) -> list[str]
     extract_markdown_md_links(body) -> list[(text, path, line)]
     walk_project(root) -> Iterator[VaultFile]
-    build_vault_index(vault_root) -> set[str]
+    build_vault_index(vault_root) -> set[str]   # path forms only, no bare stems
     resolve_wikilink(target, index) -> bool
     parse_breadcrumb(project_root) -> Optional[dict]
     resolve_vault(project_root, env_vault=None) -> Optional[Path]
@@ -418,50 +418,56 @@ def walk_project(
 
 
 def build_vault_index(vault_root: Path) -> set[str]:
-    """All resolvable wikilink target forms across the vault.
+    """Every resolvable wikilink target form across the vault.
 
-    Includes:
-      - relative path with extension
-      - relative path without extension
-      - bare basename (Obsidian default match if unique)
+    Per file, exactly two or four forms:
+      - the vault-relative path, with and without its extension
+      - for a file under `projects/{zone}/{slug}/`, the same two with the
+        `projects/{zone}/` prefix stripped, which is the form adjudant writes
+
+    The bare basename is NOT indexed. Obsidian's default resolution matches
+    `[[brief]]` against any `brief.md` in the vault; with 27 projects that is
+    27 files answering to one name, and adjudant reported every one of those
+    links as healthy while a reader following it landed somewhere arbitrary.
+    A link that does not say which project it means is a broken link with a
+    good disguise.
+
     Spans .md, .canvas, .base.
     """
     index: set[str] = set()
+    zones = set(PROJECT_ZONES) | (set(LEGACY_ZONES) - {""})
     for ext in ("md", "canvas", "base"):
         for f in vault_root.rglob(f"*.{ext}"):
             try:
                 rel = f.relative_to(vault_root)
             except ValueError:
                 continue
-            s = str(rel)
-            index.add(s)
-            index.add(s[: -(len(ext) + 1)])  # strip `.ext`
-            index.add(f.stem)
-            index.add(f.name)
+            forms = [rel.as_posix()]
+            parts = rel.parts
+            # projects/{zone}/{slug}/... -> {slug}/...
+            if len(parts) > 3 and parts[0] == "projects" and parts[1] in zones:
+                forms.append("/".join(parts[2:]))
+            # projects/{slug}/... (pre-v3, no lifecycle folder) -> {slug}/...
+            elif len(parts) > 2 and parts[0] == "projects":
+                forms.append("/".join(parts[1:]))
+            for s in forms:
+                index.add(s)
+                index.add(s[: -(len(ext) + 1)])  # strip `.ext`
     return index
 
 
 def resolve_wikilink(target: str, index: set[str]) -> bool:
     """True if target resolves in the vault index.
 
-    Tries (in order): exact path, path+.md, basename, basename+.md.
-    The basename fallback matches Obsidian's default resolution: `[[foo]]`
-    resolves to any `foo.md` anywhere in the vault.
+    Tries the target as written, then with `.md` appended. There is no
+    basename fallback: see build_vault_index.
     """
     if not target:
         return False
-    if target in index:
-        return True
-    if (target + ".md") in index:
-        return True
-    # Basename fallback (Obsidian default resolution)
-    base = target.replace("\\", "/").rstrip("/").split("/")[-1]
-    if base != target:
-        if base in index:
-            return True
-        if (base + ".md") in index:
-            return True
-    return False
+    cleaned = target.replace("\\", "/").strip().strip("/")
+    if not cleaned:
+        return False
+    return cleaned in index or (cleaned + ".md") in index
 
 
 def is_checkable_wikilink(wl: Wikilink) -> bool:

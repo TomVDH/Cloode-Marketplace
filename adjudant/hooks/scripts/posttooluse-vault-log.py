@@ -289,14 +289,21 @@ def main() -> int:
     # first real write of the day ---
     is_decision = parts[0] == "decisions"
     label = "Decision" if is_decision else "Added"
-    link = f"[[{slug}/{'/'.join(parts)}]]"
+    try:
+        from _place import link as _link
+        entry = _link(f"{slug}/{'/'.join(parts)}")
+    except Exception:
+        # Degraded mode: _place is unimportable, or the path shape is one it
+        # refuses. Write the bare target rather than nothing — the hook must
+        # not fail, and a target with no brackets is visibly not a link.
+        entry = f"{slug}/{'/'.join(parts)}"
     if not session_file.exists():
         # No note for today and none to straddle into: this write is the first
         # real work of the day, so the note is born here.
         session_file = ensure_session_note(project_root / "sessions", today)
     try:
         with session_file.open("a") as f:
-            f.write(f"- {ts} · {label}: {link}\n")
+            f.write(f"- {ts} · {label}: {entry}\n")
     except OSError:
         pass  # log-write failure must not block job 2
 

@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,7 +24,7 @@ from clean import (
     write_preview_to_disk,
     _bump_updated_field,
 )
-from _vault_walk import build_vault_index
+from _vault_walk import build_vault_index, resolve_wikilink
 
 _MODULE_TMP = None
 _OLD_TMPDIR = None
@@ -160,6 +161,52 @@ class TestFixWikilinkForm(unittest.TestCase):
             self.assertEqual(count, 1)
             # fenced block content unchanged
             self.assertIn("[fake](target.md)", new)
+
+
+class TestRewrittenLinksAlwaysResolve(unittest.TestCase):
+    """The invariant that makes the rewrite safe to run unattended.
+
+    Every wikilink `fix_wikilink_form` produces must resolve in the index it
+    was handed. Before v3 it did not: a href naming a sibling by filename
+    became `[[sibling]]`, a bare stem the index matched against any file of
+    that name anywhere in the vault. The old tests all passed, because every
+    fixture put its files at the index root, where a filename IS the path.
+    """
+
+    def _vault(self, tmp: Path) -> Path:
+        vault = tmp / "v"
+        notes = vault / "projects" / "active" / "demo" / "notes"
+        notes.mkdir(parents=True)
+        (notes / "cold-cache.md").write_text("---\ntype: note\n---\n# c")
+        return vault
+
+    def test_every_link_it_writes_resolves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            idx = build_vault_index(vault)
+            body = (
+                "sibling: [t](cold-cache.md)\n"
+                "zone-less: [t](demo/notes/cold-cache.md)\n"
+                "vault path: [t](projects/active/demo/notes/cold-cache.md)\n"
+                "absent: [t](no-such-note.md)\n"
+            )
+            new, _ = fix_wikilink_form(body, idx)
+            written = re.findall(r"\[\[([^\]|#]+)", new)
+            self.assertTrue(written, "the rewriter produced no links at all")
+            for target in written:
+                self.assertTrue(resolve_wikilink(target, idx),
+                                f"rewrote a link to [[{target}]], which "
+                                "resolves to nothing")
+
+    def test_a_sibling_filename_is_left_as_a_markdown_link(self):
+        # It still works in Obsidian. Turning it into [[cold-cache]] would
+        # have pointed at whichever project's cold-cache.md sorted first.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            idx = build_vault_index(vault)
+            new, count = fix_wikilink_form("see [t](cold-cache.md)", idx)
+            self.assertEqual(count, 0)
+            self.assertEqual(new, "see [t](cold-cache.md)")
 
 
 class TestBumpUpdatedField(unittest.TestCase):

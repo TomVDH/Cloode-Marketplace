@@ -14,7 +14,6 @@ from dream import (
     detect_dangling_scopes,
     detect_documentation_gaps,
     detect_orphan_questions,
-    detect_orphan_threads,
     detect_redundancy_clusters,
     detect_stale_refs,
     detect_staleness,
@@ -258,38 +257,6 @@ class TestDetectOrphanQuestions(unittest.TestCase):
                         "---\ntype: note\nupdated: 2024-01-01\n---\n\n```\n# TODO: in code\n```\nclean prose")
             files = list(walk_project(root))
             self.assertEqual(detect_orphan_questions(files, TODAY), [])
-
-
-# ============================================================
-# Orphan threads
-# ============================================================
-
-
-class TestDetectOrphanThreads(unittest.TestCase):
-
-    def test_unlinked_old_note_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "notes" / "lonely.md", "---\ntype: note\nupdated: 2024-01-01\n---\n\nnobody links here")
-            files = list(walk_project(root))
-            out = detect_orphan_threads(files, TODAY)
-            self.assertEqual(len(out), 1)
-            self.assertEqual(out[0]["file"], "notes/lonely.md")
-
-    def test_linked_note_not_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "notes" / "popular.md", "---\ntype: note\nupdated: 2024-01-01\n---\n\nlinked")
-            _write_file(root / "hub.md", "---\ntype: doc\n---\n\nSee [[popular]].")
-            files = list(walk_project(root))
-            self.assertEqual(detect_orphan_threads(files, TODAY), [])
-
-    def test_recent_unlinked_note_not_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "notes" / "newish.md", "---\ntype: note\nupdated: 2026-05-20\n---\n\nfresh orphan")
-            files = list(walk_project(root))
-            self.assertEqual(detect_orphan_threads(files, TODAY), [])
 
 
 # ============================================================

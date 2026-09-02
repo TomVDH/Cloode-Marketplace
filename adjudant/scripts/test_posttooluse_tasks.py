@@ -153,7 +153,7 @@ class TestTasksStillLogged(_TasksHookCase):
         rc, _ = self._run_mocked(self._payload(task_note, tool_name="Write"))
         self.assertEqual(rc, 0)
         self.assertRegex(self.session_note.read_text(),
-                         r"- \d{2}:\d{2} · Added: \[\[demo/tasks/refactor-auth\.md\]\]")
+                         r"- \d{2}:\d{2} · Added: \[\[demo/tasks/refactor-auth\]\]")
 
     def test_session_log_ignores_edit(self):
         # The session-log job stays Write-only.

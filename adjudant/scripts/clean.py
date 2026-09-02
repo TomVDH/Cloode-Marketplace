@@ -139,12 +139,19 @@ _INLINE_CODE_SPLIT_RE = re.compile(r"(`[^`\n]+`)")
 
 
 def fix_wikilink_form(body: str, vault_index: set[str]) -> tuple[str, int]:
-    """Rewrite `[text](path.md)` → `[[stem|text]]` IFF path resolves in vault.
+    """Rewrite `[text](path.md)` → `[[path|text]]` IFF the path resolves.
+
+    Resolution is BY PATH: the href has to name the file from the vault root,
+    or from the project slug down. A href that names only a sibling filename
+    is left as a markdown link, because the wikilink it used to become was a
+    bare stem — one that matched any file of that name anywhere in the vault,
+    and pointed a reader at an arbitrary one. Obsidian resolves the markdown
+    form natively, so leaving it alone loses nothing and invents nothing.
 
     Returns (new_body, fix_count). Skips fenced + 4-space-indented code blocks
     and inline-code spans (mirrors what the detectors count). Preserves heading
     anchors (`[t](n.md#Sec)` → `[[n#Sec|t]]`). Leaves `./`/`../` relative links
-    untouched — Obsidian resolves the markdown form, not a `[[../…]]` wikilink.
+    untouched.
     """
     if not vault_index:
         return body, 0
@@ -636,7 +643,9 @@ def detect_wikilink_form_violations(files: list[VaultFile], vault_index: set[str
     """`[text](*.md)` markdown-style links pointing at vault .md files.
 
     Per §6, only count those whose path RESOLVES — external markdown links to
-    non-vault paths are valid.
+    non-vault paths are valid, and so is a href naming a sibling by filename
+    alone, which resolves by path nowhere and would only ever have become a
+    bare-stem wikilink.
     """
     out = []
     for f in files:

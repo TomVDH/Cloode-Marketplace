@@ -13,7 +13,6 @@ Catalog (the comparator catalog):
   - redundancy_clusters    near-duplicate notes/docs (token-set similarity)
   - stale_refs             refs that resolve but point to archived/old targets
   - orphan_questions       aged open-loop markers (TODO/OPEN/TBD/…) never closed
-  - orphan_threads         aged notes/docs with no inbound wikilinks
   - unacted_decisions      active decisions whose stated consequence shows no action
   - documentation_gaps     under-documentation (session w/o decision, stubs, brief gaps)
   - dangling_scopes        brief milestones/questions never touched in any session
@@ -468,43 +467,12 @@ def detect_orphan_questions(
     return out
 
 
-def detect_orphan_threads(
-    files: list[VaultFile], today: _dt.date, *, stale_days: int = DEFAULT_STALE_DAYS
-) -> list[dict]:
-    """Aged notes/docs with zero inbound wikilinks (no file points to them)."""
-    # Inbound index: every wikilink target's basename + path forms
-    linked: set[str] = set()
-    file_by_id = {id(f): f for f in files}
-    for f in files:
-        for wl in f.wikilinks:
-            t = wl.target
-            if not t:
-                continue
-            base = t.replace("\\", "/").rstrip("/").split("/")[-1]
-            linked.add(t)
-            linked.add(base)
-
-    out: list[dict] = []
-    for f in files:
-        if f.file_type not in ("note", "doc"):
-            continue
-        if f.rel_path.name == "_index.md":
-            continue
-        stem = f.rel_path.name[:-3] if f.rel_path.name.endswith(".md") else f.rel_path.name
-        rel_no_ext = str(f.rel_path)[:-3] if str(f.rel_path).endswith(".md") else str(f.rel_path)
-        if stem in linked or rel_no_ext in linked or str(f.rel_path) in linked:
-            continue
-        age = _age_days(f, today)
-        if age is None or age <= stale_days:
-            continue
-        out.append({
-            "file": str(f.rel_path),
-            "type": f.file_type,
-            "age_days": age,
-            "inbound_links": 0,
-        })
-    out.sort(key=lambda x: x["age_days"], reverse=True)
-    return out
+# detect_orphan_threads was deleted in v3. It flagged an aged note that no
+# wikilink pointed at, and it decided "pointed at" by bare stem: `[[popular]]`
+# counted as an inbound link to notes/popular.md, and to every other
+# popular.md in the vault. Once links resolve by path that heuristic has no
+# honest form, and the question it answered is not one a note has. An orphan
+# is an Obsidian graph concept; an agent finds a note by its folder path.
 
 
 def detect_unacted_decisions(
@@ -666,7 +634,6 @@ _BASE_CONFIDENCE: dict[str, float] = {
     "unacted_decisions": 0.5,      # judgement, but a real question
     "staleness_candidates": 0.4,   # old is not the same as wrong
     "redundancy_clusters": 0.3,    # a documentation convention reads as this
-    "orphan_threads": 0.3,
     "documentation_gaps": 0.3,
     "dangling_scopes": 0.3,
 }
@@ -856,7 +823,6 @@ def run_dream(
     redundancy = detect_redundancy_clusters(files, today)
     stale_refs = detect_stale_refs(files, today, vault_index, stale_days=stale_days)
     orphan_questions = detect_orphan_questions(files, today, orphan_days=orphan_question_days)
-    orphan_threads = detect_orphan_threads(files, today, stale_days=stale_days)
     unacted = detect_unacted_decisions(files, today, min_age_days=unacted_min_age_days)
     doc_gaps = detect_documentation_gaps(files, today)
     dangling = detect_dangling_scopes(files, today)
@@ -867,7 +833,6 @@ def run_dream(
         "redundancy_clusters": redundancy,
         "stale_refs": stale_refs,
         "orphan_questions": orphan_questions,
-        "orphan_threads": orphan_threads,
         "unacted_decisions": unacted,
         "documentation_gaps": doc_gaps,
         "dangling_scopes": dangling,
@@ -913,7 +878,6 @@ def run_dream(
         "redundancy_clusters": len(report["redundancy_clusters"]),
         "stale_refs": len(report["stale_refs"]),
         "orphan_questions": len(report["orphan_questions"]),
-        "orphan_threads": len(report["orphan_threads"]),
         "unacted_decisions": len(report["unacted_decisions"]),
         "documentation_gaps": len(report["documentation_gaps"]),
         "dangling_scopes": len(report["dangling_scopes"]),
@@ -1043,7 +1007,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         f"({s['staleness']} stale, {s['supersession']} supersede, "
         f"{s['redundancy_clusters']} dup-clusters, "
         f"{s['stale_refs']} stale-refs, {s['orphan_questions']} open-loops, "
-        f"{s['orphan_threads']} orphans, {s['unacted_decisions']} unacted, "
+        f"{s['unacted_decisions']} unacted, "
         f"{s['documentation_gaps']} doc-gaps, {s['dangling_scopes']} dangling)",
         file=sys.stderr,
     )

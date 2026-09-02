@@ -296,29 +296,69 @@ class TestWalkProject(unittest.TestCase):
 
 class TestVaultIndex(unittest.TestCase):
 
-    def test_resolves_relative_and_bare(self):
+    def _vault(self, tmp: Path) -> Path:
+        vault = tmp / "v"
+        p = vault / "projects" / "active" / "demo" / "decisions"
+        p.mkdir(parents=True)
+        (p / "2026-08-12-branch-track.md").write_text("# d")
+        (vault / "projects" / "active" / "demo" / "brief.md").write_text("# b")
+        return vault
+
+    def test_the_zone_less_form_resolves(self):
         with tempfile.TemporaryDirectory() as tmp:
-            vault = Path(tmp)
-            (vault / "projects").mkdir()
-            (vault / "projects" / "x").mkdir()
-            (vault / "projects" / "x" / "brief.md").write_text("# brief")
-            idx = build_vault_index(vault)
-            # Relative path with extension
-            self.assertTrue(resolve_wikilink("projects/x/brief.md", idx))
-            # Without extension
-            self.assertTrue(resolve_wikilink("projects/x/brief", idx))
-            # Bare basename
-            self.assertTrue(resolve_wikilink("brief", idx))
-            # Non-existent
+            idx = build_vault_index(self._vault(Path(tmp)))
+            self.assertTrue(resolve_wikilink(
+                "demo/decisions/2026-08-12-branch-track", idx))
+            self.assertTrue(resolve_wikilink(
+                "demo/decisions/2026-08-12-branch-track.md", idx))
+            self.assertTrue(resolve_wikilink("demo/brief", idx))
+
+    def test_the_full_vault_path_still_resolves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = build_vault_index(self._vault(Path(tmp)))
+            self.assertTrue(resolve_wikilink(
+                "projects/active/demo/brief", idx))
+            self.assertTrue(resolve_wikilink(
+                "projects/active/demo/brief.md", idx))
+
+    def test_a_bare_stem_no_longer_resolves(self):
+        # Obsidian's default resolution matches any `brief.md` anywhere. In a
+        # vault with 27 projects that is 27 files answering to one name, and
+        # adjudant reported such a link as healthy.
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = build_vault_index(self._vault(Path(tmp)))
+            self.assertFalse(resolve_wikilink("brief", idx))
+            self.assertFalse(resolve_wikilink("brief.md", idx))
+            self.assertFalse(resolve_wikilink("2026-08-12-branch-track", idx))
+
+    def test_a_wrong_project_does_not_resolve(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = build_vault_index(self._vault(Path(tmp)))
+            self.assertFalse(resolve_wikilink("other/brief", idx))
+
+    def test_non_existent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = build_vault_index(self._vault(Path(tmp)))
             self.assertFalse(resolve_wikilink("does/not/exist", idx))
 
-    def test_canvas_indexed(self):
+    def test_canvas_and_base_indexed_by_path(self):
         with tempfile.TemporaryDirectory() as tmp:
-            vault = Path(tmp)
-            (vault / "art.canvas").write_text("{}")
+            vault = Path(tmp) / "v"
+            (vault / "projects" / "active" / "demo" / "canvases").mkdir(parents=True)
+            (vault / "projects" / "active" / "demo" / "canvases" / "art.canvas").write_text("{}")
             idx = build_vault_index(vault)
-            self.assertTrue(resolve_wikilink("art.canvas", idx))
-            self.assertTrue(resolve_wikilink("art", idx))
+            self.assertTrue(resolve_wikilink("demo/canvases/art.canvas", idx))
+            self.assertTrue(resolve_wikilink("demo/canvases/art", idx))
+            self.assertFalse(resolve_wikilink("art", idx))
+
+    def test_a_vault_root_file_resolves_by_its_own_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp) / "v"
+            vault.mkdir()
+            (vault / "Home.md").write_text("# h")
+            idx = build_vault_index(vault)
+            self.assertTrue(resolve_wikilink("Home", idx))
+            self.assertTrue(resolve_wikilink("Home.md", idx))
 
 
 # ============================================================

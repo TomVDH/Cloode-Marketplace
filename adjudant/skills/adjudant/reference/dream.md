@@ -61,7 +61,6 @@ The JSON catalog (the **comparator catalog**) carries nine categories:
 | `redundancy_clusters` | Near-duplicate notes/docs by token-set (Jaccard) similarity |
 | `stale_refs` | Refs that *resolve* but point to `_archive`/`_legacy` or old dated targets (broken links stay `clean --deep`'s job) |
 | `orphan_questions` | Aged open-loop markers (`TODO`/`OPEN:`/`TBD`/`follow-up`) never closed |
-| `orphan_threads` | Aged notes/docs with zero inbound wikilinks |
 | `unacted_decisions` | `status: active` decisions whose stated `## Consequence` shows no action (unreferenced by any session, aged) |
 | `documentation_gaps` | Under-documentation — sessions with real work but no decision, stub files, briefs missing required sections |
 | `dangling_scopes` | Brief `MILESTONES`/`OPEN QUESTIONS` items whose terms never appear in any session |
@@ -83,7 +82,7 @@ For each candidate, Claude reads the cited prose and decides:
 - **supersession** → does the newer decision truly overrule the older? If so, the older needs a `superseded_by` marker.
 - **redundancy** → consolidate into one note, or are the duplicates intentionally distinct?
 - **stale_refs** → repoint, archive, or leave?
-- **orphan_questions / orphan_threads** → still open (re-surface), resolved-elsewhere (close), or archive?
+- **orphan_questions** → still open (re-surface), resolved-elsewhere (close), or archive?
 - **unacted_decisions** → was the consequence actually implemented (mark `status: implemented`), still pending (leave / re-surface), or abandoned (mark `reversed`)?
 - **documentation_gaps** → real gap worth backfilling, or intentionally terse?
 - **dangling_scopes** → still planned (keep), silently done (record it), or dropped (strike from brief)?
