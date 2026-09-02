@@ -87,7 +87,7 @@ Discard false positives here. The catalog is deliberately generous — Phase 2 i
 
 ## Phase 3 — Write the refresh plan
 
-Invoke `superpowers:writing-plans` to produce a concrete content-refresh plan, and mirror it into a `dream-report` (see `templates/dream-report.md`) written to the project's `dreams/` folder as `{YYYY-MM-DD}-dream.md`:
+Invoke `superpowers:writing-plans` to produce a concrete content-refresh plan, and mirror it into a `dream` note (see `templates/dream.md`) written to the project's `dreams/` folder as `{YYYY-MM-DD}-dream.md`:
 - Decisions to mark `superseded` (with the superseding file)
 - Note/doc consolidations (which files merge into which canonical target; which get archived)
 - Sessions to archive (move to `_archive/`)
@@ -132,5 +132,5 @@ This verb's content checks descend from an earlier `/dream` (its historical two-
 - `reference/ramasse.md` — deep structural clean
 - `scripts/dream.py` — phase 1 analyser (this tier's scanner)
 - `scripts/ramasse_scan.py` — ramasse's structural analyser (formerly `dream.py` in v0.3.0)
-- `templates/dream-report.md` — phase 3 output scaffold
+- `templates/dream.md` — phase 3 output scaffold
 - `docs/superpowers/2026-05-26-adjudant-tidy-ramasse-log.design.md` — design lock

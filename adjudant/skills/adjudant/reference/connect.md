@@ -45,7 +45,7 @@ Also: append project row to `{vault}/projects/_index.md`.
 
 | Need | Resolution order |
 |---|---|
-| Vault path | `--vault-path` arg → `OB_VAULT` env var → `--vault-name` arg → existing breadcrumb → walk parent dirs for `Home.md` with `type: vault-home` → guided location setup (see below) |
+| Vault path | `--vault-path` arg → `OB_VAULT` env var → `--vault-name` arg → existing breadcrumb → walk parent dirs for `Home.md` with `type: vault-home` or `type: index` → guided location setup (see below) |
 | Project slug | existing breadcrumb → cwd basename (enforce kebab-case) |
 | `project_type` | existing brief → prompt once (`coding | knowledge | plugin | tinkerage`) |
 | Project display name | prompt once if creating new |

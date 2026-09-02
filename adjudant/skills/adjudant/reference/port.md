@@ -28,7 +28,7 @@ Output is one of: `X`, `Y`, `Z`, `preview`, `applied`.
   1. `OB_VAULT` env var
   2. `.claude/adjudant` breadcrumb (`vault_path:` field)
   3. `.claude/obsidian-bridge` breadcrumb (`vault:` field)
-  4. Walk parent dirs for `Home.md` with `type: vault-home`
+  4. Walk parent dirs for `Home.md` with `type: vault-home` or `type: index`
   5. Prompt the user once
 
 - **slug:** Project root directory basename, kebab-case-enforced. If basename has spaces/dots/uppercase, prompt user for a clean slug.

@@ -503,18 +503,34 @@ def parse_breadcrumb(project_root: Path) -> Optional[dict]:
     return out
 
 
+# The `type:` values a root `Home.md` may carry to mark a vault. `vault-home`
+# is what every vault built before v3 declares; `index` is what templates/home.md
+# declares now that the fifteen kinds have no `vault-home` among them. Both are
+# accepted, and the marker is only ever read from parsed frontmatter on a file
+# literally named Home.md.
+VAULT_HOME_TYPES: frozenset[str] = frozenset({"vault-home", "index"})
+
+
+def _is_vault_home(path: Path) -> bool:
+    """True when `path` is a Home.md whose frontmatter marks a vault root."""
+    try:
+        fm, _body = parse_frontmatter(path.read_text(errors="replace"))
+    except OSError:
+        return False
+    return str(fm.fields.get("type", "")).strip() in VAULT_HOME_TYPES
+
+
 def _looks_like_vault(path: Path) -> bool:
     """A directory qualifies as a vault only with a vault marker: Obsidian's
     `.obsidian/` config dir, adjudant's `projects/` shape, or a frontmatter
-    `Home.md` of type vault-home. `is_dir()` alone let any stale same-named
-    directory capture every write on the fallback machine."""
+    `Home.md` carrying one of VAULT_HOME_TYPES. `is_dir()` alone let any stale
+    same-named directory capture every write on the fallback machine."""
     try:
         if (path / ".obsidian").is_dir() or (path / "projects").is_dir():
             return True
         home = path / "Home.md"
         if home.is_file():
-            fm, _body = parse_frontmatter(home.read_text(errors="replace"))
-            return str(fm.fields.get("type", "")).strip() == "vault-home"
+            return _is_vault_home(home)
     except OSError:
         return False
     return False
@@ -696,13 +712,8 @@ def resolve_vault(
     cur = project_root.resolve()
     while cur != cur.parent:
         home = cur / "Home.md"
-        if home.is_file():
-            try:
-                fm, _body = parse_frontmatter(home.read_text(errors="replace"))
-                if str(fm.fields.get("type", "")).strip() == "vault-home":
-                    return cur
-            except OSError:
-                pass
+        if home.is_file() and _is_vault_home(home):
+            return cur
         cur = cur.parent
     return None
 

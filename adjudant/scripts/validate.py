@@ -75,11 +75,9 @@ FILE_TYPES_REQUIRING_TEMPLATE = {
     "doc": "doc.md",
     "handoff": "handoff.md",
     "source": "source.md",
-    "iteration": "iteration.md",
     "release": "release.md",
-    "dream-report": "dream-report.md",
+    "dream": "dream.md",
     "task": "task.md",
-    "memory": "memory.md",
     # brief.md is the template for kind `project`: the filename is not the
     # kind, and one brief replaced four project-type variants.
     "project": "brief.md",
@@ -87,10 +85,8 @@ FILE_TYPES_REQUIRING_TEMPLATE = {
     "component": "component.md",
     "api": "api.md",
     "schema": "schema.md",
-    # index has 2 variants
-    "index": ["_index-projects.md", "_index-collection.md"],
-    # vault-home is special
-    "vault-home": "home.md",
+    # index has two legal shapes: the vault root and a project root.
+    "index": ["home.md", "index-project.md"],
 }
 
 DEPRECATED_TAG_PATTERNS = [

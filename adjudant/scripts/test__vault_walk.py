@@ -1903,6 +1903,27 @@ class TestResolverHardening(unittest.TestCase):
                 "A vault home is marked with\ntype: vault-home\nin frontmatter.\n")
             self.assertIsNone(resolve_vault(proj))
 
+    def test_home_md_of_type_index_is_a_vault_marker(self):
+        # v3 retired the `vault-home` kind, so templates/home.md declares
+        # `type: index`. A vault built from the shipped template has to stay
+        # findable, and every pre-v3 vault keeps working.
+        for marker in ("vault-home", "index"):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "vault"
+                proj = root / "nested" / "proj"
+                proj.mkdir(parents=True)
+                (root / "Home.md").write_text(f"---\ntype: {marker}\n---\n\n# Vault\n")
+                self.assertEqual(resolve_vault(proj).resolve(), root.resolve(),
+                                 f"type: {marker} did not mark the vault")
+
+    def test_home_md_of_an_unrelated_type_is_not_a_vault_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "notes"
+            proj = root / "nested" / "proj"
+            proj.mkdir(parents=True)
+            (root / "Home.md").write_text("---\ntype: note\n---\n\n# Home\n")
+            self.assertIsNone(resolve_vault(proj))
+
     def test_bom_prefixed_frontmatter_parses(self):
         # F30: a BOM silently dropped the note out of every schema check
         # while Obsidian rendered it fine.

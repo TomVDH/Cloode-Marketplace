@@ -634,7 +634,8 @@ def newest_session_date(sessions_dir: Path) -> str:
     return max(dates) if dates else "—"
 
 
-# The canonical 6-column projects-index header (templates/_index-projects.md).
+# The canonical 6-column projects-index header. v3 retired the two
+# _index-*.md templates; this regex is the shape's only declaration now.
 # A row is only ever inserted under THIS header — anything else is a
 # hand-maintained or custom index and is left alone.
 _CANONICAL_INDEX_HEADER_RE = re.compile(

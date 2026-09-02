@@ -244,5 +244,65 @@ class TestDocFamily(unittest.TestCase):
             self.assertIn(heading, text)
 
 
+class TestGeneratedTemplates(unittest.TestCase):
+
+    def test_handoff_keeps_the_statusline_banner_shape(self):
+        # The statusline greps this line. It is the one place emoji are
+        # meaning rather than decoration, and reference/state-contract.md
+        # rule 1 holds the whole line, `· NEXT:` included, to its exact form.
+        text = (TEMPLATES / "handoff.md").read_text()
+        self.assertIn("handoff age:", text)
+        self.assertIn("· NEXT:", text)
+        for section in ("## Where I left off", "## Next", "## Context"):
+            self.assertIn(section, text)
+
+    def test_handoff_is_not_a_mirror(self):
+        # 7 of 12 real handoffs were a banner and an empty body, because the
+        # remember file they mirrored was empty.
+        text = (TEMPLATES / "handoff.md").read_text()
+        self.assertNotIn("Mirrored from", text)
+        names = {_field_name(ln) for ln in _frontmatter(TEMPLATES / "handoff.md")}
+        self.assertNotIn("source", names)
+
+    def test_dream_leads_with_a_machine_readable_count(self):
+        # `N drift items` is the phrase check._DRIFT_HEADER_RE parses and the
+        # statusline greps (state-contract rule 2). Any other wording leaves
+        # both consumers with no count.
+        text = (TEMPLATES / "dream.md").read_text()
+        self.assertIn("drift items", text)
+        self.assertIn("## Dismissed", text,
+                      "dismissals must persist or the same finding returns")
+        self.assertIn("Suppress until", text)
+
+    def test_release_has_context_and_pointers(self):
+        text = (TEMPLATES / "release.md").read_text()
+        for section in ("## Changes", "## Pointers"):
+            self.assertIn(section, text)
+        names = {_field_name(ln) for ln in _frontmatter(TEMPLATES / "release.md")}
+        self.assertIn("version", names)
+
+    def test_retired_templates_are_gone(self):
+        for name in ("dream-report", "memory", "iteration",
+                     "_index-collection", "_index-projects"):
+            self.assertFalse((TEMPLATES / f"{name}.md").exists(),
+                             f"{name}.md survived")
+
+    def test_index_templates_agree_on_their_kind(self):
+        for name in ("home", "index-project"):
+            fm = _frontmatter(TEMPLATES / f"{name}.md")
+            value = [ln for ln in fm if _field_name(ln) == "type"][0]
+            self.assertIn("index", value)
+
+    def test_two_templates_of_one_kind_declare_the_same_fields(self):
+        # README: "When two files declare the same kind they must declare the
+        # same fields." The parser raises otherwise, so this is where it shows.
+        shapes = []
+        for name in ("home", "index-project"):
+            fm = _frontmatter(TEMPLATES / f"{name}.md")
+            shapes.append((frozenset(_field_name(ln) for ln in fm if not _is_optional(ln)),
+                           frozenset(_field_name(ln) for ln in fm if _is_optional(ln))))
+        self.assertEqual(shapes[0], shapes[1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -85,7 +85,7 @@ def resolve_vault_path(project_root: Path) -> Optional[Path]:
     1. OB_VAULT env var
     2. .claude/adjudant breadcrumb (vault_path: field)
     3. .claude/obsidian-bridge breadcrumb (vault: field)
-    4. Walk parent dirs for Home.md with `type: vault-home` frontmatter
+    4. Walk parent dirs for Home.md with `type: vault-home` or `type: index`
     5. Return None (caller must prompt)
     """
     env = os.environ.get("OB_VAULT")
@@ -117,7 +117,10 @@ def _parse_breadcrumb_field(path: Path, field: str) -> Optional[str]:
 
 
 def _walk_up_for_vault_home(start: Path) -> Optional[Path]:
-    """Walk parent dirs looking for Home.md with `type: vault-home` in frontmatter."""
+    """Walk parent dirs looking for Home.md with a vault marker in frontmatter.
+
+    `vault-home` is what every pre-v3 vault declares; `index` is what
+    templates/home.md declares now (_vault_walk.VAULT_HOME_TYPES)."""
     current = start
     seen = set()
     while True:
@@ -129,7 +132,8 @@ def _walk_up_for_vault_home(start: Path) -> Optional[Path]:
         if home.is_file():
             text = home.read_text()
             fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.DOTALL)
-            if fm_match and re.search(r"^\s*type\s*:\s*vault-home\s*$", fm_match.group(1), re.MULTILINE):
+            if fm_match and re.search(r"^\s*type\s*:\s*(?:vault-home|index)\s*$",
+                                       fm_match.group(1), re.MULTILINE):
                 return current
         current = current.parent
     return None
@@ -338,8 +342,9 @@ def render_brief_md_y(legacy_brief_text: str, slug: str, project_type: str) -> s
     body = body.lstrip()
 
     today = datetime.now().strftime("%Y-%m-%d")
-    # Canonical brief frontmatter shape (templates/project-brief-*.md):
-    # type is `project` with project_type alongside — NOT type: project-brief-*.
+    # Pre-v3 brief frontmatter shape: type is `project` with project_type
+    # alongside, NOT type: project-brief-*. port still writes this shape;
+    # templates/brief.md is the v3 one and they have not been reconciled.
     return (
         f"---\n"
         f"type: project\n"
@@ -813,7 +818,7 @@ def _project_type_from_brief(proj_dir: Path) -> str:
 
 def _upsert_project_index_row(idx_path: Path, slug: str) -> None:
     """Add a row for `slug` in the vault's projects/_index.md using adjudant's
-    canonical 6-column format (matches templates/_index-projects.md):
+    canonical 6-column format (connect._CANONICAL_INDEX_HEADER_RE):
     `| Project | Type | Status | Decisions | Sessions | Last Session |`.
     Count columns are left as '—'; `/adjudant ramasse` fills them.
 

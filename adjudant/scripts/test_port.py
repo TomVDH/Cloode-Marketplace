@@ -114,6 +114,16 @@ class TestResolveVaultPath(unittest.TestCase):
             child.mkdir(parents=True)
             self.assertEqual(resolve_vault_path(child), vault_root)
 
+    def test_walk_up_accepts_the_v3_index_marker(self):
+        """v3's templates/home.md declares `type: index`; port must still find
+        the vault it marks."""
+        with tempfile.TemporaryDirectory() as parent:
+            vault_root = Path(parent)
+            (vault_root / "Home.md").write_text("---\ntype: index\n---\n\n# Vault\n")
+            child = vault_root / "projects" / "myproject"
+            child.mkdir(parents=True)
+            self.assertEqual(resolve_vault_path(child), vault_root)
+
     def test_none_returned_when_unresolvable(self):
         """No env var, no breadcrumbs, no Home.md anywhere up → returns None."""
         with tempfile.TemporaryDirectory() as tmp:
