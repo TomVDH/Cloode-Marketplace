@@ -428,7 +428,7 @@ class TestSmartProjectDir(unittest.TestCase):
 
     def test_raises_when_breadcrumb_present_but_vault_unresolvable(self):
         # Regression: this used to fall through and return the CODE REPO as the
-        # scan dir, letting write-path verbs (tidy apply) rewrite the repository.
+        # scan dir, letting write-path verbs (clean apply) rewrite the repository.
         with tempfile.TemporaryDirectory() as tmp:
             code = Path(tmp) / "code"; code.mkdir()
             (code / ".claude").mkdir()
@@ -596,7 +596,7 @@ class TestRoundThreeRegressions(unittest.TestCase):
             root = Path(tmp)
             (root / "notes").mkdir()
             (root / "notes" / "real.md").write_text("# real")
-            scratch = root / ".adjudant-tidy-preview" / "files" / "notes"
+            scratch = root / ".adjudant-remise-preview" / "files" / "notes"
             scratch.mkdir(parents=True)
             (scratch / "pending.md").write_text("# pending")
             names = [f.rel_path.name for f in walk_project(root)]
@@ -652,7 +652,7 @@ class TestBreadcrumbSlugIsGatedOnTheVerbPath(unittest.TestCase):
     def _assert_under_projects(self, vault: Path, path: Path) -> None:
         """A real project dir always sits UNDER `{vault}/projects`. Asserting
         that, rather than 'inside the vault', also rejects the `..` slug that
-        resolves to the vault root itself (which tidy apply would rewrite
+        resolves to the vault root itself (which clean apply would rewrite
         wholesale)."""
         projects = (vault / "projects").resolve()
         p = Path(path).resolve()
@@ -702,7 +702,7 @@ class TestBreadcrumbSlugIsGatedOnTheVerbPath(unittest.TestCase):
             self.assertIn("connect", msg)
 
     def test_smart_project_dir_never_hands_a_verb_a_path_outside_the_vault(self):
-        # The shared resolver behind check/tidy/dream/ramasse/sitrep/board.
+        # The shared resolver behind check/clean/dream/sitrep/board.
         for slug in self.HOSTILE:
             with self.subTest(slug=slug), tempfile.TemporaryDirectory() as tmp:
                 code, vault = self._setup(Path(tmp), slug)
@@ -1105,7 +1105,7 @@ class TestSchemaDrift(unittest.TestCase):
     def test_task_alias_status_accepted_with_alias_set(self):
         # Aliases are accepted input (vault-standards section 4): with the
         # alias set supplied a wip task is clean; without it, flagged but
-        # never normalizable (tidy must not rewrite lane information).
+        # never normalizable (clean must not rewrite lane information).
         task = ("---\ntype: task\nstatus: wip\ncreated: 2026-07-27\n"
                 "updated: 2026-07-27\n---\n")
         self.assertIsNone(schema_drift_for_file(_vf(task), aliases={"wip", "parked"}))
@@ -1163,7 +1163,7 @@ class TestSchemaDrift(unittest.TestCase):
 
     def test_schema_drift_for_text_ignores_unjudgeable(self):
         from _vault_walk import schema_drift_for_text
-        # no frontmatter, unknown type, and a parse error are all ramasse
+        # no frontmatter, unknown type, and a parse error are all deep-pass
         # territory, not schema territory
         self.assertIsNone(schema_drift_for_text("no frontmatter\n", "notes/n.md"))
         self.assertIsNone(schema_drift_for_text(

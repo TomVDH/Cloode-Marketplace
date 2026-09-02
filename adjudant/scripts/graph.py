@@ -14,7 +14,7 @@ modes, all emitting a paste-ready ```mermaid fenced block to stdout (or --out):
   board       kanban snapshot of {project}/board/board-data.json — one
               subgraph per column, one node per card. Suitable for pasting
               into a session note as a point-in-time record.
-  tiers       the static three-tier cleanup model (tidy → ramasse → dream)
+  tiers       the static cleanup model (clean → clean --deep → dream)
               as a stateDiagram-v2 — for briefs/docs that explain the model.
 
 CLI:
@@ -363,16 +363,20 @@ def board_graph(
 
 
 def tiers_graph() -> str:
-    """The locked three-tier cleanup model as a stateDiagram-v2."""
+    """The locked cleanup model as a stateDiagram-v2.
+
+    Two verbs since v3, not three: ramasse became `clean --deep`, so the
+    middle tier is a flag on the first rather than a verb of its own.
+    """
     return (
         "stateDiagram-v2\n"
-        "  [*] --> tidy\n"
-        "  tidy: tidy — surface mechanical (routine)\n"
-        "  ramasse: ramasse — deep structural (sparing)\n"
+        "  [*] --> clean\n"
+        "  clean: clean — surface mechanical (routine)\n"
+        "  deep: clean --deep — structural findings (sparing, reports only)\n"
         "  dream: dream — semantic content refresh (judgment-heavy)\n"
-        "  tidy --> ramasse: structural drift found\n"
-        "  ramasse --> dream: content drift suspected\n"
-        "  dream --> tidy: refreshed — routine resumes\n"
+        "  clean --> deep: structural drift found\n"
+        "  deep --> dream: content drift suspected\n"
+        "  dream --> clean: refreshed — routine resumes\n"
     )
 
 
@@ -450,7 +454,7 @@ def backup_out(path: Path) -> Path:
     legibility (which copy is which), not the safety property.
 
     Dot-prefixed and not `.md`, so the vault walkers (`rglob("*.md")`) never
-    index it, Obsidian never lists it, and `check`/`ramasse` never report it
+    index it, Obsidian never lists it, and `check`/`clean` never report it
     as a schema-less note.
 
     Raises OSError; callers refuse the write rather than proceed unbacked.

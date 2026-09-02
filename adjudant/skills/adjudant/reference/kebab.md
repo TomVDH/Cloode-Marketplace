@@ -3,7 +3,7 @@
 Put a name on a skewer. The joke is the name; the work is real.
 
 Kebab-case is the vault's naming law (`vault-standards.md` §4), and §4 admits
-most of it goes unchecked: "the rest are on you". `ramasse` checks doc case,
+most of it goes unchecked: "the rest are on you". `clean --deep` checks doc case,
 the decision date prefix, session filenames, and canvas/base names. Nothing
 checked the kebab-title portion of a note, a task, a source, or a decision.
 This does, and it answers the question you actually have at write time: what
@@ -31,7 +31,7 @@ gate.
 | Type | Rule |
 |---|---|
 | `note`, `task`, `source` | `{kebab-title}.md` |
-| `decision` | the title after `{YYYY-MM-DD}-`; the date shape is ramasse's finding |
+| `decision` | the title after `{YYYY-MM-DD}-`; the date shape is `clean --deep`'s finding |
 | `doc` | **exempt** — §4 wants docs UPPERCASE, and a kebab rule applied blindly would fight the standard it serves |
 
 Also exempt: files written for you (`brief.md`, `_handoff.md`, `_index.md`,
@@ -42,7 +42,7 @@ generated `board/`, `bases/`, `canvases/`).
 ## It never renames
 
 Renaming a file breaks every wikilink pointing at it, and that repair —
-rename, rewrite the links, fix the index rows — is `ramasse`'s, with its
+rename, rewrite the links, fix the index rows — is `clean --deep`'s, with its
 preview and its backups. kebab tells you; it does not reach for the knife.
 
 Render the scan as one line per violation: the path, then the suggested name.

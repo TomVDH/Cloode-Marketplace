@@ -20,7 +20,7 @@ not read from the breadcrumb.
 | `{repo}/.claude/adjudant`, `vault_path:` and `slug:` | vault location, project name |
 | `{repo}/.claude/adjudant`, `stale_after_days:` | the threshold for both the lifecycle hint and the dream age (30 when absent or non-numeric) |
 | `{vault}/projects/[_fridge/ or _archive/]{slug}/brief.md` | which zone holds the project |
-| `$TMPDIR/adjudant/{slug}/tidy-preview`, directory exists | "tidying" state |
+| `$TMPDIR/adjudant/{slug}/clean-preview`, directory exists | "cleaning" state |
 | `$TMPDIR/adjudant/{repo basename}/repo-tidy-preview`, directory exists | "repo-tidying" state |
 | `{project}/.adjudant-remise-preview`, directory exists | "remising" (reserved, nothing writes it yet) |
 | `brief.md` frontmatter, `status:` | lifecycle drift, read against the newest session date |

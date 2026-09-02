@@ -39,7 +39,7 @@ This file covers syntax; `mermaid-generation-rules.md` covers taste and discipli
 ```bash
 python3 .../scripts/graph.py --project-dir "$PROJECT_ROOT" --mode relations   # wikilink graph
 python3 .../scripts/graph.py --project-dir "$PROJECT_ROOT" --mode board      # kanban snapshot
-python3 .../scripts/graph.py --mode tiers                                    # tidy→ramasse→dream
+python3 .../scripts/graph.py --mode tiers                                    # clean→dream
 ```
 
 ## Diagram Types — Quick Reference

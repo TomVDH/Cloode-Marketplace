@@ -275,7 +275,7 @@ def sync_deck_to_tasks(project_dir: Path, deck: dict[str, Any]) -> list[dict[str
     The board is a VIEW of the vault, but a drag happens in the view. Without
     this, `merge_deck`'s dragged-column-wins rule means the note is ignored
     forever: the deck says done, the note says todo, and `check`, `dream`,
-    `ramasse` and the sitrep board line all read the note. The board would
+    `clean --deep` and the sitrep board line all read the note. The board would
     lie about the vault, silently and permanently.
 
     Only writes when the note's own status maps to a DIFFERENT lane than the

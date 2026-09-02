@@ -62,7 +62,7 @@ One sentence per line. Concise, yet very clear.
 Rules:
 - If `next_step` is null: say "No next step written down — skim the last session note to pick up the thread." (name the file: `sessions/{last_session}.md`).
 - If `freshness.light` is 🔴 or age is large: add a half-clause noting it's been a while.
-- If `open_signals` shows pending drift: append a gentle "(housekeeping waiting: run /adjudant tidy)" — never alarm.
+- If `open_signals` shows pending drift: append a gentle "(housekeeping waiting: run /adjudant clean)" — never alarm.
 - Keep the whole thing scannable in five seconds. Prose over tables.
 - OPTIONAL board line, only when `board.present` (doesn't count against the four labeled
   lines): render `board.line` verbatim as its own line right before 👉 Start here, e.g.

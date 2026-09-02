@@ -66,15 +66,15 @@ Two read-only verbs, neither writes anything:
 
 ## 5. Keeping the vault clean
 
-Three verbs, in a deliberate ladder from safe to careful. Match the verb to how much you want to trust it:
+Two verbs, in a deliberate ladder from safe to careful. Match the verb to how much you want to trust it:
 
 | Verb | Cadence | What it touches | Risk |
 |---|---|---|---|
-| `tidy` | routine (daily/weekly) | indexes, wikilink form, dates, off-schema frontmatter | none — it never breaks anything |
-| `ramasse` | sparing (quarterly) | folder shape, file types, naming, broken wikilinks | deliberate structural change, under your review |
-| `dream` | as needed | the actual prose — stale, contradictory, redundant, or orphaned content | semantic, LLM-judged; you approve every change |
+| `clean` | routine (daily/weekly) | indexes, wikilink form, dates, off-schema frontmatter | none — it never breaks anything, and it cannot create a file |
+| `clean --deep` | sparing (quarterly) | nothing; it reports folder shape, file types, naming, broken wikilinks | none — every finding is yours to act on |
+| `dream` | as needed | the actual prose — stale, redundant, or orphaned content | semantic, LLM-judged; you approve every change |
 
-`tidy` and `ramasse` both **preview first**: they show you exactly what they'd change and wait. Apply only happens on your say-so, and it backs up what it touches. `dream` is the deepest: it reads the content itself, hands you a catalog of what looks stale or contradictory, and changes nothing until you judge each item.
+`clean` **previews first**: it shows you exactly what it would change and waits. Apply only happens on your say-so, and it backs up what it touches. It may rewrite a file and remove one; it may not add one, which is enforced in the code rather than promised here. `dream` is the deepest: it reads the content itself, hands you a catalog of what looks stale, and changes nothing until you judge each item.
 
 Heavy verbs estimate their cost before running. If `dream` would pull a large vault into the conversation, it tells you the size and asks before proceeding.
 
@@ -153,6 +153,6 @@ right the first time.
 
 Scans the project for filenames whose title broke the rule and shows the
 corrected name for each. It never renames anything: renaming breaks every
-wikilink pointing at the file, and that repair belongs to `ramasse`, which
-previews it and keeps a backup. Docs are exempt, because the standard wants
+wikilink pointing at the file, and that repair is yours to make: `clean
+--deep` reports the name, and you decide. Docs are exempt, because the standard wants
 those UPPERCASE.

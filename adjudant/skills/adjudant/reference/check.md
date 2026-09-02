@@ -69,7 +69,7 @@ JSON output shape (top-level keys):
 - `status` — declared vs. machine-suggested lifecycle status: `declared`, `declared_valid`,
   `last_session`, `days_quiet`, `suggested`, `reason`, `nudge`, `zone`, `zone_matches`
 - `schema` — frontmatter drift per `FIELD_SCHEMA`, which is the templates: `checked`,
-  `unchecked` (no block / parse error / non-canonical type — those are ramasse
+  `unchecked` (no block / parse error / non-canonical type — those are `clean --deep`
   territory), `flagged`, `counts` (`missing_required`, `unknown_fields`,
   `status_invalid`, `type_conflict`), `samples` (capped at 20, each with `file`,
   `type`, and the offending keys/values)
@@ -125,7 +125,7 @@ next ambient refresh), no alarm.
 - If `status.suggested` is set, render one line: "brief says {status.declared}, looks {status.suggested}: {status.reason}".
 - If `status.nudge` is set, render the nudge as its own line.
 - If `status.zone_matches` is false, flag the mismatch: the declared status doesn't match the vault zone the project actually sits in.
-- If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant tidy (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.
+- If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant clean (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.
 - If `remember.present` is false, render one line: "remember: not detected — the handoff is written from session context only".
 - If `remember.present` is true and `remember.empty` is true, render one line: "remember: present but empty — the handoff carries no mirrored body". Neither is an error: the handoff still renders, it just has nothing to mirror into the body. Adjudant read `.remember/` as the source and said nothing when it was missing or empty, so a handoff that was a banner with no body looked the same as one nobody had written yet.
 

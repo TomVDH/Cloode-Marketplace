@@ -2,7 +2,7 @@
 """Adjudant dream — semantic content/staleness comparator catalog (dream analysis phase).
 
 Scans an adjudant-managed vault project and emits a structured *content*
-catalog (JSON) for Claude to JUDGE. Where `ramasse_scan.py` decides
+catalog (JSON) for Claude to JUDGE. Where the deep pass decides
 structural facts ("this filename violates §4"), `dream.py` cannot decide
 semantics — it surfaces *candidates* (with file · line · excerpt) and
 leaves the judgment to Claude. Read-only — never writes.
@@ -24,8 +24,8 @@ CLI:
                      [--today YYYY-MM-DD] [--stale-days N] [--include-legacy]
 
 This is the analysis phase for `/adjudant dream` (the third cleanup tier):
-  - tidy    = surface mechanical sweep            (tidy.py)
-  - ramasse = deep structural clean               (ramasse_scan.py)
+  - clean        = surface mechanical sweep       (clean.py)
+  - clean --deep = structural drift catalog       (clean.py, read-only)
   - dream   = content/knowledge/memory refresh    (this scanner)
 
 See docs/superpowers/2026-05-26-adjudant-tidy-ramasse-log.design.md and
@@ -470,7 +470,7 @@ def detect_stale_refs(
 ) -> list[dict]:
     """Refs that point to archived locations or to old dated targets.
 
-    Broken wikilinks stay ramasse's job — these refs RESOLVE (when a vault
+    Broken wikilinks stay the deep pass's job — these refs RESOLVE (when a vault
     index is available) but point somewhere stale.
     """
     out: list[dict] = []
@@ -494,7 +494,7 @@ def detect_stale_refs(
                 continue
             resolves = resolve_wikilink(target, vault_index) if vault_index else None
             if vault_index is not None and not resolves:
-                continue  # unresolved → ramasse territory, not dream
+                continue  # unresolved → the deep pass, not dream
             out.append({
                 "file": str(f.rel_path),
                 "line": line,

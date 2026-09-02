@@ -18,7 +18,7 @@ class TestScratchDir(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "vault" / "projects" / "demo"
             project.mkdir(parents=True)
-            for kind in ("tidy-preview", "tidy-backup"):
+            for kind in ("clean-preview", "clean-backup"):
                 got = scratch_dir(project, kind)
                 self.assertNotIn(project, got.parents)
                 self.assertNotEqual(got, project)
@@ -30,7 +30,7 @@ class TestScratchDir(unittest.TestCase):
             old = os.environ.get("TMPDIR")
             os.environ["TMPDIR"] = tmp
             try:
-                got = scratch_dir(project, "tidy-preview")
+                got = scratch_dir(project, "clean-preview")
                 self.assertTrue(str(got).startswith(tmp))
             finally:
                 if old is None:
@@ -42,21 +42,21 @@ class TestScratchDir(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "demo"
             project.mkdir()
-            a = scratch_dir(project, "tidy-preview")
-            b = scratch_dir(project, "tidy-backup")
+            a = scratch_dir(project, "clean-preview")
+            b = scratch_dir(project, "clean-backup")
             self.assertNotEqual(a, b)
 
     def test_hostile_project_name_cannot_escape(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "a b/../../etc"
-            got = scratch_dir(project, "tidy-preview")
+            got = scratch_dir(project, "clean-preview")
             self.assertNotIn("..", got.parts)
 
     def test_creates_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "demo"
             project.mkdir()
-            got = scratch_dir(project, "tidy-preview")
+            got = scratch_dir(project, "clean-preview")
             self.assertFalse(got.exists())
 
 

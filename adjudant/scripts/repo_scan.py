@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Adjudant repo_scan — read-only structural drift detectors for the repo target.
 
-Mirrors ramasse_scan.py for the code repo. Emits a JSON report on stdout that
+Mirrors clean's deep pass for the code repo. Emits a JSON report on stdout that
 `check repo` renders. Layered: a general core (context files, plan age) plus a
 marketplace layer (version coherence, symlink integrity, registration) that
 auto-activates when .claude-plugin/marketplace.json is present.

@@ -1,4 +1,4 @@
-> **`adjudant` vault?** Frontmatter must follow the canonical schema in `adjudant:vault-standards (reference/vault-standards.md)` (`#{type}` tags, ISO dates, omit-don't-null). Project membership is the folder path: never write a `project:` field, no type's `FIELD_SCHEMA` has a slot for it and `tidy` strips it. A `note` requires `type:`, `created:`, `updated:` and `tags:`; `title:` and `cssclasses:` are legal options, `aliases:` is not. `aliases:` belongs to a project's `brief.md`, and `tidy` strips it from a note. For diagrams in fenced `mermaid` blocks, defer to `adjudant:mermaid`. The generic property guidance below applies only when no plugin schema is in force.
+> **`adjudant` vault?** Frontmatter must follow the canonical schema in `adjudant:vault-standards (reference/vault-standards.md)` (`#{type}` tags, ISO dates, omit-don't-null). Project membership is the folder path: never write a `project:` field, no type's `FIELD_SCHEMA` has a slot for it and `clean` strips it. A `note` requires `type:`, `created:`, `updated:` and `tags:`; `title:` and `cssclasses:` are legal options, `aliases:` is not. `aliases:` belongs to a project's `brief.md`, and `clean` strips it from a note. For diagrams in fenced `mermaid` blocks, defer to `adjudant:mermaid`. The generic property guidance below applies only when no plugin schema is in force.
 
 # Obsidian Flavored Markdown Skill
 
@@ -93,7 +93,7 @@ cssclasses:
 
 Default properties: `tags` (searchable labels), `aliases` (alternative note names for link suggestions), `cssclasses` (CSS classes for styling).
 
-In an adjudant vault that block is not a legal `note`: `date:` and `aliases:` sit outside `FIELD_SCHEMA` and `tidy` strips them. The vault shape is `type:`, `created:`, `updated:`, `tags:`, plus optional `title:` and `cssclasses:`.
+In an adjudant vault that block is not a legal `note`: `date:` and `aliases:` sit outside `FIELD_SCHEMA` and `clean` strips them. The vault shape is `type:`, `created:`, `updated:`, `tags:`, plus optional `title:` and `cssclasses:`.
 
 See [the official Properties docs](https://help.obsidian.md/properties) for all property types, tag syntax rules, and advanced usage.
 

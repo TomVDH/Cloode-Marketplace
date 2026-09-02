@@ -1,15 +1,15 @@
 ---
 name: adjudant
-description: Operate an Obsidian vault from a code project. `/adjudant {connect|sync|check|sitrep|tidy|ramasse|dream|draw|board|advisor|kebab}` — project init, schema-enforced writes, three-tier cleanup (tidy/ramasse/dream), read-only status (check) and orientation (sitrep), diagrams and canvases (draw), a self-hosted kanban board, an opt-in proactive advisor (advisor), and kebab-case naming (kebab). Also fires whenever decisions, sessions, or notes are written into a linked vault.
+description: Operate an Obsidian vault from a code project. `/adjudant {connect|sync|check|sitrep|clean|dream|draw|board|advisor|kebab}` — project init, schema-enforced writes, two-tier cleanup (clean, then dream), read-only status (check) and orientation (sitrep), diagrams and canvases (draw), a self-hosted kanban board, an opt-in proactive advisor (advisor), and kebab-case naming (kebab). Also fires whenever decisions, sessions, or notes are written into a linked vault.
 version: 2.0.0
 user-invocable: true
-argument-hint: "[connect|sync|check|sitrep|tidy|ramasse|dream|draw|board|advisor|kebab] [args]"
+argument-hint: "[connect|sync|check|sitrep|clean|dream|draw|board|advisor|kebab] [args]"
 license: MIT
 ---
 
 # Adjudant
 
-Vault editor/writer and project initializer. One skill, one command, eleven verbs. Pairs with hookify for universal drift-defense hooks.
+Vault editor/writer and project initializer. One skill, one command, ten verbs. Pairs with hookify for universal drift-defense hooks.
 
 ## Verb router
 
@@ -19,8 +19,7 @@ Vault editor/writer and project initializer. One skill, one command, eleven verb
 | `sync` | `reference/sync.md` | Push project state to the vault: brief, handoff, project index row |
 | `check` | `reference/check.md` | Read-only project + vault health, with schema drift. `[vault\|repo\|all]` also audits repo structure (versions, symlinks, registration, stale plans) |
 | `sitrep` | `reference/sitrep.md` | Plain-language orientation after a break: where you left off, what's done, where the vault is, what's next, plus git and dev-server state. Read-only |
-| `tidy` | `reference/tidy.md` | Routine surface sweep: indexes, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply. `[vault\|repo\|all]` adds repo symlinks |
-| `ramasse` | `reference/ramasse.md` | Deep structural clean: folder shape, schema, file types, naming, broken wikilinks. Sparing, roughly quarterly |
+| `clean` | `reference/clean.md` | Cleanup sweep: indexes, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply, and it never creates a vault file. `--deep` adds the structural pass (folder shape, types, naming, broken wikilinks); `[vault\|repo\|all]` adds repo symlinks |
 | `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: flags stale, contradictory, redundant, and orphaned content as candidates Claude judges before anything changes |
 | `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, hand-authored or generated from vault data |
 | `board` | `reference/board.md` | Scaffold a self-hosted kanban seeded from `tasks/`: drag to move, saved to disk, re-seeds without clobbering dragged cards. `--project <slug>` or `--all` |
@@ -30,22 +29,24 @@ Vault editor/writer and project initializer. One skill, one command, eleven verb
 
 When a verb is invoked, load **only** the matching reference file. Do not bring all reference files into context.
 
-## The locked three-tier model
+## The cleanup model
 
 ```
-tidy    = surface mechanical    (routine, daily/weekly, never breaks)
-ramasse = deep structural clean (sparing, quarterly, deliberate)
-dream   = content/knowledge/memory refresh (semantic; judgment-heavy)
+clean        = mechanical sweep     (routine, daily/weekly, never breaks)
+clean --deep = structural pass      (sparing, quarterly, reports only)
+dream        = content/knowledge/memory refresh (semantic; judgment-heavy)
 ```
 
-`dream` reads actual prose and surfaces outdated/contradictory/redundant/stale/orphaned content as *candidates* for Claude to judge. `dream.py` is its read-only analyser: net-new, not to be confused with the v0.3.0 file once named `dream.py` that did structural drift and was renamed `ramasse_scan.py` to feed ramasse's analysis phase.
+`clean` may rewrite a file in place and remove one. It may not create a vault file — `_vault_write.VaultWriteGuard` enforces that, so anything clean cannot fix by rewriting it reports instead. A folder missing its `_index.md` is reported as a gap, never filled.
+
+`dream` reads actual prose and surfaces outdated/redundant/stale/orphaned content as *candidates* for Claude to judge. `dream.py` is its read-only analyser.
 
 ## Cost gate (locked)
 
 Verb weights live in `scripts/command-metadata.json` (`weight: light | medium | heavy`). The estimate approximates what Claude will read back into context; helpers compute it with a stat-only walk (`bytes // 4`).
 
-- **Heavy verbs** (`dream`, `ramasse`, `check all`): run the backing helper with `--estimate-only` FIRST. If `cost.warn` is true, stop and show the numbers ("dream would pull ~85k tokens into context: 210 files, 1.1 MB prose") and ask the user to choose: proceed, scope down (offer only where the verb has a real scoping flag), or abort. Proceed only on explicit confirmation. If `warn` is false, run normally and include the estimate as one line in the rendered output.
-- **Medium verbs** (`check`, `sitrep`, `tidy`): no pre-flight. The helper's JSON carries a `cost` block; render it as one line ("cost: ~12k tokens, 96 files").
+- **Heavy verbs** (`dream`, `clean --deep`, `check all`): run the backing helper with `--estimate-only` FIRST. If `cost.warn` is true, stop and show the numbers ("dream would pull ~85k tokens into context: 210 files, 1.1 MB prose") and ask the user to choose: proceed, scope down (offer only where the verb has a real scoping flag), or abort. Proceed only on explicit confirmation. If `warn` is false, run normally and include the estimate as one line in the rendered output.
+- **Medium verbs** (`check`, `sitrep`, `clean`): no pre-flight. The helper's JSON carries a `cost` block; render it as one line ("cost: ~12k tokens, 96 files").
 - **Light verbs** (`connect`, `sync`, `draw`, `board`, `advisor`, `kebab`): no estimate; the static weight badge is enough.
 - `check all` sums two estimates: `check.py --estimate-only` plus `repo_scan.py --estimate-only`.
 - If an estimate cannot be computed (unresolvable vault or breadcrumb), treat it as `warn: true` and ask before proceeding.
@@ -74,7 +75,7 @@ For specialized content types, load the matching reference on demand:
 - `reference/content-markdown.md` — Obsidian-flavoured markdown (callouts, embeds, wikilinks)
 - `reference/content-clipper.md` — Web Clipper templates
 - `reference/content-cli.md` — Obsidian CLI
-- `reference/repo-standards.md` — code-repo conventions (the `check`/`tidy` `[repo|all]` target)
+- `reference/repo-standards.md` — code-repo conventions (the `check`/`clean` `[repo|all]` target)
 
 ## Templates
 

@@ -2,7 +2,7 @@
 """Adjudant scratch space — preview and backup directories, OUTSIDE the vault.
 
 Every preview and backup adjudant wrote used to land inside the vault project
-it was operating on, unbounded and never reaped: a tidy run whose whole benefit
+it was operating on, unbounded and never reaped: a cleanup run whose whole benefit
 was dropping three tags from twelve notes wrote roughly 25 files and 3x the
 touched bytes into the vault, permanently. A cleanup tool that adds more than
 it removes is not a cleanup tool.
@@ -41,7 +41,7 @@ def _tmp_root() -> Path:
 def scratch_dir(project_dir: Path, kind: str) -> Path:
     """Where `kind` scratch for `project_dir` belongs. Creates nothing.
 
-    `kind` is a short slug such as "tidy-preview" or "tidy-backup". The result
+    `kind` is a short slug such as "clean-preview" or "clean-backup". The result
     is never inside `project_dir`, which is the entire point of this module.
     """
     key = _UNSAFE.sub("-", project_dir.name).strip("-") or "project"

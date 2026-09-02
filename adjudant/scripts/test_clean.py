@@ -1,4 +1,6 @@
-"""Tests for adjudant/scripts/tidy.py."""
+"""Tests for adjudant/scripts/clean.py — the surface sweep.
+
+The deep pass that was ramasse lives in test_clean_deep.py."""
 
 import contextlib
 import io
@@ -9,14 +11,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tidy import (
+from clean import (
     apply_preview,
     backup_root,
     build_preview,
-    cli_main as tidy_cli,
+    cli_main as clean_cli,
     detect_phase,
     fix_wikilink_form,
-    generate_index_content,
     preview_dir,
     upsert_index_content,
     write_preview_to_disk,
@@ -31,13 +32,13 @@ _OLD_TMPDIR = None
 def setUpModule():
     """Pin $TMPDIR for this module.
 
-    Since v3 tidy's preview and backup live under $TMPDIR rather than in
+    Since v3 clean's preview and backup live under $TMPDIR rather than in
     the vault, so an un-pinned run would leave rotated backup dirs behind
     in the developer's real temp dir, run after run.
     """
     global _MODULE_TMP, _OLD_TMPDIR
     _OLD_TMPDIR = os.environ.get("TMPDIR")
-    _MODULE_TMP = tempfile.mkdtemp(prefix="adjudant-test-tidy-")
+    _MODULE_TMP = tempfile.mkdtemp(prefix="adjudant-test-clean-")
     os.environ["TMPDIR"] = _MODULE_TMP
 
 
@@ -284,43 +285,6 @@ class TestUpsertIndexContent(unittest.TestCase):
         self.assertIn("Free-form content with no entries heading.", new)
 
 
-class TestGenerateIndexContent(unittest.TestCase):
-
-    def test_chronological_for_dated(self):
-        out = generate_index_content("decisions", [
-            Path("2026-05-26-a.md"),
-            Path("2026-05-27-b.md"),
-            Path("2026-05-25-c.md"),
-        ])
-        # 2026-05-27 should come first
-        lines = out.split("\n")
-        entry_lines = [l for l in lines if l.startswith("- [[")]
-        self.assertEqual(entry_lines[0], "- [[2026-05-27-b|2026-05-27 b]]")
-        self.assertEqual(entry_lines[1], "- [[2026-05-26-a|2026-05-26 a]]")
-        self.assertEqual(entry_lines[2], "- [[2026-05-25-c|2026-05-25 c]]")
-
-    def test_alphabetical_for_plain(self):
-        out = generate_index_content("notes", [
-            Path("zebra.md"),
-            Path("alpha.md"),
-            Path("mango.md"),
-        ])
-        entry_lines = [l for l in out.split("\n") if l.startswith("- [[")]
-        self.assertEqual(entry_lines[0], "- [[alpha|alpha]]")
-        self.assertEqual(entry_lines[2], "- [[zebra|zebra]]")
-
-    def test_has_frontmatter_and_heading(self):
-        out = generate_index_content("decisions", [Path("2026-05-26-a.md")])
-        self.assertTrue(out.startswith("---\n"))
-        self.assertIn("type: index", out)
-        self.assertIn("# Decisions", out)
-        # Both dates, per the derived index schema, and no tags block: the
-        # generator has to write a file its own schema phase accepts.
-        self.assertIn("created:", out)
-        self.assertIn("updated:", out)
-        self.assertNotIn("tags:", out)
-
-
 # ============================================================
 # build_preview end-to-end
 # ============================================================
@@ -346,8 +310,10 @@ class TestBuildPreview(unittest.TestCase):
                 "tags:\n  - ob/note\n---\n\nSee [target](target.md).")
             vault_index = build_vault_index(root)
             cs = build_preview(root, vault_index, project_slug="t")
-            # Should rebuild decisions/_index.md
-            self.assertIn("decisions/_index.md", cs["index_proposals"])
+            # decisions/ has two entries and no index. clean reports the gap;
+            # it does not create the file (VaultWriteGuard would refuse it).
+            self.assertNotIn("decisions/_index.md", cs["index_proposals"])
+            self.assertIn("decisions", cs["index_gaps"])
             # Should propose changes to src.md (unknown tags: + wikilink)
             self.assertIn("src.md", cs["file_proposals"])
             # Should propose changes to brief.md (unknown fields stripped)
@@ -381,7 +347,7 @@ class TestApplySafety(unittest.TestCase):
     """
 
     def _dirty(self, root: Path) -> Path:
-        """A project with one file tidy will want to change."""
+        """A project with one file clean will want to change."""
         p = root / "decisions" / "2026-01-01-d.md"
         _w(p, "---\ntype: decision\nstatus: accepted\n"
               "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
@@ -429,7 +395,7 @@ class TestApplySafety(unittest.TestCase):
             legacy = list(first.rglob("*.legacy"))
             self.assertTrue(legacy, "first apply must back up the original")
             self.assertIn("status: accepted", legacy[0].read_text(),
-                          "backup must hold the PRE-tidy content")
+                          "backup must hold the PRE-clean content")
             # Immediately run a second cycle (same wall-clock second).
             cs2 = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs2)
@@ -476,7 +442,7 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
     """
 
     def _indexed_folder(self, root: Path) -> Path:
-        """A folder tidy will want to rebuild an index for, with one present."""
+        """A folder clean will want to rebuild an index for, with one present."""
         for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
             _w(root / "decisions" / f"{d}-{n}.md",
                f"---\ntype: decision\nstatus: accepted\n"
@@ -515,42 +481,6 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
                              cs["index_proposals"]["decisions/_index.md"]["proposed_content"],
                              "an untouched index must still be rebuilt")
             self.assertFalse((backup / "SKIPPED-STALE.txt").exists())
-
-    def test_brand_new_index_is_still_created(self):
-        # An index proposal for a folder that had none records no hash, and
-        # must still be created rather than treated as stale.
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
-                _w(root / "decisions" / f"{d}-{n}.md",
-                   f"---\ntype: decision\nstatus: accepted\n"
-                   f"created: {d}\nupdated: {d}\ndate: {d}\n"
-                   f"tags:\n  - decision\n---\n\nBody {n}.\n")
-            cs = build_preview(root, build_vault_index(root), "t")
-            self.assertFalse(
-                cs["index_proposals"]["decisions/_index.md"]["had_existing"])
-            write_preview_to_disk(root, cs)
-            apply_preview(root)
-            self.assertTrue((root / "decisions" / "_index.md").is_file(),
-                            "a missing index must still be generated")
-
-    def test_index_created_between_preview_and_apply_is_not_overwritten(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
-                _w(root / "decisions" / f"{d}-{n}.md",
-                   f"---\ntype: decision\nstatus: accepted\n"
-                   f"created: {d}\nupdated: {d}\ndate: {d}\n"
-                   f"tags:\n  - decision\n---\n\nBody {n}.\n")
-            cs = build_preview(root, build_vault_index(root), "t")
-            write_preview_to_disk(root, cs)
-            live = root / "decisions" / "_index.md"
-            live.write_text("---\ntype: index\n---\n\n# Mine, written just now.\n")
-            backup = apply_preview(root)
-            self.assertIn("Mine, written just now.", live.read_text(),
-                          "a file that appeared since preview is not ours to overwrite")
-            self.assertIn("decisions/_index.md",
-                          (backup / "SKIPPED-STALE.txt").read_text())
 
     def test_file_deleted_after_preview_is_not_resurrected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -611,7 +541,7 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
                              "nothing changed under us, so nothing is stale")
             legacy = backup / "decisions" / "_index.md.legacy"
             self.assertIn("ob/cabinet", legacy.read_text(),
-                          "the backup must hold the PRE-tidy index")
+                          "the backup must hold the PRE-clean index")
             self.assertIn("2026-01-02-b", live.read_text(),
                           "the rebuild must still land")
 
@@ -671,7 +601,7 @@ class TestPreviewApplyRoundTrip(unittest.TestCase):
             self.assertEqual(cs["summary"]["total_changes"], 0)
 
 
-class TestTidyCost(unittest.TestCase):
+class TestCleanCost(unittest.TestCase):
 
     def _project(self, root: Path) -> None:
         _w(root / "brief.md",
@@ -684,10 +614,12 @@ class TestTidyCost(unittest.TestCase):
             self._project(root)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = tidy_cli(["detect", "--project-dir", str(root), "--estimate-only"])
+                rc = clean_cli(["detect", "--project-dir", str(root), "--estimate-only"])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
-            self.assertEqual(set(payload), {"cost"})
+            # scope rides along since the merge: null when unscoped, so a
+            # reader of the estimate always knows what it covered.
+            self.assertEqual(set(payload), {"scope", "cost"})
             self.assertGreaterEqual(payload["cost"]["est_read_tokens"], 2000)
 
     def test_normal_detect_includes_cost(self):
@@ -696,7 +628,7 @@ class TestTidyCost(unittest.TestCase):
             self._project(root)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = tidy_cli(["detect", "--project-dir", str(root)])
+                rc = clean_cli(["detect", "--project-dir", str(root)])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
             self.assertIn("cost", payload)
@@ -708,14 +640,14 @@ class TestTidyCost(unittest.TestCase):
             self._project(root)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-                rc = tidy_cli(["preview", "--project-dir", str(root)])
+                rc = clean_cli(["preview", "--project-dir", str(root)])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
             self.assertIn("cost", payload)
             self.assertGreaterEqual(payload["cost"]["est_read_tokens"], 2000)
 
 
-from tidy import (
+from clean import (
     _drop_frontmatter_keys,
     _rename_frontmatter_key,
     _set_frontmatter_scalar,
@@ -798,7 +730,7 @@ class TestSchemaPhase(unittest.TestCase):
     def test_uncorroborated_type_is_reported_not_stripped(self):
         # A Claude Code auto-memory file flattened by an external editor lands
         # with `type: project` and nothing else a project brief has. Treating
-        # that declaration as true made tidy strip `name:`/`description:` -
+        # that declaration as true made clean strip `name:`/`description:` -
         # the two fields the memory system reads for relevance - off a file
         # that was never a project brief. Misclassified is not drifted.
         with tempfile.TemporaryDirectory() as tmp:
@@ -933,8 +865,9 @@ class TestSchemaPhase(unittest.TestCase):
 
 
 class TestScratchIsOutsideTheVault(unittest.TestCase):
-    """The defect this whole plan exists for: tidy wrote its working copies
-    into the vault it was cleaning, and nothing ever reaped them."""
+    """The defect this whole plan exists for: the cleanup verb wrote its
+    working copies into the vault it was cleaning, and nothing ever reaped
+    them."""
 
     def _isolate_scratch(self, tmp: Path) -> None:
         """Point $TMPDIR at this test's own temp dir.
@@ -977,7 +910,7 @@ class TestScratchIsOutsideTheVault(unittest.TestCase):
             write_preview_to_disk(project, change_set)
             after = {p for p in project.rglob("*")}
             self.assertEqual(before, after,
-                             "tidy preview created files inside the vault project")
+                             "clean preview created files inside the vault project")
 
     def test_apply_writes_no_backup_into_the_project(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -987,7 +920,7 @@ class TestScratchIsOutsideTheVault(unittest.TestCase):
             apply_preview(project)
             stray = [p for p in project.rglob(".adjudant-*")]
             self.assertEqual(stray, [],
-                             f"tidy apply left scratch in the vault: {stray}")
+                             f"clean apply left scratch in the vault: {stray}")
 
     def test_detect_phase_reads_the_scratch_location(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1009,7 +942,7 @@ class TestScratchIsOutsideTheVault(unittest.TestCase):
                 change_set = self._preview(project)
                 write_preview_to_disk(project, change_set)
                 apply_preview(project)
-            root = scratch_dir(project, "tidy-backup")
+            root = scratch_dir(project, "clean-backup")
             kept = [d for d in root.iterdir() if d.is_dir()]
             self.assertLessEqual(len(kept), BACKUP_KEEP)
 

@@ -1,14 +1,14 @@
 # /adjudant dream
 
-**Content/knowledge/memory refresh.** The third and deepest cleanup tier — semantic, not mechanical. Reads the actual prose of decisions, notes, and sessions; surfaces what's gone stale. Five-phase, judgment-heavy, human-in-the-loop. Mirrors `ramasse`'s shape on the content layer.
+**Content/knowledge/memory refresh.** The third and deepest cleanup tier — semantic, not mechanical. Reads the actual prose of decisions, notes, and sessions; surfaces what's gone stale. Five-phase, judgment-heavy, human-in-the-loop. Mirrors `clean --deep`'s shape on the content layer.
 
 *Staleness is the enemy.* Dream catches "the doc says X but reality is now Y."
 
-## What dream does (vs tidy and ramasse)
+## What dream does (vs clean)
 
 ```
 tidy    = surface mechanical sweep (tags, indexes, wikilink form). Routine.
-ramasse = deep STRUCTURAL clean (folders, schema, file types, naming, renames). Sparing.
+clean --deep = STRUCTURAL findings (folders, schema, file types, naming). Sparing, reports only.
 dream   = CONTENT/knowledge/memory refresh (semantic). THIS verb.
 ```
 
@@ -24,7 +24,7 @@ Dream cleans semantically: mark decisions superseded, consolidate duplicates, ar
 
 ## Why it's LLM-judgment heavy
 
-`dream.py` **cannot decide semantics**. Where `ramasse_scan.py` decides a structural fact ("this filename violates §4"), `dream.py` only emits *candidates* — comparators with `file · line · excerpt` — and **Claude judges**. "Decision A line 42 may conflict with decision B line 18" is a candidate; whether it's a real contradiction is a read-and-reason call, not a pattern match.
+`dream.py` **cannot decide semantics**. Where `clean --deep` decides a structural fact ("this filename violates §4"), `dream.py` only emits *candidates* — comparators with `file · line · excerpt` — and **Claude judges**. "Decision A line 42 may conflict with decision B line 18" is a candidate; whether it's a real contradiction is a read-and-reason call, not a pattern match.
 
 ## The 5-phase shape (superpowers chain)
 
@@ -36,7 +36,7 @@ Dream cleans semantically: mark decisions superseded, consolidate duplicates, ar
 | 2. Judge | Claude (judgment-heavy) | Which candidates are *real*: superseded / contradictory / redundant / stale / orphaned |
 | 3. Refresh plan | `superpowers:writing-plans` → `dream-report` | Concrete refresh plan (mark superseded, consolidate dupes, archive stale sessions, close orphan threads) |
 | 4. Review | (human checkpoint) | User reviews + approves plan; can edit or defer items |
-| 5. Execute | `superpowers:executing-plans` | Apply with checkpoints + backups; calls `tidy.py` for any mechanical follow-up |
+| 5. Execute | `superpowers:executing-plans` | Apply with checkpoints + backups; calls `clean.py` for any mechanical follow-up |
 
 ## Phase 1 — Run the scanner
 
@@ -59,7 +59,7 @@ The JSON catalog (the **comparator catalog**) carries ten categories:
 | `supersession_signals` | Same-topic decision pairs, older likely superseded (+ whether already marked). Also `kind: dangling-pointer` entries: a frontmatter `superseded_by` whose target resolves to no file |
 | `contradiction_pairs` | Topically-overlapping files where a change/negation cue appears ("no longer", "switched from", "deprecated") |
 | `redundancy_clusters` | Near-duplicate notes/docs by token-set (Jaccard) similarity |
-| `stale_refs` | Refs that *resolve* but point to `_archive`/`_legacy` or old dated targets (broken links stay ramasse's job) |
+| `stale_refs` | Refs that *resolve* but point to `_archive`/`_legacy` or old dated targets (broken links stay `clean --deep`'s job) |
 | `orphan_questions` | Aged open-loop markers (`TODO`/`OPEN:`/`TBD`/`follow-up`) never closed |
 | `orphan_threads` | Aged notes/docs with zero inbound wikilinks |
 | `unacted_decisions` | `status: active` decisions whose stated `## Consequence` shows no action (unreferenced by any session, aged) |
@@ -93,7 +93,7 @@ Invoke `superpowers:writing-plans` to produce a concrete content-refresh plan, a
 - Sessions to archive (move to `_archive/`)
 - Orphan threads to close or re-surface (as a fresh open question / decision)
 - Stale refs to repoint or remove
-- Plus any mechanical fixes spun off to `tidy`
+- Plus any mechanical fixes spun off to `clean`
 
 Plan written under `iterations/{YYYY-MM-DD}-iter-{id}-dream/` per the adjudant iteration-folder convention.
 
@@ -103,7 +103,7 @@ User reviews the plan. May approve as-is, edit specific entries, reject and re-j
 
 ## Phase 5 — Execute
 
-Invoke `superpowers:executing-plans` to apply with checkpoints. Each plan step is its own commit-able unit. **Content operations are destructive — every one is backed up first** to `.adjudant-dream-backup/{ISO-8601-Z-timestamp}/<rel_path>.legacy` before the live edit. A `.adjudant-dream-{ts}/` workspace dir holds the plan + checkpoint state. For mechanical follow-up (index rebuilds after a consolidation, off-schema frontmatter), call `tidy.py preview` then `tidy.py apply`.
+Invoke `superpowers:executing-plans` to apply with checkpoints. Each plan step is its own commit-able unit. **Content operations are destructive — every one is backed up first** to `.adjudant-dream-backup/{ISO-8601-Z-timestamp}/<rel_path>.legacy` before the live edit. A `.adjudant-dream-{ts}/` workspace dir holds the plan + checkpoint state. For mechanical follow-up (index rebuilds after a consolidation, off-schema frontmatter), call `clean.py preview` then `clean.py apply`.
 
 ## Inputs
 
@@ -118,19 +118,18 @@ Default: current project (resolved from the `.claude/adjudant` breadcrumb — `d
 
 ## Lineage — the original `/dream`
 
-This verb's content checks descend from an earlier `/dream` (its historical two-pass design is preserved in `docs/superpowers/2026-04-30-obsidian-bridge.design.md` §13): a structural-sanitation pass — now split across `tidy` + `ramasse` — and a content-analysis pass (contradictions, stale info, dangling scopes, unacted decisions, documentation gaps). adjudant `dream` is that content pass, modernised into a read-only comparator catalog. **It is fully standalone** — it has no dependency on, and no interoperation with, any other plugin; the report is always dry, with no personality layer.
+This verb's content checks descend from an earlier `/dream` (its historical two-pass design is preserved in `docs/superpowers/2026-04-30-obsidian-bridge.design.md` §13): a structural-sanitation pass — now split across `clean` and `clean --deep` — and a content-analysis pass (contradictions, stale info, dangling scopes, unacted decisions, documentation gaps). adjudant `dream` is that content pass, modernised into a read-only comparator catalog. **It is fully standalone** — it has no dependency on, and no interoperation with, any other plugin; the report is always dry, with no personality layer.
 
 ## When NOT to use dream
 
-- For routine surface cleanup: use `/adjudant tidy`
-- For folder/schema/naming restructure: use `/adjudant ramasse`
+- For routine surface cleanup: use `/adjudant clean`
+- For folder/schema/naming findings: use `/adjudant clean --deep`
 - For a single obviously-superseded decision: just add the `superseded` marker manually
 
 ## See also
 
-- `reference/tidy.md` — surface mechanical sweep
-- `reference/ramasse.md` — deep structural clean
+- `reference/clean.md` — the cleanup sweep and its deep pass
 - `scripts/dream.py` — phase 1 analyser (this tier's scanner)
-- `scripts/ramasse_scan.py` — ramasse's structural analyser (formerly `dream.py` in v0.3.0)
+- `scripts/clean.py` — the deep pass's structural detectors
 - `templates/dream.md` — phase 3 output scaffold
 - `docs/superpowers/2026-05-26-adjudant-tidy-ramasse-log.design.md` — design lock

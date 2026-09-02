@@ -14,7 +14,7 @@ filter added in hooks.json is defense in depth, never a dependency. Then:
      so a missing template used to produce a note the schema gate rejects.
      A missing template now writes nothing at all.
   3. Upsert one `- [[v{version}|v{version} ({plugin})]]` row into
-     `releases/_index.md`, created in tidy's canonical shape when absent.
+     `releases/_index.md`, created in clean's canonical shape when absent.
 
 Fail open on the hook itself, fail closed on a bad vault; the index row is
 written only after the release note verifiably exists.
@@ -281,7 +281,7 @@ def _release_note(plugin: str, version: str, body: str, today: str) -> str:
 
 def _upsert_index(releases: Path, slug: str, plugin: str, version: str, today: str) -> None:
     """One `- [[vX.Y.Z|vX.Y.Z (plugin)]]` row, deduped; new index files take
-    tidy's canonical shape so the next tidy pass has nothing to churn."""
+    clean's canonical shape so the next clean pass has nothing to churn."""
     index = releases / "_index.md"
     row = f"- [[v{version}|v{version} ({plugin})]]"
     try:

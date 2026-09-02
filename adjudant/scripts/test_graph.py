@@ -400,8 +400,10 @@ class TestTiersAndFence(unittest.TestCase):
     def test_tiers_static_diagram(self):
         g = tiers_graph()
         self.assertTrue(g.startswith("stateDiagram-v2"))
-        for verb in ("tidy", "ramasse", "dream"):
-            self.assertIn(verb, g)
+        for state in ("clean", "clean --deep", "dream"):
+            self.assertIn(state, g)
+        # The verbs the merge removed must not come back through a diagram.
+        self.assertNotIn("ramasse", g)
 
     def test_fenced_block_shape(self):
         block = fenced("flowchart LR\n  a --> b\n")

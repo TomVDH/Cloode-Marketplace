@@ -93,7 +93,7 @@ class TestBlocks(_GateHarness):
 class TestVoiceGate(_GateHarness):
     """Surface 2 of the voice contract: prose landing in the vault.
 
-    A note lives for years and nothing sweeps its prose afterwards - tidy is
+    A note lives for years and nothing sweeps its prose afterwards - clean is
     frontmatter and structure only. The gate is the one point where the text
     can still be corrected in the same turn that wrote it.
 
@@ -167,7 +167,7 @@ class TestAllows(_GateHarness):
     def test_unknown_field_allowed_silently(self):
         # The gate used to print a warning here. On an exit 0 a PreToolUse
         # hook's stderr reaches nobody, so the "warns on unknown fields"
-        # behaviour never happened; check reports them and tidy strips them.
+        # behaviour never happened; check reports them and clean strips them.
         # Assert the silence, so the docs and the code cannot drift apart
         # again without a test noticing.
         with tempfile.TemporaryDirectory() as tmp:
@@ -387,7 +387,7 @@ class TestSkipList(_GateHarness):
         # walk_project matches `_legacy` against every part of the relative
         # path, not just the first, so the gate must too. Exempting only the
         # project root would leave notes/_legacy/ blocked by the gate and
-        # invisible to check and tidy at the same time.
+        # invisible to check and clean at the same time.
         with tempfile.TemporaryDirectory() as tmp:
             project, proot = self._fixture(Path(tmp))
             rc = self._run(project, self._payload(

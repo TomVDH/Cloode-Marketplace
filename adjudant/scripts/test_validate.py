@@ -113,33 +113,6 @@ class TestVersionConsistency(_PatchedTree):
         self.assertTrue(any("version-consistency" in f for f in r.failures))
 
 
-class TestTidyBackupIntegrity(_PatchedTree):
-    """This is the validator the A1 fix repairs — it must now actually fail."""
-
-    def test_passes_with_legacy_file(self):
-        d = self.plugin / ".adjudant-tidy-backup" / "proj" / "notes"
-        d.mkdir(parents=True)
-        (d / "n.md.legacy").write_text("old\n")
-        r = Result()
-        validate.validate_tidy_backup_integrity(r)
-        self.assertEqual(r.failures, [])
-
-    def test_fails_when_files_but_no_legacy(self):
-        d = self.plugin / ".adjudant-tidy-backup" / "proj"
-        d.mkdir(parents=True)
-        (d / "note.md").write_text("not a backup\n")
-        r = Result()
-        validate.validate_tidy_backup_integrity(r)
-        self.assertTrue(any("tidy-backup-integrity" in f for f in r.failures),
-                        "expected tidy-backup-integrity to fail on a dir with no .legacy files")
-
-    def test_passes_on_empty_backup_dir(self):
-        (self.plugin / ".adjudant-tidy-backup" / "proj").mkdir(parents=True)
-        r = Result()
-        validate.validate_tidy_backup_integrity(r)
-        self.assertEqual(r.failures, [])
-
-
 class TestReferenceFilesExist(_PatchedTree):
 
     def test_passes_when_all_references_exist(self):
@@ -287,49 +260,6 @@ class TestPluginVersionSet(_PatchedTree):
         r = Result()
         validate.validate_plugin_version_set(r)
         self.assertTrue(any("plugin-version-set" in f for f in r.failures))
-
-
-class TestGitignoreValidators(_PatchedTree):
-
-    def test_tidy_dirs_negated_entry_fails(self):
-        (self.plugin / ".adjudant-tidy-preview").mkdir()
-        (self.plugin / ".gitignore").write_text("!.adjudant-tidy-preview/\n")
-        r = Result()
-        validate.validate_gitignore_includes_tidy_dirs(r)
-        self.assertTrue(any("gitignore-includes-tidy-dirs" in f for f in r.failures))
-
-    def test_tidy_dirs_pass_with_entry(self):
-        (self.plugin / ".adjudant-tidy-preview").mkdir()
-        (self.plugin / ".gitignore").write_text(".adjudant-tidy-preview/\n")
-        r = Result()
-        validate.validate_gitignore_includes_tidy_dirs(r)
-        self.assertEqual(r.failures, [])
-
-
-class TestTidyPreviewCoherence(_PatchedTree):
-
-    def test_passes_when_no_dir(self):
-        r = Result()
-        validate.validate_tidy_preview_coherence(r)
-        self.assertEqual(r.failures, [])
-
-    def test_fails_when_incomplete(self):
-        d = self.plugin / ".adjudant-tidy-preview"
-        d.mkdir()
-        (d / "summary.md").write_text("x")
-        r = Result()
-        validate.validate_tidy_preview_coherence(r)
-        self.assertTrue(any("tidy-preview-coherence" in f for f in r.failures))
-
-    def test_passes_when_complete(self):
-        d = self.plugin / ".adjudant-tidy-preview"
-        d.mkdir()
-        (d / "summary.md").write_text("x")
-        (d / "changes.json").write_text("{}")
-        (d / "files").mkdir()
-        r = Result()
-        validate.validate_tidy_preview_coherence(r)
-        self.assertEqual(r.failures, [])
 
 
 class TestSkillFrontmatterVersion(_PatchedTree):
@@ -858,8 +788,8 @@ class TestSkillSplit(unittest.TestCase):
 
     def test_skill_still_routes_and_points_at_internals(self):
         text = self.SKILL.read_text()
-        for verb in ("connect", "sync", "check", "sitrep", "tidy",
-                     "ramasse", "dream", "draw", "board"):
+        for verb in ("connect", "sync", "check", "sitrep", "clean",
+                     "dream", "draw", "board"):
             self.assertIn(f"`{verb}`", text)
         self.assertIn("reference/internals.md", text)
 
@@ -886,7 +816,7 @@ class TestDocTrim(unittest.TestCase):
         # the rewrite; three drafts measured a floor of 2446 with every
         # hand-authoring answer still present. Lower means deleting unenforced
         # guidance, or splitting the file and breaking the section citations in
-        # ramasse_scan.py, _vault_walk.py and board_bridge.py.
+        # clean.py, _vault_walk.py and board_bridge.py.
         self.assertLess(est, 2500, f"vault-standards.md is ~{est} tok, budget 2500")
 
     def test_voice_within_budget(self):
@@ -895,7 +825,7 @@ class TestDocTrim(unittest.TestCase):
 
     def test_vault_standards_names_its_enforcers(self):
         text = (self.REF / "vault-standards.md").read_text()
-        for enforcer in ("FIELD_SCHEMA", "tidy", "validate.py"):
+        for enforcer in ("FIELD_SCHEMA", "clean", "validate.py"):
             self.assertIn(enforcer, text)
 
     def test_voice_keeps_the_judgement_content(self):

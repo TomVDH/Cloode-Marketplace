@@ -47,7 +47,7 @@ rules) emits a paste-ready fence. Review its topology against rules §1/§7
 ```bash
 python3 .../scripts/graph.py --project-dir "$PROJECT_ROOT" --mode relations   # wikilink graph of the project
 python3 .../scripts/graph.py --project-dir "$PROJECT_ROOT" --mode board      # kanban snapshot of board-data.json
-python3 .../scripts/graph.py --mode tiers                                    # the tidy→ramasse→dream model
+python3 .../scripts/graph.py --mode tiers                                    # the clean→dream model
 ```
 
 Generating a *scaffold* from mechanical vault data is scaffolding, not content
@@ -82,20 +82,20 @@ generation rules before pasting):
    session note is a point-in-time record of the kanban state (what was open the
    day a decision landed). Not auto-regenerated; each paste is a dated snapshot.
 2. **Briefs and docs, tiers fence**: `graph.py --mode tiers` renders the
-   tidy/ramasse/dream cleanup model for a brief or doc that explains the
+   clean/dream cleanup model for a brief or doc that explains the
    maintenance story.
 
 ## Naming
 
 Per `reference/vault-standards.md`: `.canvas` and `.base` files use **strict kebab-case**
-(`my-cool-canvas.canvas` ✓ — `MyCoolCanvas.canvas` ✗). `ramasse` flags violations
-(`detect_artefact_naming` in `ramasse_scan.py`).
+(`my-cool-canvas.canvas` ✓ — `MyCoolCanvas.canvas` ✗). `clean --deep` flags violations
+(`detect_artefact_naming` in `clean.py`).
 
 ## Folders
 
 `canvases/` and `bases/` are **auto-created on first invocation** — they're in
 `AUTO_CREATED_FOLDERS` (vault-standards §5), so no `extra_folders` declaration in
-the brief is needed and `ramasse` never flags them as drift. Reserve the brief's
+the brief is needed and `clean --deep` never flags them as drift. Reserve the brief's
 `extra_folders` for genuinely custom subfolders.
 
 ## Fail conditions
@@ -112,7 +112,7 @@ the brief is needed and `ramasse` never flags them as drift. Reserve the brief's
 ### Shape checking: the gap, stated plainly
 
 No helper parses a written `.canvas` or `.base`. The PreToolUse schema gate
-judges markdown frontmatter and passes a `.canvas` through untouched, `ramasse`
+judges markdown frontmatter and passes a `.canvas` through untouched, `clean --deep`
 checks the *filename* only, and validator 32 (`base-dashboards`) covers the four
 shipped `templates/bases/dashboard-*.base` files, which are not the ones draw
 writes. So a trailing comma in a canvas, or an edge whose `fromNode` names no

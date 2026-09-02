@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Adjudant vault-walk primitives.
 
-Shared module for dream/check/tidy. Stdlib-only. The walk itself is read-only;
+Shared module for dream/check/clean. Stdlib-only. The walk itself is read-only;
 the durable-write primitives at the bottom are the module's only write path,
 and they only ever touch the file a caller hands them.
 
@@ -28,7 +28,7 @@ Note schema, re-exported from _template_schema (the templates ARE the schema;
 nothing here declares a second copy):
     FIELD_SCHEMA, STATUS_VALUES_FOR_TYPE, HEADINGS_FOR_TYPE
 
-Folder constants (imported by ramasse_scan + tidy):
+Folder constants (imported by clean):
     PROJECT_TYPE_DEFAULT_FOLDERS, AUTO_CREATED_FOLDERS, INDEX_EXEMPT_FOLDERS
 
 CLI smoke-test mode (read-only, the module never writes):
@@ -337,7 +337,6 @@ class VaultFile:
 DEFAULT_SKIP: tuple[str, ...] = (
     ".git", "node_modules", "__pycache__", ".obsidian", ".trash",
     # adjudant's own scratch dirs — never scan a pending preview/backup
-    ".adjudant-tidy-preview", ".adjudant-tidy-backup",
     # a project's junk drawer is not content (finding 31). `_archive` is
     # deliberately NOT here: it names a project ZONE (projects/_archive/) the
     # walkers must still see; remise's `archived-context/` covers the
@@ -742,7 +741,7 @@ def resolve_project_from_cwd(cwd: Optional[Path] = None) -> Optional[ProjectCont
     """Read `.claude/adjudant` at cwd (or given dir), resolve the vault,
     return a `ProjectContext`. None if no breadcrumb or vault unresolvable.
 
-    Used by check/tidy/ramasse_scan/sync to auto-follow the breadcrumb
+    Used by check/clean/sync to auto-follow the breadcrumb
     when invoked from the code-side project root.
 
     Raises VaultUnresolvableError when the breadcrumb's slug is not a safe
@@ -794,7 +793,7 @@ class VaultUnresolvableError(RuntimeError):
     """A `.claude/adjudant` breadcrumb exists but the vault cannot be resolved.
 
     Raised instead of falling back to the code repo as the scan dir — that
-    fallback would let write-path verbs (tidy apply) rewrite the repository.
+    fallback would let write-path verbs (clean apply) rewrite the repository.
     """
 
 
@@ -876,7 +875,7 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
             f"Fix the breadcrumb or re-run /adjudant connect."
         )
     # Treat as vault project path directly — but never accept something that
-    # is plainly a CODE repo. Write verbs (tidy apply, board scaffold) would
+    # is plainly a CODE repo. Write verbs (clean apply, board scaffold) would
     # rewrite source files, the hazard VaultUnresolvableError exists to stop.
     if _looks_like_code_repo(arg_path):
         raise VaultUnresolvableError(
@@ -888,7 +887,7 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
 
 
 # ============================================================
-# Folder constants — single source of truth (imported by ramasse_scan + tidy)
+# Folder constants — single source of truth (imported by clean)
 # ============================================================
 # The tag buckets used to live here: four constants, two classifiers and a
 # normaliser, maintaining a tag on every file that restated the file's own
@@ -1125,7 +1124,7 @@ def safe_project_root(vault: Path, slug: str) -> Optional[Path]:
 
 
 # Wild historical decision-status values that are plain synonyms of active.
-# tidy migrates these after preview; anything else off-enum is reported only.
+# clean migrates these after preview; anything else off-enum is reported only.
 DECISION_STATUS_ALIASES: dict[str, str] = {
     "accepted": "active", "locked": "active", "current": "active",
 }
@@ -1195,7 +1194,7 @@ def schema_drift_for_text(text: str, rel_path: str,
     """Schema drift for PROPOSED content that is not on disk yet.
 
     Used by the PreToolUse write gate so a note is judged before it lands,
-    against the same FIELD_SCHEMA that check reports and tidy repairs.
+    against the same FIELD_SCHEMA that check reports and clean repairs.
     """
     fm, _ = parse_frontmatter(text)
     ftype = fm.fields.get("type")
@@ -1208,7 +1207,7 @@ def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Opt
     """Schema drift for one file per FIELD_SCHEMA, or None when clean.
 
     Only files with a parsed frontmatter block and a canonical type are
-    checked; everything else is ramasse territory (detect_frontmatter_drift,
+    checked; everything else is the deep pass's territory (detect_frontmatter_drift,
     detect_type_drift) and returns None here. `aliases` is the task-status
     alias set (board.STATUS_TO_COLUMN keys) used to mark task values as
     normalizable; decision values normalize via DECISION_STATUS_ALIASES.

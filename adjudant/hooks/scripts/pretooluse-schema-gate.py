@@ -3,7 +3,7 @@
 
 Validates the PROPOSED frontmatter of a Write landing under the resolved
 vault project, using the same FIELD_SCHEMA detector that `check` reports and
-`tidy` feature 4 repairs. Catching drift at write time is what lets
+`clean` feature 4 repairs. Catching drift at write time is what lets
 vault-standards.md stop restating enforceable detail.
 
   - BLOCK (exit 2) on missing required fields or a type/node_type conflict.
@@ -11,14 +11,14 @@ vault-standards.md stop restating enforceable detail.
     it corrects in the same turn.
   - ALLOW SILENTLY on unknown fields. This used to print a warning, but a
     PreToolUse hook's stderr only reaches anyone on a NON-ZERO exit, so the
-    warning was written to nobody. `check` reports unknown fields and `tidy`
+    warning was written to nobody. `check` reports unknown fields and `clean`
     strips them, which is where the correction belongs.
   - FAIL OPEN (exit 0) on anything infrastructural. A write must never be
     blocked because a hook had a bad day.
 
 Write-only: an Edit payload carries old_string/new_string, not the resulting
 file, so the outcome cannot be judged without simulating the edit. Edits keep
-tidy as their backstop.
+clean as their backstop.
 """
 
 import json
@@ -52,10 +52,10 @@ except Exception:  # pragma: no cover - degrade: voice check disabled
 
 # The gate exists to catch model drift in hand-authored notes. These four are
 # not that vector. brief.md is written by connect, _index.md by
-# connect and tidy's index rebuilder, _handoff.md by sync and precompact.
+# connect and clean's index rebuilder, _handoff.md by sync and precompact.
 # _iteration.md is the optional index of an iteration folder whose sibling
 # build artefacts carry no frontmatter at all. All four have full FIELD_SCHEMA
-# entries, so check still reports them and tidy still repairs them after the
+# entries, so check still reports them and clean still repairs them after the
 # fact; only the write-time block is waived.
 _SKIP_NAMES = ("_handoff.md", "_index.md", "_iteration.md", "brief.md")
 
@@ -82,7 +82,7 @@ def _voice_verdict(content: str, rel) -> int:
     """Block a vault write carrying a conversational tic, else allow.
 
     Surface 2 of the voice contract (reference/voice.md). A note lives for
-    years and nothing sweeps its prose afterwards: tidy repairs frontmatter and
+    years and nothing sweeps its prose afterwards: clean repairs frontmatter and
     structure, never sentences. This hook is the last point where the text can
     still be fixed in the turn that wrote it.
 
@@ -261,7 +261,7 @@ def main() -> int:
         print("  Fix the frontmatter and write again. "
               "See reference/vault-standards.md.", file=sys.stderr)
         return 2
-    # Everything else in `drift` (unknown fields, status values) is tidy's and
+    # Everything else in `drift` (unknown fields, status values) is clean's and
     # check's territory. Saying so here would go to /dev/null on an exit 0.
     return _voice_verdict(content, rel)
 

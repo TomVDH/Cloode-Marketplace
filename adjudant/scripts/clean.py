@@ -1,14 +1,29 @@
 #!/usr/bin/env python3
-"""Adjudant tidy — mechanical vault sweep.
+"""Adjudant clean — the cleanup verb, net-subtractive by construction.
 
-Four features (replaces the old ramasse mechanical surface):
-  1. Rebuild `_index.md` in every project subfolder with ≥2 same-type siblings
+`tidy` and `ramasse` were one job split across two verbs and two cadences.
+`clean` is the surface sweep; `clean --deep` adds the structural detectors
+that were ramasse's analysis phase. Both are read-only until you apply.
+
+The contract, enforced in `_vault_write.VaultWriteGuard` rather than promised
+in prose: clean may rewrite a file in place and it may remove one. It may not
+create a vault file. Anything it cannot fix by rewriting, it reports.
+
+Surface features:
+  1. Rebuild an EXISTING `_index.md` in every project subfolder with >=2
+     same-type siblings. A folder with no index is reported as a gap, never
+     filled: creating one is the single write that made the old verb add more
+     than it removed, and plan 4 owns index generation.
   2. Bump `updated:` frontmatter on touched files (doc, brief, note types)
-  3. Rewrite `[text](path.md)` → `[[path-stem|text]]` when path resolves in vault
+  3. Rewrite `[text](path.md)` -> `[[path-stem|text]]` when path resolves in vault
   4. Frontmatter schema repair per FIELD_SCHEMA: strip unknown fields, migrate
-     the one legacy key with a live target (node_type → type), and normalise
-     decision-status aliases (accepted/locked/current → active).
+     the one legacy key with a live target (node_type -> type), and normalise
+     decision-status aliases (accepted/locked/current -> active).
      Task-status aliases are accepted input and never rewritten.
+
+Deep pass (`--deep`), read-only, no guard needed:
+  folder drift, frontmatter drift, type drift, naming violations, artefact
+  naming, wikilink form violations, broken wikilinks, doc/decision mismatches.
 
 Tag normalisation was feature 3 until v3 and is gone with the tag buckets.
 A `tags:` block is a field no template declares, so feature 4 strips it as an
@@ -21,13 +36,14 @@ Phases:
   preview  — write the proposed changes to scratch (read-only sweep)
   apply    — backup live files to scratch, then apply preview
 
-Scratch is $TMPDIR/adjudant/{project}/{tidy-preview,tidy-backup} (see
+Scratch is $TMPDIR/adjudant/{project}/{clean-preview,clean-backup} (see
 _scratch.py), never the vault, and backups keep the newest BACKUP_KEEP.
 
 CLI:
-    python3 tidy.py detect  --project-dir PATH
-    python3 tidy.py preview --project-dir PATH [--vault-dir PATH]
-    python3 tidy.py apply   --project-dir PATH
+    python3 clean.py detect  --project-dir PATH
+    python3 clean.py preview --project-dir PATH [--vault-dir PATH] [--deep]
+                             [--folder SUBDIR]
+    python3 clean.py apply   --project-dir PATH
 
 See docs/superpowers/2026-05-26-adjudant-tidy-ramasse-log.design.md.
 """
@@ -40,6 +56,7 @@ import re
 import shutil
 import sys
 import tempfile
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -47,22 +64,29 @@ from typing import Any, Optional
 from _cost import cost_block, read_threshold, stat_walk
 from _scratch import BACKUP_KEEP, prune_backups, scratch_dir
 from _vault_walk import (
+    AUTO_CREATED_FOLDERS,
     FIELD_SCHEMA,
     DECISION_STATUS_ALIASES,
+    DEFAULT_SKIP,
     INDEX_EXEMPT_FOLDERS,
     MD_LINK_RE,
+    PROJECT_TYPE_DEFAULT_FOLDERS,
     VaultFile,
     build_vault_index,
+    is_checkable_wikilink,
     parse_frontmatter,
+    resolve_scope,
     resolve_vault,
     resolve_wikilink,
     schema_drift_for_file,
+    scope_rel,
     smart_project_dir, VaultUnresolvableError,
     walk_project,
 )
+from _vault_write import VaultCreateRefused, VaultWriteGuard
 
 # Task-status alias set for feature 5's drift check (same defensive import
-# as check.py; aliases are accepted input, never rewritten by tidy).
+# as check.py; aliases are accepted input, never rewritten by clean).
 try:
     from board import STATUS_TO_COLUMN
     _TASK_STATUS_ALIASES: set = set(STATUS_TO_COLUMN)
@@ -70,11 +94,12 @@ except Exception:  # pragma: no cover - degraded, schema phase still strips
     _TASK_STATUS_ALIASES = set()
 
 
-# Kept as scratch *kinds*, not directory names: since v3 these resolve under
-# $TMPDIR via _scratch.scratch_dir, never inside the vault. The names are
-# unchanged so a reader grepping for the old dirs lands here.
-PREVIEW_KIND = "tidy-preview"
-BACKUP_KIND = "tidy-backup"
+# Scratch *kinds*, not directory names: these resolve under $TMPDIR via
+# _scratch.scratch_dir, never inside the vault. Renamed with the verb, which
+# state-contract.md rule 4 calls out as the unsafe kind of change - the
+# statusline probes these two paths, so it moves in the same commit.
+PREVIEW_KIND = "clean-preview"
+BACKUP_KIND = "clean-backup"
 
 
 def preview_dir(project_dir: Path) -> Path:
@@ -208,7 +233,7 @@ _CURATED_BULLET_RE = re.compile(r"^\s*-\s+\[\[([^\]|#]+?)(?:#[^\]|]*)?\|(.+?)\]\
 def harvest_aliases(section_lines: list[str]) -> dict[str, str]:
     """`{link target: alias}` for every aliased bullet in an Entries section.
 
-    First occurrence wins, matching the rest of tidy's duplicate handling.
+    First occurrence wins, matching the rest of clean's duplicate handling.
     """
     found: dict[str, str] = {}
     for ln in section_lines:
@@ -232,28 +257,6 @@ def _format_entry_bullet(f: Path, aliases: Optional[dict[str, str]] = None) -> s
     else:
         display = stem.replace("-", " ").replace("_", " ")
     return f"- [[{stem}|{display}]]"
-
-
-def generate_index_content(
-    folder_name: str,
-    entries: list[Path],
-) -> str:
-    """Generate canonical `_index.md` content for a folder with no existing index."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    pretty = _capitalize_folder_name(folder_name)
-    sorted_entries = _sort_entries(entries)
-    rows = [_format_entry_bullet(f) for f in sorted_entries]
-    return (
-        "---\n"
-        "type: index\n"
-        f"created: {today}\n"
-        f"updated: {today}\n"
-        "---\n\n"
-        f"# {pretty}\n\n"
-        "## Entries\n\n"
-        + "\n".join(rows)
-        + "\n"
-    )
 
 
 _ENTRIES_HEADING_RE = re.compile(r"^##\s+entries\b", re.IGNORECASE)
@@ -461,6 +464,315 @@ def _uncorroborated_type(file_type: Optional[str], fields: dict[str, Any]) -> Op
 
 
 # ============================================================
+# Deep pass — structural detectors, moved from ramasse_scan.py
+#
+# Read-only. They propose nothing and touch nothing, so no guard applies to
+# them: a structural finding is a sentence for a human, not a rewrite. They
+# run only on `--deep`, which is what "sparing, roughly quarterly" became
+# once the two cadences stopped being two verbs.
+# ============================================================
+
+
+# Doc filename UPPERCASE rule — exceptions
+DOC_NAME_EXCEPTIONS = {"brief", "_index", "_handoff"}
+
+
+def _project_type(files: list[VaultFile]) -> Optional[str]:
+    """Read project_type from brief.md frontmatter."""
+    for f in files:
+        if f.rel_path == Path("brief.md"):
+            pt = f.frontmatter.fields.get("project_type")
+            if isinstance(pt, str) and pt:
+                return pt
+    return None
+
+
+def _extra_folders(files: list[VaultFile]) -> list[str]:
+    """Read extra_folders declared in brief frontmatter."""
+    for f in files:
+        if f.rel_path == Path("brief.md"):
+            ef = f.frontmatter.fields.get("extra_folders")
+            if isinstance(ef, list):
+                return [str(x) for x in ef if x]
+            if isinstance(ef, str) and ef:
+                return [ef]
+    return []
+
+
+def detect_folder_drift(
+    project_dir: Path,
+    project_type: Optional[str],
+    extra_folders: list[str],
+) -> list[str]:
+    """Folders present at project root that aren't in defaults + extras + auto."""
+    if not project_type or project_type not in PROJECT_TYPE_DEFAULT_FOLDERS:
+        return []
+    defaults = PROJECT_TYPE_DEFAULT_FOLDERS[project_type]
+    allowed = set(defaults["with_index"]) | set(defaults["no_index"]) | AUTO_CREATED_FOLDERS | set(extra_folders) | {"_legacy"}
+    drift = []
+    for entry in sorted(project_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith("."):
+            continue
+        if entry.name in allowed:
+            continue
+        drift.append(entry.name)
+    return drift
+
+
+def detect_index_gaps(project_dir: Path, files: list[VaultFile]) -> list[str]:
+    """Folders with ≥2 same-type sibling .md files missing _index.md.
+
+    Skips INDEX_EXEMPT_FOLDERS (sessions, images, assets, previews, iterations).
+    """
+    # Group files by parent folder relative to project
+    by_parent: dict[Path, list[VaultFile]] = defaultdict(list)
+    for f in files:
+        parent = f.rel_path.parent
+        if parent == Path("."):
+            continue
+        by_parent[parent].append(f)
+
+    gaps = []
+    for parent, members in by_parent.items():
+        # Skip exempt folders (any part of the path)
+        if any(p in INDEX_EXEMPT_FOLDERS for p in parent.parts):
+            continue
+        non_index = [m for m in members if m.rel_path.name != "_index.md"]
+        if len(non_index) < 2:
+            continue
+        has_index = any(m.rel_path.name == "_index.md" for m in members)
+        if not has_index:
+            gaps.append(str(parent))
+    return sorted(gaps)
+
+
+def detect_frontmatter_drift(files: list[VaultFile]) -> list[dict]:
+    """Frontmatter issues per vault-standards §1:
+       - null/~ values (should omit key)
+       - missing frontmatter entirely
+       - parse error
+    """
+    drift = []
+    for f in files:
+        rel = str(f.rel_path)
+        if not f.frontmatter.has_block:
+            drift.append({"file": rel, "issue": "missing frontmatter block"})
+            continue
+        if f.frontmatter.parse_error:
+            drift.append({"file": rel, "issue": f"parse error: {f.frontmatter.parse_error}"})
+            continue
+        for key, value in f.frontmatter.fields.items():
+            if isinstance(value, str) and value.strip().lower() in ("null", "~"):
+                drift.append({"file": rel, "issue": f"{key}: {value} (per §1 omit empty keys)"})
+    return drift
+
+
+def detect_type_drift(files: list[VaultFile]) -> dict[str, Any]:
+    """Files with a `type:` no template declares.
+
+    The canonical set is the schema's own key set, so a kind stops being
+    canonical the moment its template is deleted, with nothing here to edit.
+    """
+    counter: Counter[str] = Counter()
+    examples: dict[str, list[str]] = defaultdict(list)
+    for f in files:
+        t = f.file_type
+        if not t:
+            continue
+        if t not in FIELD_SCHEMA:
+            counter[t] += 1
+            if len(examples[t]) < 3:
+                examples[t].append(str(f.rel_path))
+    return {
+        "non_canonical_count": sum(counter.values()),
+        "values": {t: {"count": n, "examples": examples[t]} for t, n in counter.most_common()},
+    }
+
+
+def detect_naming_violations(files: list[VaultFile]) -> list[dict]:
+    """Naming-rule violations per vault-standards §4."""
+    out = []
+    for f in files:
+        # templates/ holds canonical scaffolds (decision.md, doc.md, session.md) —
+        # they're named for their type, not for an instance, so the §4 instance
+        # naming rules don't apply.
+        if "templates" in f.rel_path.parts:
+            continue
+        name = f.rel_path.name
+        stem = name[:-3] if name.endswith(".md") else name
+        t = f.file_type
+
+        # type:doc filename must be UPPERCASE (exceptions: brief, _index, _handoff)
+        if t == "doc" and stem not in DOC_NAME_EXCEPTIONS:
+            if any(c.islower() for c in stem) and not stem.startswith("_"):
+                out.append({"file": str(f.rel_path), "issue": "type:doc filename not UPPERCASE (§4)"})
+
+        # Date-prefixed doc — should be decision
+        if t == "doc":
+            m = DATE_PREFIX_RE.match(stem)
+            if m and m.group(2):
+                out.append({"file": str(f.rel_path), "issue": "type:doc with date-prefix — should be decision?"})
+
+        # Decision filename must be YYYY-MM-DD-kebab
+        if t == "decision":
+            m = DATE_PREFIX_RE.match(stem)
+            if not m:
+                out.append({"file": str(f.rel_path), "issue": "type:decision without YYYY-MM-DD- prefix"})
+
+        # Session filename must be YYYY-MM-DD only (no trailing kebab)
+        if t == "session":
+            m = DATE_PREFIX_RE.match(stem)
+            if not m or m.group(2):
+                out.append({"file": str(f.rel_path), "issue": "type:session not in YYYY-MM-DD.md form"})
+
+    return out
+
+
+KEBAB_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def detect_artefact_naming(project_dir: Path, include_legacy: bool = False) -> list[dict]:
+    """`.canvas`/`.base` filenames must be strict kebab-case (§4 'strict').
+
+    These artefacts aren't markdown, so `walk_project` never sees them — this
+    is their dedicated naming pass (draw.md promises a check enforces the rule).
+    templates/ scaffolds are exempt, mirroring detect_naming_violations; the
+    _legacy skip honors include_legacy, matching walk_project's contract.
+    """
+    out = []
+    skip = set(DEFAULT_SKIP)
+    if not include_legacy:
+        skip.add("_legacy")
+    for ext in ("canvas", "base"):
+        for f in sorted(project_dir.rglob(f"*.{ext}")):
+            rel = f.relative_to(project_dir)
+            if any(part in skip or part == "templates" for part in rel.parts):
+                continue
+            if not KEBAB_RE.fullmatch(f.stem):
+                out.append({"file": str(rel),
+                            "issue": f".{ext} filename not strict kebab-case (§4)"})
+    return out
+
+
+def detect_wikilink_form_violations(files: list[VaultFile], vault_index: set[str]) -> list[dict]:
+    """`[text](*.md)` markdown-style links pointing at vault .md files.
+
+    Per §6, only count those whose path RESOLVES — external markdown links to
+    non-vault paths are valid.
+    """
+    out = []
+    for f in files:
+        for text, path, line in f.markdown_md_links:
+            # Strip heading anchor for resolution check
+            stem = path.split("#", 1)[0]
+            # Try a couple of forms
+            if resolve_wikilink(stem, vault_index):
+                out.append({
+                    "file": str(f.rel_path),
+                    "line": line,
+                    "text": text,
+                    "path": path,
+                })
+    return out
+
+
+def detect_broken_wikilinks(files: list[VaultFile], vault_index: set[str]) -> dict[str, Any]:
+    """Wikilinks whose target doesn't resolve in the vault index."""
+    broken: list[tuple[str, int, str]] = []
+    total = 0
+    for f in files:
+        for wl in f.wikilinks:
+            # Embeds, same-file heading links, and attachments can't resolve
+            # against the index — they are not broken, just uncheckable.
+            if not is_checkable_wikilink(wl):
+                continue
+            total += 1
+            if not resolve_wikilink(wl.target, vault_index):
+                broken.append((str(f.rel_path), wl.line, wl.target))
+
+    target_counter: Counter[str] = Counter(t for _, _, t in broken)
+    sample = [
+        {"file": f, "line": ln, "target": t}
+        for f, ln, t in broken[:20]
+    ]
+    return {
+        "total_wikilinks": total,
+        "broken_count": len(broken),
+        "broken_pct": round(100.0 * len(broken) / total, 2) if total else 0.0,
+        "top_broken_targets": [{"target": t, "count": n} for t, n in target_counter.most_common(15)],
+        "samples": sample,
+    }
+
+
+def detect_doc_decision_flags(files: list[VaultFile]) -> list[dict]:
+    """Doc-vs-decision disambiguator findings (per §3 of vault-standards).
+
+    Specifically:
+      - type:doc with date-prefix → likely decision
+      - type:decision at project root (should be in decisions/)
+    """
+    out = []
+    for f in files:
+        t = f.file_type
+        rel = f.rel_path
+        if t == "decision" and rel.parent == Path(".") and rel.name != "brief.md":
+            out.append({"file": str(rel), "issue": "type:decision at project root (should be in decisions/)"})
+    return out
+
+
+
+def _structural_count(structural: dict[str, Any]) -> int:
+    """Drift items across the deep detectors, or 0 when the pass did not run."""
+    if not structural:
+        return 0
+    return (
+        len(structural["folder_drift"])
+        + len(structural["frontmatter_drift"])
+        + len(structural["type_drift"]["values"])
+        + len(structural["naming_violations"])
+        + len(structural["wikilink_form_violations"])
+        + structural["broken_wikilinks"]["broken_count"]
+        + len(structural["doc_decision_flags"])
+    )
+
+
+def run_deep_scan(
+    project_dir: Path,
+    files: list[VaultFile],
+    vault_index: set[str],
+    *,
+    scope: Optional[str] = None,
+) -> dict[str, Any]:
+    """The structural drift catalog. Read-only; proposes nothing.
+
+    Takes the file list `build_preview` already walked rather than walking
+    again — the deep pass is the expensive half, and reading the project twice
+    to answer one question was ramasse's own cost problem.
+    """
+    proj_type = _project_type(files)
+    extras = _extra_folders(files)
+    broken = detect_broken_wikilinks(files, vault_index) if vault_index else {
+        "total_wikilinks": 0, "broken_count": 0, "broken_pct": 0.0,
+        "top_broken_targets": [], "samples": [],
+    }
+    return {
+        "project_type": proj_type,
+        "files_scanned": len(files),
+        "folder_drift": [] if scope else detect_folder_drift(project_dir, proj_type, extras),
+        "frontmatter_drift": detect_frontmatter_drift(files),
+        "type_drift": detect_type_drift(files),
+        "naming_violations": (detect_naming_violations(files)
+                              + detect_artefact_naming(project_dir)),
+        "wikilink_form_violations": (
+            detect_wikilink_form_violations(files, vault_index) if vault_index else []),
+        "broken_wikilinks": broken,
+        "doc_decision_flags": detect_doc_decision_flags(files),
+    }
+
+
+# ============================================================
 # Preview build
 # ============================================================
 
@@ -469,20 +781,32 @@ def build_preview(
     project_dir: Path,
     vault_index: set[str],
     project_slug: Optional[str],
+    deep: bool = False,
+    scope: Optional[str] = None,
 ) -> dict[str, Any]:
     """Walk project, compute all proposed changes, return a change-set dict
     (not yet written to disk). Caller serialises it.
+
+    The first three parameters are the signature every existing caller uses
+    positionally. `deep` appends ramasse's structural detectors, which are
+    read-only and propose nothing. `scope` narrows the walk to one project
+    subfolder; folder drift is a question about the ROOT's shape, so a scoped
+    run skips it rather than answering it against a fraction of the folders.
     """
     files = list(walk_project(project_dir))
+    if scope:
+        prefix = tuple(Path(scope).parts)
+        files = [f for f in files if f.rel_path.parts[:len(prefix)] == prefix]
     today = datetime.now().strftime("%Y-%m-%d")
 
     # Bucket: per-file proposed full content (only when content changes)
     file_proposals: dict[str, dict[str, Any]] = {}
-    # Index proposals (always-regenerated)
+    # Index proposals — rebuilds of an index that already exists
     index_proposals: dict[str, dict[str, Any]] = {}
+    # Folders that want an index and have none. Reported, never filled.
+    index_gaps = detect_index_gaps(project_dir, files)
 
     # --- Feature 1: index rebuilds ---
-    from collections import defaultdict
     by_parent: dict[Path, list[VaultFile]] = defaultdict(list)
     for f in files:
         parent = f.rel_path.parent
@@ -523,21 +847,11 @@ def build_preview(
                     "original_hash": _hash_short(existing),
                     "proposed_content": proposed,
                 }
-        else:
-            proposed = generate_index_content(
-                folder_name=parent.name,
-                entries=[m.rel_path for m in non_index],
-            )
-            # No `original_hash`: there was nothing to hash. `had_existing`
-            # False is itself the guard — apply refuses this proposal if a
-            # file has appeared at the path in the meantime.
-            index_proposals[idx_rel] = {
-                "folder": str(parent),
-                "had_existing": False,
-                "mode": "generated",
-                "entry_count": len(non_index),
-                "proposed_content": proposed,
-            }
+        # A folder with no `_index.md` falls through: creating one was the
+        # single write that made a cleanup verb add more than it removed, and
+        # `_vault_write.VaultWriteGuard` now refuses it at apply time. It is
+        # reported in `index_gaps` instead, and plan 4's generator, which owns
+        # index surfaces, fills it.
 
     # --- Features 2-4: per-file edits ---
     schema_actions: dict[str, dict[str, Any]] = {}
@@ -584,7 +898,7 @@ def build_preview(
                     status_fix = (si["value"], DECISION_STATUS_ALIASES[si["value"]])
             if unverified:
                 # Reported, never acted on. The human decides whether the file
-                # is mistyped or genuinely half-built; tidy is not entitled to
+                # is mistyped or genuinely half-built; clean is not entitled to
                 # strip content on the strength of a `type:` nothing backs up.
                 schema_actions[str(f.rel_path)] = {"unverified_type": unverified}
             if renames or drops or status_fix:
@@ -615,19 +929,28 @@ def build_preview(
                 "proposed_content": modified,
             }
 
+    structural = run_deep_scan(project_dir, files, vault_index,
+                               scope=scope) if deep else {}
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "project_dir": str(project_dir),
         "project_slug": project_slug,
+        "deep": deep,
+        "scope": scope,
         "summary": {
             "files_modified": len(file_proposals),
             "indexes_rebuilt": len(index_proposals),
+            "index_gaps": len(index_gaps),
             "schema_files": len(schema_actions),
             "total_changes": len(file_proposals) + len(index_proposals),
+            "structural_findings": _structural_count(structural),
         },
         "file_proposals": file_proposals,
         "index_proposals": index_proposals,
+        "index_gaps": index_gaps,
         "schema_actions": schema_actions,
+        "structural_findings": structural,
     }
 
 
@@ -681,31 +1004,50 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
         target.write_text(info["proposed_content"])
 
     # summary.md
+    summary = change_set["summary"]
+    scope = change_set.get("scope")
     summary_lines = [
-        "# Tidy preview",
+        "# Clean preview" + (" (deep)" if change_set.get("deep") else ""),
         "",
         f"Generated: {change_set['generated_at']}",
         f"Project: {change_set['project_slug']}",
+    ]
+    if scope:
+        summary_lines.append(f"Scope: {scope}")
+    summary_lines += [
         "",
         "## Summary",
         "",
-        f"- Files to modify: {change_set['summary']['files_modified']}",
-        f"- Indexes to rebuild: {change_set['summary']['indexes_rebuilt']}",
-        f"- Total changes: {change_set['summary']['total_changes']}",
+        f"- Files to modify: {summary['files_modified']}",
+        f"- Indexes to rebuild: {summary['indexes_rebuilt']}",
+        f"- Index gaps reported: {summary.get('index_gaps', 0)}",
+        f"- Total changes: {summary['total_changes']}",
+    ]
+    if change_set.get("deep"):
+        summary_lines.append(
+            f"- Structural findings: {summary.get('structural_findings', 0)}")
+    summary_lines += [
         "",
         "## Index rebuilds",
         "",
     ]
     for rel, info in sorted(change_set["index_proposals"].items()):
-        if not info["had_existing"]:
-            marker = "create"
-        elif info.get("mode") == "frontmatter_only":
+        if info.get("mode") == "frontmatter_only":
             marker = "frontmatter-only"
         elif info.get("mode") == "upserted":
             marker = "upsert-entries"
         else:
             marker = "rewrite"
         summary_lines.append(f"- {marker}: `{rel}` ({info['entry_count']} entries)")
+    if change_set.get("index_gaps"):
+        summary_lines.append("")
+        summary_lines.append("## Index gaps (reported, not filled)")
+        summary_lines.append("")
+        summary_lines.append("clean does not create vault files. These folders "
+                             "want an `_index.md` and have none:")
+        summary_lines.append("")
+        for folder in change_set["index_gaps"]:
+            summary_lines.append(f"- `{folder}`")
     summary_lines.append("")
     summary_lines.append("## File modifications")
     summary_lines.append("")
@@ -724,11 +1066,33 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
             if act.get("status"):
                 parts.append("status " + act["status"])
             summary_lines.append(f"- `{rel}`: {'; '.join(parts)}")
+    structural = change_set.get("structural_findings") or {}
+    if structural:
+        summary_lines.append("")
+        summary_lines.append("## Structural findings (deep pass, reported only)")
+        summary_lines.append("")
+        for label, key in (
+            ("Folder drift", "folder_drift"),
+            ("Frontmatter drift", "frontmatter_drift"),
+            ("Naming violations", "naming_violations"),
+            ("Wikilink form violations", "wikilink_form_violations"),
+            ("Doc/decision flags", "doc_decision_flags"),
+        ):
+            summary_lines.append(f"- {label}: {len(structural[key])}")
+        summary_lines.append(
+            f"- Non-canonical `type:` values: {len(structural['type_drift']['values'])}")
+        summary_lines.append(
+            f"- Broken wikilinks: {structural['broken_wikilinks']['broken_count']} "
+            f"({structural['broken_wikilinks']['broken_pct']}%)")
+        summary_lines.append("")
+        summary_lines.append("Full detail is in `changes.json` under "
+                             "`structural_findings`. Every one of these needs a "
+                             "human decision; none is applied.")
     summary_lines.append("")
     summary_lines.append("## Next steps")
     summary_lines.append("")
     summary_lines.append("- Review the proposed files under `files/`")
-    summary_lines.append("- To apply: `python3 tidy.py apply --project-dir <PATH>`")
+    summary_lines.append("- To apply: `python3 clean.py apply --project-dir <PATH>`")
     summary_lines.append(f"- To discard: delete `{preview}`")
     (preview / "summary.md").write_text("\n".join(summary_lines) + "\n")
 
@@ -761,35 +1125,30 @@ def _contained(root: Path, rel: str) -> Optional[Path]:
 SKIPPED_NOTE_NAME = "SKIPPED-STALE.txt"
 
 # Why a proposal was refused. Four different stories: an edit is not a
-# deletion, and neither is a file someone else created in the meantime.
+# deletion, and neither is a proposal the write guard turned down.
 SKIP_REASONS: dict[str, str] = {
     "changed": "edited since preview, applying would eat that edit",
     "vanished": "deleted or renamed since preview, applying would resurrect it",
-    "appeared": "created since preview, the preview expected nothing here",
     "unreadable": "could not be read to compare against the preview",
+    "refused": "clean may not create a vault file and nothing was there to rewrite",
 }
 
 
 def _skip_reason(
     live: Path,
     original_hash: Optional[str],
-    expects_creation: bool,
 ) -> Optional[str]:
     """A SKIP_REASONS key when this proposal must not be applied, else None.
 
-    `expects_creation` marks a proposal built for a path that held no file at
-    preview time (an `_index.md` for a folder that had none). It records no
-    hash because there was nothing to hash, so its guard is presence rather
-    than content: if something is there now, someone else put it there and it
-    is not ours to overwrite.
+    The proposal was computed FROM the live bytes, so anything that no longer
+    matches those bytes means applying it would destroy newer work. A missing
+    file counts: a deletion or rename between the two phases is an intentional
+    act, and copying the proposal back would silently undo it.
 
-    Otherwise the proposal was computed FROM the live bytes, so anything that
-    no longer matches those bytes means applying it would destroy newer work.
-    A missing file counts: a deletion or rename between the two phases is an
-    intentional act, and copying the proposal back would silently undo it.
+    "refused" is not decided here. It is what the write guard says when a
+    proposal names a path holding no file — a stale preview from before clean
+    stopped generating indexes, or a tampered `changes.json`.
     """
-    if expects_creation:
-        return "appeared" if live.exists() else None
     if not original_hash:
         return None  # pre-guard preview: nothing recorded to compare against
     if not live.is_file():
@@ -809,7 +1168,7 @@ def _write_skipped_note(backup_dir: Path, skipped: list[tuple[str, str]]) -> Non
     body = "\n".join(f"{reason}\t{rel}" for rel, reason in sorted(skipped))
     (backup_dir / SKIPPED_NOTE_NAME).write_text(
         "These paths no longer match what the preview was built from, so they\n"
-        "were left alone. Re-run `tidy preview` to fold the current state in.\n\n"
+        "were left alone. Re-run `clean preview` to fold the current state in.\n\n"
         f"{legend}\n\n{body}\n"
     )
 
@@ -835,11 +1194,14 @@ def read_skipped_note(backup_dir: Path) -> list[dict[str, str]]:
 def apply_preview(project_dir: Path) -> Path:
     """Apply the scratch preview to live files. Returns backup dir path.
 
-    Every proposal is gated four ways before it can touch a live file: the
+    Every proposal is gated five ways before it can touch a live file: the
     target must stay inside the project, the path must not have been applied
     already in this same run, the live file must still match what the proposal
-    was computed from (see `_skip_reason`), and the pre-change copy must land
-    in a backup dir that no concurrent or retried apply can overwrite.
+    was computed from (see `_skip_reason`), the pre-change copy must land in a
+    backup dir that no concurrent or retried apply can overwrite, and the
+    write itself goes through `VaultWriteGuard`, which refuses any path not
+    already holding a file. The last one is the contract: clean rewrites and
+    removes, and cannot add.
     """
     preview = preview_dir(project_dir)
     if not preview.is_dir():
@@ -851,7 +1213,7 @@ def apply_preview(project_dir: Path) -> Path:
 
     # Unique per apply: second-granularity dirs with exist_ok=True let a retry
     # inside the same second overwrite the ONLY pre-change backup with
-    # already-tidied content, making the original unrecoverable.
+    # already-cleaned content, making the original unrecoverable.
     backup_root_dir = backup_root(project_dir)
     backup_root_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -861,7 +1223,8 @@ def apply_preview(project_dir: Path) -> Path:
     skipped: list[tuple[str, str]] = []
     handled: set[str] = set()
 
-    # Backup + apply
+    # Backup + apply. Every live write in this loop goes through the guard.
+    guard = VaultWriteGuard(project_dir)
     for rel_set in (change_set["file_proposals"], change_set["index_proposals"]):
         for rel, info in rel_set.items():
             live = _contained(project_dir, rel)
@@ -873,28 +1236,32 @@ def apply_preview(project_dir: Path) -> Path:
             # a schema fix) has exactly ONE proposed body and must be
             # applied exactly once. A second pass would compare the live file
             # against a hash this run just invalidated (a false stale report)
-            # and overwrite the pre-change backup with already-tidied content.
+            # and overwrite the pre-change backup with already-cleaned content.
             if rel in handled:
                 continue
             handled.add(rel)
             # changes.json is editable by design, so `info` is untrusted too.
             info = info if isinstance(info, dict) else {}
-            reason = _skip_reason(
-                live,
-                info.get("original_hash"),
-                expects_creation=info.get("had_existing") is False,
-            )
+            reason = _skip_reason(live, info.get("original_hash"))
             if reason:
                 skipped.append((rel, reason))
+                continue
+            try:
+                body = proposed.read_text()
+            except (OSError, UnicodeDecodeError):
+                skipped.append((rel, "unreadable"))
                 continue
             # Backup live (if exists)
             if live.is_file():
                 backup_target = backup_dir / (rel + ".legacy")
                 backup_target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(live, backup_target)
-            # Apply
-            live.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(proposed, live)
+            # Apply. No mkdir for the parent: a proposal whose folder does not
+            # exist can only be a create, which the guard refuses anyway.
+            try:
+                guard.rewrite(live, body)
+            except VaultCreateRefused:
+                skipped.append((rel, "refused"))
 
     if skipped:
         _write_skipped_note(backup_dir, skipped)
@@ -912,12 +1279,17 @@ def apply_preview(project_dir: Path) -> Path:
 
 def cli_main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="tidy.py",
-        description="Adjudant tidy — mechanical sweep (preview / apply).",
+        prog="clean.py",
+        description="Adjudant clean — cleanup sweep (preview / apply).",
     )
     parser.add_argument("phase", choices=["detect", "preview", "apply"])
     parser.add_argument("--project-dir", default=".", help="Project root (default: cwd)")
     parser.add_argument("--vault-dir", help="Vault root (default: resolved from breadcrumb)")
+    parser.add_argument("--deep", action="store_true",
+                        help="Add the structural detectors (was /adjudant ramasse). "
+                             "Read-only: they report, they never propose a write")
+    parser.add_argument("--folder", help="Scope the walk to one project subfolder "
+                        "(e.g. 'notes'); the preview header states the scope")
     parser.add_argument("--estimate-only", action="store_true",
                         help="Print only the cost block (stat-only walk) and exit")
     args = parser.parse_args(argv)
@@ -938,11 +1310,22 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"error: project-dir not found: {project_dir}", file=sys.stderr)
         return 1
 
+    scope: Optional[str] = None
+    scope_dir = project_dir
+    if args.folder:
+        try:
+            scope_dir = resolve_scope(project_dir, args.folder)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        scope = scope_rel(project_dir, scope_dir)
+
     code_root = Path(args.project_dir).expanduser().resolve()
-    files_n, n_bytes = stat_walk(project_dir)
+    # A scoped run estimates the subtree it will read (same as dream.py).
+    files_n, n_bytes = stat_walk(scope_dir)
     cost = cost_block(files_n, n_bytes, read_threshold(code_root))
     if args.estimate_only:
-        print(json.dumps({"cost": cost}, indent=2))
+        print(json.dumps({"scope": scope, "cost": cost}, indent=2))
         return 0
 
     if args.phase == "detect":
@@ -974,17 +1357,25 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print("delete it or run 'apply' to commit it", file=sys.stderr)
             return 1
         vault_index = build_vault_index(vault_dir) if vault_dir and vault_dir.is_dir() else set()
-        change_set = build_preview(project_dir, vault_index, slug)
+        change_set = build_preview(project_dir, vault_index, slug,
+                                   deep=args.deep, scope=scope)
         preview = write_preview_to_disk(project_dir, change_set)
-        print(f"[tidy] preview written to {preview}", file=sys.stderr)
+        print(f"[clean] preview written to {preview}", file=sys.stderr)
         summary = change_set["summary"]
         print(
-            f"[tidy] {summary['total_changes']} changes "
+            f"[clean] {summary['total_changes']} changes "
             f"({summary['files_modified']} files, {summary['indexes_rebuilt']} indexes)",
             file=sys.stderr,
         )
+        if summary.get("index_gaps"):
+            print(f"[clean] {summary['index_gaps']} folder(s) want an index and "
+                  f"have none; clean reports them and does not create files",
+                  file=sys.stderr)
+        if args.deep:
+            print(f"[clean] deep pass: {summary.get('structural_findings', 0)} "
+                  f"structural finding(s), reported only", file=sys.stderr)
         # Stdout: compact JSON of the summary block for Claude
-        print(json.dumps({**summary, "cost": cost}))
+        print(json.dumps({**summary, "scope": scope, "cost": cost}))
         return 0
 
     if args.phase == "apply":
@@ -993,16 +1384,16 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             return 1
         backup_dir = apply_preview(project_dir)
         skipped = read_skipped_note(backup_dir)
-        print(f"[tidy] applied; backup at {backup_dir}", file=sys.stderr)
+        print(f"[clean] applied; backup at {backup_dir}", file=sys.stderr)
         if skipped:
             # Never let a skip be silent: the user asked for these changes.
-            print(f"[tidy] {len(skipped)} path(s) LEFT ALONE, they no longer match "
+            print(f"[clean] {len(skipped)} path(s) LEFT ALONE, they no longer match "
                   f"the preview:", file=sys.stderr)
             for item in skipped:
-                print(f"[tidy]   {item['path']}: "
+                print(f"[clean]   {item['path']}: "
                       f"{SKIP_REASONS.get(item['reason'], item['reason'])}",
                       file=sys.stderr)
-            print("[tidy] re-run preview to fold the current state in", file=sys.stderr)
+            print("[clean] re-run preview to fold the current state in", file=sys.stderr)
         print(json.dumps({"backup_dir": str(backup_dir), "skipped_stale": skipped}))
         return 0
 

@@ -63,7 +63,7 @@ Request tokens, recognized on any verb:
 | `ELI12` | Granular steps plus the architectural layer |
 | `ELICTO` | Trench detail and big picture, no hand-holding |
 
-Defaults: `sitrep` ELI5, `check` ELI12, `dream` and `ramasse` judging ELICTO;
+Defaults: `sitrep` ELI5, `check` ELI12, `dream` and `clean --deep` judging ELICTO;
 a request token overrides.
 
 ## Simplified Technical English (ASD-STE100)

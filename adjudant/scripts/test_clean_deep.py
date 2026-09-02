@@ -1,14 +1,22 @@
-"""Tests for adjudant/scripts/ramasse_scan.py."""
+"""Tests for clean.py's deep pass — the structural detectors that were
+ramasse's analysis phase, and the `--deep` / `--folder` surface that reaches
+them. Moved wholesale when the two verbs merged: the detectors did not change,
+so neither did what they promise.
+"""
 
 import contextlib
 import io
 import json
+import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from ramasse_scan import (
-    cli_main as ramasse_cli,
+from clean import (
+    _structural_count as clean_structural_count,
+    build_preview,
+    cli_main as clean_cli,
     detect_broken_wikilinks,
     detect_doc_decision_flags,
     detect_folder_drift,
@@ -18,9 +26,40 @@ from ramasse_scan import (
     detect_naming_violations,
     detect_type_drift,
     detect_wikilink_form_violations,
-    run_scan,
+    preview_dir,
+    run_deep_scan,
 )
 from _vault_walk import build_vault_index, walk_project
+
+_MODULE_TMP = None
+_OLD_TMPDIR = None
+
+
+def setUpModule():
+    """Pin $TMPDIR: clean's preview lives under it, and the CLI tests below
+    drive a real preview rather than calling the detectors directly."""
+    global _MODULE_TMP, _OLD_TMPDIR
+    _OLD_TMPDIR = os.environ.get("TMPDIR")
+    _MODULE_TMP = tempfile.mkdtemp(prefix="adjudant-test-clean-deep-")
+    os.environ["TMPDIR"] = _MODULE_TMP
+
+
+def tearDownModule():
+    if _OLD_TMPDIR is None:
+        os.environ.pop("TMPDIR", None)
+    else:
+        os.environ["TMPDIR"] = _OLD_TMPDIR
+    if _MODULE_TMP:
+        shutil.rmtree(_MODULE_TMP, ignore_errors=True)
+
+
+def _scan(root: Path, scope=None) -> dict:
+    """run_deep_scan over the whole project, the way build_preview calls it."""
+    files = list(walk_project(root))
+    if scope:
+        prefix = tuple(Path(scope).parts)
+        files = [f for f in files if f.rel_path.parts[:len(prefix)] == prefix]
+    return run_deep_scan(root, files, build_vault_index(root), scope=scope)
 
 
 def _write_file(path: Path, content: str) -> None:
@@ -327,11 +366,11 @@ class TestDetectDocDecisionFlags(unittest.TestCase):
 
 
 # ============================================================
-# End-to-end run_scan
+# End-to-end run_deep_scan
 # ============================================================
 
 
-class TestRunDream(unittest.TestCase):
+class TestRunDeepScan(unittest.TestCase):
 
     def test_clean_project_no_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -341,10 +380,9 @@ class TestRunDream(unittest.TestCase):
             _write_file(root / "decisions" / "2026-05-26-test.md", "---\ntype: decision\n---\n")
             _write_file(root / "decisions" / "2026-05-25-test.md", "---\ntype: decision\n---\n")
             _write_file(root / "decisions" / "_index.md", "---\ntype: index\n---\n# Decisions")
-            report = run_scan(root, root)
-            self.assertEqual(report["meta"]["project_slug"], "test")
-            self.assertEqual(report["meta"]["project_type"], "coding")
-            self.assertEqual(report["summary"]["drift_items"], 0)
+            report = _scan(root)
+            self.assertEqual(report["project_type"], "coding")
+            self.assertEqual(clean_structural_count(report), 0)
 
     def test_dirty_project_drift_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -354,8 +392,8 @@ class TestRunDream(unittest.TestCase):
             _write_file(root / "a.md", "---\ntype: note\nsession: null\n---\n")
             # Add a non-canonical type
             _write_file(root / "b.md", "---\ntype: api-ref\n---\n")
-            report = run_scan(root, root)
-            self.assertGreater(report["summary"]["drift_items"], 0)
+            report = _scan(root)
+            self.assertGreater(clean_structural_count(report), 0)
             self.assertGreater(len(report["frontmatter_drift"]), 0)
             self.assertGreater(report["type_drift"]["non_canonical_count"], 0)
 
@@ -365,10 +403,10 @@ class TestRunDream(unittest.TestCase):
             root = Path(tmp)
             _make_minimal_project(root)
             _write_file(root / "a.md", "---\ntype: note\nsession: null\n---\n")
-            report = run_scan(root, root)
+            report = _scan(root)
             payload = json.dumps(report, default=str)
             roundtrip = json.loads(payload)
-            self.assertEqual(roundtrip["meta"]["project_slug"], "test")
+            self.assertEqual(roundtrip["project_type"], "coding")
 
 
 class TestArtefactNaming(unittest.TestCase):
@@ -409,18 +447,18 @@ class TestArtefactNaming(unittest.TestCase):
             self.assertEqual(len(v), 1)
             self.assertIn("Old Canvas.canvas", v[0]["file"])
 
-    def test_artefact_naming_lands_in_run_scan(self):
+    def test_artefact_naming_lands_in_the_deep_scan(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make_minimal_project(root)
             (root / "canvases").mkdir()
             (root / "canvases" / "BadName.canvas").write_text("{}")
-            report = run_scan(root, root)
+            report = _scan(root)
             files = [x["file"] for x in report["naming_violations"]]
             self.assertIn("canvases/BadName.canvas", files)
 
 
-class TestRamasseCost(unittest.TestCase):
+class TestDeepCost(unittest.TestCase):
 
     def test_estimate_only_is_cost_only_and_stat_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -431,7 +469,8 @@ class TestRamasseCost(unittest.TestCase):
             (root / "notes" / "big.md").write_text("x" * 8000)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = ramasse_cli(["--project-dir", str(root), "--estimate-only"])
+                rc = clean_cli(["preview", "--project-dir", str(root),
+                                "--deep", "--estimate-only"])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
             self.assertEqual(set(payload), {"scope", "cost"})  # scope null when unscoped
@@ -443,12 +482,12 @@ class TestRamasseCost(unittest.TestCase):
             (root / "brief.md").write_text(
                 "---\ntype: project\nslug: t\nproject_type: coding\nstatus: active\n---\n\n# T\n")
             buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                rc = ramasse_cli(["--project-dir", str(root)])
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                rc = clean_cli(["preview", "--project-dir", str(root), "--deep"])
             self.assertEqual(rc, 0)
             payload = json.loads(buf.getvalue())
             self.assertIn("cost", payload)
-            self.assertIn("summary", payload)
+            self.assertIn("structural_findings", payload)
 
 
 class TestFolderScope(unittest.TestCase):
@@ -476,11 +515,21 @@ class TestFolderScope(unittest.TestCase):
             "tags:\n  - doc\n---\n\nD\n" + "y" * 6000)
 
     def _run(self, root: Path, *extra: str) -> tuple[int, dict]:
+        """One `clean preview --deep`. Returns (rc, the full change set).
+
+        clean's stdout is the summary line; the report lives in the preview's
+        changes.json. The preview is removed afterwards so a second call in
+        the same test is not refused as "preview already exists"."""
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-            rc = ramasse_cli(["--project-dir", str(root), *extra])
-        out = buf.getvalue()
-        return rc, (json.loads(out) if rc == 0 and out.strip() else {})
+            rc = clean_cli(["preview", "--project-dir", str(root), "--deep", *extra])
+        if rc != 0:
+            return rc, {}
+        preview = preview_dir(root)
+        report = json.loads((preview / "changes.json").read_text())
+        report["cost"] = json.loads(buf.getvalue())["cost"]
+        shutil.rmtree(preview, ignore_errors=True)
+        return rc, report
 
     def test_scoped_run_sees_only_the_subtree_and_names_it(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -489,7 +538,7 @@ class TestFolderScope(unittest.TestCase):
             rc, report = self._run(root, "--folder", "notes")
             self.assertEqual(rc, 0)
             self.assertEqual(report["scope"], "notes")
-            names = json.dumps(report["naming_violations"])
+            names = json.dumps(report["structural_findings"]["naming_violations"])
             self.assertIn("bad-doc.md", names)
             self.assertNotIn("also-bad.md", names)
 
@@ -500,8 +549,10 @@ class TestFolderScope(unittest.TestCase):
             (root / "unexpected-folder").mkdir()
             _, full = self._run(root)
             _, scoped = self._run(root, "--folder", "notes")
-            self.assertTrue(full["folder_drift"])          # root question, full run answers
-            self.assertEqual(scoped["folder_drift"], [])   # scoped run declines it
+            self.assertTrue(full["structural_findings"]["folder_drift"],
+                            "root question, a full run answers it")
+            self.assertEqual(scoped["structural_findings"]["folder_drift"], [],
+                             "a scoped run declines it")
 
     def test_cost_estimate_is_the_subtrees(self):
         with tempfile.TemporaryDirectory() as tmp:

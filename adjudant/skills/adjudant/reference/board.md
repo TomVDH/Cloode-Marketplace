@@ -180,7 +180,7 @@ The board is a view of the vault, but a drag happens in the view. So every
 lane change on **any** surface is pushed back into the task note's `status:`:
 a browser drag, an Obsidian kanban drag folded in by the read-back, or a deck
 you edited by hand. Without this the note stayed stale forever, because the
-merge deliberately keeps the dragged column, and `check`, `dream`, `ramasse`
+merge deliberately keeps the dragged column, and `check`, `dream`, `clean`
 and the sitrep board line all read the note rather than the deck.
 
 - Each lane has exactly one canonical status (`CANONICAL_STATUS_FOR_COLUMN`),

@@ -31,18 +31,11 @@
       "weight": "medium"
     },
     {
-      "name": "tidy",
-      "description": "Routine surface sweep: indexes, wikilink form, updated dates, off-schema frontmatter. Previews then applies. [vault|repo|all] adds repo symlinks.",
-      "argumentHint": "[vault|repo|all]",
-      "reference": "reference/tidy.md",
+      "name": "clean",
+      "description": "Cleanup sweep: indexes, wikilink form, updated dates, off-schema frontmatter. Previews then applies, and never creates a vault file. --deep adds the structural pass. [vault|repo|all] adds repo symlinks.",
+      "argumentHint": "[vault|repo|all] [--deep] [--folder <path>]",
+      "reference": "reference/clean.md",
       "weight": "medium"
-    },
-    {
-      "name": "ramasse",
-      "description": "Deep structural clean: folder shape, schema, file types, naming, and broken wikilinks. Sparing, roughly quarterly. Previews then applies. --folder scopes the walk to one subtree.",
-      "argumentHint": "[--folder <path>]",
-      "reference": "reference/ramasse.md",
-      "weight": "heavy"
     },
     {
       "name": "dream",
