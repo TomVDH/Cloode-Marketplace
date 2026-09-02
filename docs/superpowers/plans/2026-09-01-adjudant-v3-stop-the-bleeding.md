@@ -1335,10 +1335,9 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `adjudant/scripts/test_handoff_freshness.py`:
-
-```python
-The file already imports the module as `pc` (`import _handoff_freshness as pc`):
+Append to `adjudant/scripts/test_handoff_freshness.py`. The file already
+imports the module as `pc` (`import _handoff_freshness as pc`), so the tests
+below use that name:
 
 ```python
 class TestRememberProbe(unittest.TestCase):
