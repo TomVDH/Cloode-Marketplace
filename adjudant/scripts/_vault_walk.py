@@ -580,6 +580,54 @@ def _vault_search_roots(home: Optional[Path] = None) -> list[Path]:
     return roots
 
 
+def _describe_vault_root(root: Path, home: Path, is_local: bool) -> str:
+    """Human label for a vault-root option in the guided 'no vault yet' setup."""
+    if root == home:
+        return "~ home folder (this machine only)"
+    if root == home / "Documents":
+        return "~/Documents (this machine only)"
+    name = root.name
+    if "iCloud~md~obsidian" in root.parts:
+        label = "iCloud Drive (Obsidian folder)"
+    elif name in ("com~apple~CloudDocs", "iCloudDrive"):
+        label = "iCloud Drive"
+    else:
+        label = f"{name} (cloud sync)"   # OneDrive, OneDrive - <Org>, Dropbox, Google Drive, ...
+    if str(root).startswith("/mnt/"):    # WSL: a Windows-owned folder seen from Linux
+        label += " [Windows drive]"
+    return label
+
+
+def suggest_vault_roots() -> list[dict]:
+    """Existing directories where a NEW vault could live, for the guided
+    'no vault yet' setup. Cloud-sync roots (recommended for cross-machine
+    continuity) come first, then local-only folders. Only roots that exist on
+    THIS machine are returned, across macOS, Windows, and Linux/WSL, so the
+    guidance never offers a dead path. Same taxonomy as `_vault_search_roots`."""
+    home = Path.home()
+    local_roots = {home, home / "Documents"}
+    out: list[dict] = []
+    seen: set[str] = set()
+    for root in _vault_search_roots(home):
+        try:
+            if not root.is_dir():
+                continue
+        except OSError:
+            continue
+        key = str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        is_local = root in local_roots
+        out.append({
+            "path": key,
+            "label": _describe_vault_root(root, home, is_local),
+            "kind": "local" if is_local else "cloud",
+            "recommended": not is_local,
+        })
+    return out
+
+
 def _candidate_vault_paths(vault_name: str) -> list[Path]:
     """Locations where an Obsidian vault named `vault_name` might live, across
     macOS, Windows, and Linux/WSL. Cross-machine portability fallback used when

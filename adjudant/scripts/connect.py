@@ -49,6 +49,7 @@ from _vault_walk import (
     parse_breadcrumb,
     parse_frontmatter,
     resolve_vault,
+    suggest_vault_roots,
     zone_of,
 )
 
@@ -808,6 +809,10 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                         default=".", help="Project root (default: cwd)")
     parser.add_argument("--vault-path", help="Explicit vault path")
     parser.add_argument("--vault-name", help="Vault name (looked up under standard locations)")
+    parser.add_argument("--suggest-vaults", action="store_true",
+                        help="Print existing cloud/local vault-location options (JSON) and exit")
+    parser.add_argument("--create-vault", action="store_true",
+                        help="Create --vault-path (with a projects/ dir) if it does not exist")
     parser.add_argument("--slug", help="Project slug (kebab-case)")
     parser.add_argument("--project-type", choices=VALID_PROJECT_TYPES)
     parser.add_argument("--project-name", help="Human-readable display name")
@@ -821,10 +826,22 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                         help="Initial brief status (default: inferred seed|active)")
     args = parser.parse_args(argv)
 
+    if args.suggest_vaults:
+        print(json.dumps({"vault_roots": suggest_vault_roots()}, indent=2))
+        return 0
+
     project_root = Path(args.project_root).expanduser().resolve()
     if not project_root.is_dir():
         print(f"error: project-root not found: {project_root}", file=sys.stderr)
         return 1
+
+    # Create a brand-new vault at an explicit path when asked (guided setup):
+    # the user picked a location that does not hold a vault yet.
+    if args.create_vault and args.vault_path:
+        new_vault = Path(args.vault_path).expanduser()
+        if not new_vault.is_dir():
+            new_vault.mkdir(parents=True, exist_ok=True)
+            (new_vault / "projects").mkdir(exist_ok=True)
 
     # Resolve vault
     vault_path = resolve_vault_for_connect(project_root, args.vault_path, args.vault_name)

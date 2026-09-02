@@ -1979,5 +1979,30 @@ class TestVaultSearchRoots(unittest.TestCase):
         self.assertEqual(_vault_walk._safe_subdirs(Path("/no/such/path/ever")), [])
 
 
+class TestSuggestVaultRoots(unittest.TestCase):
+
+    def test_returns_only_existing_dirs_with_labels(self):
+        import _vault_walk
+        roots = _vault_walk.suggest_vault_roots()
+        for entry in roots:
+            self.assertTrue(Path(entry["path"]).is_dir(), entry["path"])
+            self.assertTrue(entry["label"])
+            self.assertIn(entry["kind"], ("local", "cloud"))
+            self.assertIsInstance(entry["recommended"], bool)
+
+    def test_no_duplicate_paths(self):
+        import _vault_walk
+        paths = [e["path"] for e in _vault_walk.suggest_vault_roots()]
+        self.assertEqual(len(paths), len(set(paths)))
+
+    def test_cloud_roots_are_recommended_and_home_is_not(self):
+        import _vault_walk
+        home = str(Path.home())
+        for entry in _vault_walk.suggest_vault_roots():
+            if entry["path"] == home:
+                self.assertFalse(entry["recommended"])
+                self.assertEqual(entry["kind"], "local")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -45,10 +45,27 @@ Also: append project row to `{vault}/projects/_index.md`.
 
 | Need | Resolution order |
 |---|---|
-| Vault path | `--vault-path` arg → `OB_VAULT` env var → `--vault-name` arg → existing breadcrumb → walk parent dirs for `Home.md` with `type: vault-home` → prompt once |
+| Vault path | `--vault-path` arg → `OB_VAULT` env var → `--vault-name` arg → existing breadcrumb → walk parent dirs for `Home.md` with `type: vault-home` → guided location setup (see below) |
 | Project slug | existing breadcrumb → cwd basename (enforce kebab-case) |
 | `project_type` | existing brief → prompt once (`coding | knowledge | plugin | tinkerage`) |
 | Project display name | prompt once if creating new |
+
+## No vault yet? Guided location setup
+
+Coworkers keep their notes in different places, and many will not have a vault at all. When the vault cannot be resolved (no `OB_VAULT`, no breadcrumb, no `Home.md` up the tree), do NOT guess a path. Walk the user through choosing one:
+
+1. Run `connect.py --suggest-vaults`. It prints the vault-location options that exist on THIS machine as JSON: cloud-sync roots first (`recommended: true`), then local-only folders.
+2. Present them as a short numbered list. Recommend a **cloud-sync** root (iCloud Drive, OneDrive, Google Drive, Dropbox) so the vault follows the user across machines; note that a **local** folder (`~/Documents`) is fine for a single machine. The user may also type any absolute path.
+3. Ask for a vault name (default `Claude Vault`). The vault will live at `<chosen root>/<vault name>`.
+4. Create and scaffold it in one step:
+
+   ```
+   connect.py --project-root {code root} --vault-path "<root>/<vault name>" --create-vault --purpose "..." [flags]
+   ```
+
+   `--create-vault` makes the directory (and its `projects/` folder) when it does not exist; connect then scaffolds the project inside it as usual, and writes the breadcrumb so later sessions resolve it silently.
+
+If a vault already resolves, skip all of this: connect uses it without asking.
 
 ## Idempotent behavior
 

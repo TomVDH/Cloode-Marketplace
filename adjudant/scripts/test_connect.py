@@ -844,5 +844,31 @@ class TestProvisionDashboards(unittest.TestCase):
             self.assertIn("# my edit", target.read_text())
 
 
+class TestGuidedVaultSetup(unittest.TestCase):
+
+    def test_suggest_vaults_prints_json_and_exits_zero(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = connect_cli(["--suggest-vaults"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(out.getvalue())
+        self.assertIn("vault_roots", payload)
+        self.assertIsInstance(payload["vault_roots"], list)
+
+    def test_create_vault_makes_the_dir_and_projects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "code"
+            (project / ".claude").mkdir(parents=True)
+            new_vault = Path(tmp) / "fresh-vault"
+            connect_cli([
+                "--project-root", str(project),
+                "--vault-path", str(new_vault),
+                "--create-vault",
+                "--detect-only",
+            ])
+            self.assertTrue(new_vault.is_dir())
+            self.assertTrue((new_vault / "projects").is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()
