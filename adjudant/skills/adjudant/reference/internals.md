@@ -21,11 +21,9 @@ Every file-touching verb is backed by a Python helper. Helpers follow the `.clau
 | Verb | Helper | Output |
 |---|---|---|
 | `connect` | `connect.py` | idempotent project init (5 steps + projects-index row) |
-| `sync` | `sync.py` | brief refresh + handoff mirror + projects-index row refresh |
 | `clean` | `clean.py` + `_vault_write.py` + `_vault_walk.py` | preview/apply with backup, every live write through `VaultWriteGuard` (rewrite and remove only, never create). `--deep` adds the structural drift catalog, reported and never applied |
 | `dream` | `dream.py` + `_vault_walk.py` | JSON content/staleness comparator catalog (analysis phase); judge + plan + execute via superpowers |
-| `check` | `check.py` + `_vault_walk.py` | JSON status snapshot |
-| `sitrep` | `sitrep.py` + `_vault_walk.py` | JSON orientation briefing (recent activity, NEXT, vault location + counts); Claude renders ELI5 |
+| `status` | `status.py` + `_vault_walk.py` | make-current phase (brief refresh, handoff mirror, projects-index row) then one JSON report: three bands, orientation, compliance, §4 naming, advisor pulse. `--no-sync` for a read-only pass |
 | `board` | `board.py` + `_vault_walk.py` | scaffold per-project `board-data.json` + a self-contained `board.html`; resolves any project by slug (or `--all`) via `enumerate_projects`. Refresh-without-clobber: re-seeding from `tasks/` merges, preserving dragged columns (idempotent; `--force` rebuilds with a `.bak`). `status` prints per-column counts |
 | `draw` | `graph.py` + `_vault_walk.py` | generated mermaid fences from vault data — `relations` (wikilink graph, node-capped), `board` (kanban snapshot), `tiers` (cleanup model). Read-only |
 
@@ -77,26 +75,26 @@ The proactive layer, and the inverse of the voice directive's defaults:
 **opt-in, off until asked for**. Its state is deliberately visible twice —
 `advisor: on` in the breadcrumb (machine-read, repo-committed, syncs across
 machines) and a marker line in AGENTS.md (context-injected by the harness,
-readable by any human at project root). `scripts/advisor.py` owns both
-surfaces so they cannot drift; validator 35 (`advisor-wiring`) fails the
+readable by any human at project root). `scripts/status.py` owns both
+surfaces so they cannot drift; the `advisor-wiring` validator fails the
 build if the contract doc, the SessionStart banner, or the marker drops out.
 
 When on, SessionStart emits a banner (120-token cap, tested, placed after
 Voice: the register governs how observations are said before anything
 decides what to notice) pointing at `reference/advisor.md` — the standing
 contract: notice tasks/gaps/gaffes/stale-context, tier them (urgent inline,
-routine to the board or the next `check`), dry wit, `❦` lead-in, raise-once
+routine to the board or the next `status`), dry wit, `❦` lead-in, raise-once
 dedup, never auto-write. The intelligence is the model's; hooks stay
 mechanical.
 
 Two helper subcommands serve it, both riding existing machinery:
 
-- `advisor.py pulse` — read-only context-integrity check: `freshness_report`
+- the pulse, folded into every `status` report — read-only context-integrity check: `freshness_report`
   (expired / dangling-supersession / unbounded facts), dream's
   dangling-scope detector, the handoff NEXT, and the five most recent
   decisions, with a `quiet` verdict so a healthy project produces silence.
-  Run at resume when the mode is on, or via `/adjudant advisor pulse`.
-- `advisor.py capture-task --title … [--note …]` — lands an approved
+  Run at resume when the mode is on; it rides `status`'s `advisor.pulse` key.
+- `status.py --capture-task --title … [--note …]` — lands an approved
   suggestion as `tasks/{slug}.md` via `templates/task.md` and lets
   `ensure_board` seed the card. Dedup by slug; an existing note is never
   touched. The same rail the session-end bridge uses, so a captured task is

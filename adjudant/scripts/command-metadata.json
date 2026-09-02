@@ -10,24 +10,10 @@
       "weight": "light"
     },
     {
-      "name": "sync",
-      "description": "Push project state to the vault: refresh the brief, mirror the handoff, update the project index row.",
-      "argumentHint": "(no args)",
-      "reference": "reference/sync.md",
-      "weight": "light"
-    },
-    {
-      "name": "check",
-      "description": "Read-only health report for the project and vault, including schema drift. [vault|repo|all] also audits repo structure. Never writes.",
-      "argumentHint": "[vault|repo|all]",
-      "reference": "reference/check.md",
-      "weight": "medium"
-    },
-    {
-      "name": "sitrep",
-      "description": "Plain-language orientation after a break: where you left off, what is done, where the vault is, and what to do next. Read-only.",
-      "argumentHint": "(no args)",
-      "reference": "reference/sitrep.md",
+      "name": "status",
+      "description": "Make derived state current (brief date, handoff, index row), then report in three bands: what is wrong now, what is going stale, and what is worth a look.",
+      "argumentHint": "[vault|repo|all] [--no-sync]",
+      "reference": "reference/status.md",
       "weight": "medium"
     },
     {
@@ -56,20 +42,6 @@
       "description": "Scaffold a self-hosted kanban seeded from tasks/: drag to move, saved to disk. Re-seeding keeps your dragged cards. Use --project SLUG or --all.",
       "argumentHint": "[scaffold|serve|status] [--project SLUG|--all] [--from-tasks] [--force]",
       "reference": "reference/board.md",
-      "weight": "light"
-    },
-    {
-      "name": "advisor",
-      "description": "Toggle the proactive advisor (visible flag in the breadcrumb + AGENTS.md marker), or run its read-only context pulse.",
-      "argumentHint": "[on|off|status|pulse]",
-      "reference": "reference/advisor.md",
-      "weight": "light"
-    },
-    {
-      "name": "kebab",
-      "description": "Slugify a title into kebab-case, or --scan a project for filenames whose title breaks the vault-standards §4 naming rule. Read-only; never renames.",
-      "argumentHint": "<text> | --scan",
-      "reference": "reference/kebab.md",
       "weight": "light"
     }
   ]

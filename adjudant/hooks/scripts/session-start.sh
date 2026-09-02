@@ -178,7 +178,7 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
   # Same 120-token budget discipline, tested in test_hook_shell.
   case "${advisor_knob:-off}" in
     on|true|1|yes)
-      printf -- '- Advisor: on. Load `reference/advisor.md` now and follow it: notice tasks, gaps, gaffes, and stale context while working. Urgent findings surface inline; the rest go to the board or the next check. Run a context pulse at resume.\n'
+      printf -- '- Advisor: on. Load `reference/advisor.md` now and follow it: notice tasks, gaps, gaffes, and stale context while working. Urgent findings surface inline; the rest go to the board or the next status report. Run a context pulse at resume.\n'
       ;;
     *) : ;;
   esac

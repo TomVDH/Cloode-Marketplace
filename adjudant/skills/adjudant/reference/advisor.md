@@ -46,7 +46,7 @@ Never auto-write. A proposed card or note is written only on the user's yes.
 - At most two inline observations per turn; the rest hold.
 - Per-session dedup: an observation raised once is not raised again, even
   reworded. Raise-once, then it lives on the board or nowhere.
-- At resume with the mode on: run the context pulse (`advisor.py pulse`,
+- At resume with the mode on: run the context pulse (`status.py`'s `advisor.pulse`,
   read-only) and report only what it flags. Quiet pulse, no output.
 - `check` renders held routine observations under its nudge convention.
 

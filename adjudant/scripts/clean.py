@@ -86,7 +86,7 @@ from _vault_walk import (
 from _vault_write import VaultCreateRefused, VaultWriteGuard
 
 # Task-status alias set for feature 5's drift check (same defensive import
-# as check.py; aliases are accepted input, never rewritten by clean).
+# as status.py; aliases are accepted input, never rewritten by clean).
 try:
     from board import STATUS_TO_COLUMN
     _TASK_STATUS_ALIASES: set = set(STATUS_TO_COLUMN)

@@ -205,7 +205,7 @@ and the sitrep board line all read the note rather than the deck.
   endings are left exactly as they were. The write is atomic and locked.
 - Cards with no task note (hand-added on the board) are never materialized
   into notes here, and since v3 nowhere else either: write the note yourself,
-  or use `/adjudant advisor capture-task`.
+  or use `/adjudant status --capture-task`.
 - It converges: once the note matches, the next run reports `no-change`.
 
 ### Kanban surface (v0.23.0)
@@ -245,7 +245,7 @@ does nothing else. Until v3 it also replayed the session task ledger at close:
 every id without a `TaskCompleted` event became a task note. Status changes
 other than completion fire no events, so abandoned and renamed todos qualified
 too, and `tasks/` filled with cards nobody wrote. A task note is now written
-only when someone asks for one — `/adjudant advisor capture-task`, or your own
+only when someone asks for one — `/adjudant status --capture-task`, or your own
 hand. The ledger still lives in `$TMPDIR` for the statusline; nothing reads it
 into the vault.
 

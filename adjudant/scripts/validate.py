@@ -799,6 +799,10 @@ def validate_advisor_wiring(r: Result) -> None:
     banner that names it, and an AGENTS.md marker the toggle stamps. Any one
     of them silently dropping out leaves a mode that claims to watch and does
     not — the worst version, since the user opted in expecting eyes.
+
+    The toggle moved into `status.py` when the advisor verb folded into
+    `status`; the mode itself did not move, so all three surfaces still have
+    to agree.
     """
     name = "advisor-wiring"
     problems: list[str] = []
@@ -810,10 +814,10 @@ def validate_advisor_wiring(r: Result) -> None:
     if "advisor_knob" not in hook_text or "reference/advisor.md" not in hook_text:
         problems.append("session-start.sh no longer reads the advisor knob "
                         "and points the banner at reference/advisor.md")
-    helper = ROOT / "scripts" / "advisor.py"
+    helper = ROOT / "scripts" / "status.py"
     helper_text = helper.read_text() if helper.is_file() else ""
     if "AGENTS_MARKER_PREFIX" not in helper_text:
-        problems.append("advisor.py lost its AGENTS.md marker")
+        problems.append("status.py lost the advisor's AGENTS.md marker")
     if problems:
         r.add_fail(name, "; ".join(problems))
         return

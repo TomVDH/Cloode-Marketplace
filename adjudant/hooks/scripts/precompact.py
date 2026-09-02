@@ -20,7 +20,7 @@ session log. That marker, with started, resumed and ended, produced 164 lines
 followed by nothing.
 
 Freshness logic and the `.remember/` source picker are shared with
-`/adjudant sync` via `scripts/_handoff_freshness.py` (single source of truth).
+`/adjudant status` via `scripts/_handoff_freshness.py` (single source of truth).
 The import is best-effort: if it ever fails, the hook still does its mechanical
 work — it just omits the freshness header. All vault I/O fails closed: an
 offline iCloud vault must never crash the compaction.

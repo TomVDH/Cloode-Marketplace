@@ -59,10 +59,23 @@ Projects that never grow tasks never grow board files. Nothing to clean up.
 
 ## 4. Checking in
 
-Two read-only verbs, neither writes anything:
+One verb, `/adjudant status`. It brings the derived state up to date (the
+brief's date, the handoff, the project's row in the index), then tells you
+where things stand in three bands:
 
-- `/adjudant sitrep` — orientation after a break. Where you left off, what's done, where the vault is, what's next, plus your git and dev-server state. Start here when you come back to a project cold.
-- `/adjudant check` — a health report. Project and vault snapshot, plus any notes that have drifted off-schema. Add `check repo` to also audit the code repo's structure, or `check all` for both.
+- **Wrong now** — the vault is claiming something that is false today. A note
+  off-schema, a status that disagrees with the folder the project sits in.
+- **Going stale** — true now, decaying. A handoff nobody has touched, a project
+  that has gone quiet past its threshold.
+- **Worth a look** — a question rather than a defect. A filename that broke the
+  naming rule, an open loop the last dream flagged.
+
+It also carries the orientation you want after a break: where you left off,
+what's done, your git branch and dev-server state. Start here when you come
+back to a project cold.
+
+Add `status repo` to also audit the code repo's structure, or `status all` for
+both. Add `--no-sync` if you want the report without the writes.
 
 ## 5. Keeping the vault clean
 
@@ -95,7 +108,7 @@ Projects don't stay active forever. The vault carries the state in the folder:
 `projects/_archive/` the finished and the abandoned.
 
 Moving a project between them is a folder move you make yourself. No verb does
-it. `/adjudant check` reports a project whose declared status and zone disagree,
+it. `/adjudant status` reports a project whose declared status and zone disagree,
 so a move you forget still gets noticed.
 
 ## Living with it
@@ -106,10 +119,10 @@ so a move you forget still gets noticed.
 
 ## When something looks wrong
 
-- **A write got blocked.** The message names the missing or malformed field. Fix the frontmatter and write again, or run `/adjudant check` to see every drifted note at once.
+- **A write got blocked.** The message names the missing or malformed field. Fix the frontmatter and write again, or run `/adjudant status` to see every drifted note at once.
 - **The board didn't appear.** It's born on the first real task note under `tasks/`. No tasks, no board, by design.
 - **A verb can't find the vault.** The breadcrumb is missing or points nowhere. Re-run `/adjudant connect`.
-- **You want the details.** `/adjudant check` for state, `reference/internals.md` for how the machinery is wired.
+- **You want the details.** `/adjudant status` for state, `reference/internals.md` for how the machinery is wired.
 
 ## 8. The advisor (opt-in)
 
@@ -118,7 +131,7 @@ also *notices* — open loops, missing notes, work that contradicts a decision,
 context that has gone stale:
 
 ```
-/adjudant advisor on
+/adjudant status --advisor on
 ```
 
 The flag is visible twice: `advisor: on` in `.claude/adjudant`, and a marker
@@ -127,32 +140,29 @@ active. Every session start announces it.
 
 - Urgent findings (contradicting a locked decision, diverging from the plan)
   surface inline, at most a sentence or two, marked with `❦`.
-- Everything else is proposed as a board card or held for the next `check`.
+- Everything else is proposed as a board card or held for the next `status`.
 - Nothing is ever written without your yes.
 
-`/adjudant advisor pulse` runs the context-integrity check on demand: expired
-facts, dangling supersessions, drift between the plan and the work.
-`/adjudant advisor off` removes the flag, the marker, and the behaviour.
+Every `/adjudant status` carries the context-integrity pulse: expired facts,
+dangling supersessions, drift between the plan and the work.
+`/adjudant status --advisor off` removes the flag, the marker, and the
+behaviour.
 
 ## 9. Naming things
 
 Kebab-case is the vault's naming rule, and most of it is on you to follow.
-`kebab` answers the question you actually have at write time:
+Ask for a name at write time:
 
 ```
-/adjudant kebab Fix the parser rewrite
+/adjudant status --slug Fix the parser rewrite
 fix-the-parser-rewrite
 ```
 
 Use it before you create a note, task, source, or decision, and the name is
 right the first time.
 
-```
-/adjudant kebab --scan
-```
-
-Scans the project for filenames whose title broke the rule and shows the
-corrected name for each. It never renames anything: renaming breaks every
-wikilink pointing at the file, and that repair is yours to make: `clean
---deep` reports the name, and you decide. Docs are exempt, because the standard wants
-those UPPERCASE.
+Every `status` report also lists filenames whose title broke the rule, with the
+corrected name for each, under **worth a look**. It never renames anything:
+renaming breaks every wikilink pointing at the file, and that repair is yours to
+make: `clean --deep` reports the name, and you decide. Docs are exempt, because
+the standard wants those UPPERCASE.

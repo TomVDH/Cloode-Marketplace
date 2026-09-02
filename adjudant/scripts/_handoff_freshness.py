@@ -2,7 +2,7 @@
 """Shared handoff-freshness primitives for adjudant.
 
 Pure functions (stdlib only, read-only) used by BOTH the PreCompact hook
-(`hooks/scripts/precompact.py`) and the `/adjudant sync` verb (`sync.py`) so
+(`hooks/scripts/precompact.py`) and the `/adjudant status` verb (`status.py`) so
 the freshness header they write stays identical and can't drift.
 
 Freshness is computed from REAL activity (latest `.remember/today-*.md`
@@ -248,7 +248,7 @@ def compute_freshness(
 
 
 # The handoff body's source, when the remember plugin is installed. This lived
-# in two near-identical copies (sync.py and precompact.py) that had already
+# in two near-identical copies (the sync verb and precompact.py) that had already
 # drifted; this module exists to hold exactly this kind of shared primitive.
 _REMEMBER_CANDIDATES = ("remember.md", "now.md")
 
@@ -286,7 +286,7 @@ def remember_status(project_dir: Path) -> dict:
 
 
 # ============================================================
-# The one handoff layout — shared by /adjudant sync and the hooks
+# The one handoff layout — shared by /adjudant status and the hooks
 # ============================================================
 
 

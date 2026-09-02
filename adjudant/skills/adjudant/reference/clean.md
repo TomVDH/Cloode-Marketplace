@@ -35,7 +35,7 @@ Repo ops use `--project-dir` as the repo root directly (no breadcrumb).
 
 - Routine — daily or weekly, the default sweep
 - `--deep` sparingly, roughly quarterly or after a major shape change
-- Before a `/adjudant sync` if drift has accumulated
+- Before a `/adjudant status` if drift has accumulated
 - After `/adjudant dream` flags fixable items
 - After importing or merging vault content
 

@@ -1,7 +1,7 @@
 """Tests for adjudant/scripts/_handoff_freshness.py.
 
 The shared freshness primitives used by both the PreCompact hook and the
-`/adjudant sync` verb.
+`/adjudant status` verb.
 """
 
 import sys
@@ -386,10 +386,11 @@ class TestRememberProbe(unittest.TestCase):
     def test_one_picker_only(self):
         # The picker existed twice, in sync.py and precompact.py, and had
         # already drifted. _handoff_freshness exists to stop exactly that.
+        # sync's half now lives in status, which absorbed the handoff mirror.
         import precompact
-        import sync
+        import status
         self.assertIs(precompact.find_remember_source, pc.find_remember_source)
-        self.assertIs(sync.find_remember_source, pc.find_remember_source)
+        self.assertIs(status.find_remember_source, pc.find_remember_source)
 
 
 if __name__ == "__main__":

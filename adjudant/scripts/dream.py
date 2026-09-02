@@ -701,7 +701,7 @@ _DISMISS_ROW_RE = re.compile(r"^\|\s*(?P<finding>[^|]+?)\s*\|[^|]*\|[^|]*\|\s*$"
 
 # Both spellings a dream report is written under. reference/dream.md mandates
 # `{YYYY-MM-DD}-dream.md`; the state contract records the statusline reading
-# either, and check.py already matches both.
+# either, and status.py already matches both.
 _DREAM_REPORT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:-dream)?\.md$")
 
 

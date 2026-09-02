@@ -788,8 +788,7 @@ class TestSkillSplit(unittest.TestCase):
 
     def test_skill_still_routes_and_points_at_internals(self):
         text = self.SKILL.read_text()
-        for verb in ("connect", "sync", "check", "sitrep", "clean",
-                     "dream", "draw", "board"):
+        for verb in ("connect", "status", "clean", "dream", "draw", "board"):
             self.assertIn(f"`{verb}`", text)
         self.assertIn("reference/internals.md", text)
 
@@ -898,7 +897,7 @@ class TestAdvisorWiring(unittest.TestCase):
             ref.mkdir(parents=True)
             (ref / "advisor.md").write_text("# Advisor\n")
             (fake_root / "scripts").mkdir()
-            (fake_root / "scripts" / "advisor.py").write_text(
+            (fake_root / "scripts" / "status.py").write_text(
                 'AGENTS_MARKER_PREFIX = "**Adjudant advisor: on**"\n')
             orig = validate.ROOT
             validate.ROOT = fake_root

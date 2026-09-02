@@ -10,19 +10,19 @@
       "name": "cabinet-of-imd",
       "version": "3.0.1",
       "source": "./cabinet-of-imd",
-      "description": "The Cabinet of IMD Agents — a flavour layer for Claude Code. Eight college classmates with distinct personalities, voices, disciplines, and pairings serve as specialised web-development agents. v3.0.0 sunsets all functionality (vault writes, session anchors, gate enforcement, state hooks) and keeps only character, voice, and working disciplines. Persistence is delegated to the adjudant plugin when active."
+      "description": "The Cabinet of IMD Agents \u2014 a flavour layer for Claude Code. Eight college classmates with distinct personalities, voices, disciplines, and pairings serve as specialised web-development agents. v3.0.0 sunsets all functionality (vault writes, session anchors, gate enforcement, state hooks) and keeps only character, voice, and working disciplines. Persistence is delegated to the adjudant plugin when active."
     },
     {
       "name": "tui-toolbox",
       "version": "2.0.1",
       "source": "./tui-toolbox",
-      "description": "The shared operating language for agent-built helper CLIs — one visual + interaction + safety language across interactive bash TUIs and python helper scripts, so every tool an agent builds looks, feels, and behaves the same."
+      "description": "The shared operating language for agent-built helper CLIs \u2014 one visual + interaction + safety language across interactive bash TUIs and python helper scripts, so every tool an agent builds looks, feels, and behaves the same."
     },
     {
       "name": "adjudant",
       "version": "2.0.0",
       "source": "./adjudant",
-      "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with ten verbs: connect onboards a project; sync, check, and sitrep report on it; clean and dream sweep it in two escalating tiers; draw builds diagrams and canvases; board runs a self-hosted kanban; and advisor is the opt-in proactive layer — it notices tasks, gaps, gaffes, and stale context while you work, urgent ones inline, the rest to the board or check; and kebab names things, or scans for filenames that broke the naming rule. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify."
+      "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with six verbs: connect onboards a project; status makes derived state current and then reports what is wrong now, going stale, or worth a look; clean and dream sweep it in two escalating tiers, and clean can rewrite and remove but never create; draw builds diagrams and canvases; board runs a self-hosted kanban. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify."
     }
   ]
 }
