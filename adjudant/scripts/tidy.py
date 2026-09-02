@@ -15,8 +15,11 @@ Idempotent: a second run with no fresh drift = no changes.
 
 Phases (mirrors port.py):
   detect   — print one of: 'fresh' | 'preview' | 'applied'
-  preview  — write .adjudant-tidy-preview/ with proposed changes (read-only sweep)
-  apply    — backup live files to .adjudant-tidy-backup/{ts}/, then apply preview
+  preview  — write the proposed changes to scratch (read-only sweep)
+  apply    — backup live files to scratch, then apply preview
+
+Scratch is $TMPDIR/adjudant/{project}/{tidy-preview,tidy-backup} (see
+_scratch.py), never the vault, and backups keep the newest BACKUP_KEEP.
 
 CLI:
     python3 tidy.py detect  --project-dir PATH
@@ -39,6 +42,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from _cost import cost_block, read_threshold, stat_walk
+from _scratch import BACKUP_KEEP, prune_backups, scratch_dir
 from _vault_walk import (
     FIELD_SCHEMA,
     BUCKET_A_TYPES,
@@ -80,8 +84,19 @@ def _migrate_ob_to_bucket_a(tag: str) -> Optional[str]:
     return None
 
 
-PREVIEW_DIR_NAME = ".adjudant-tidy-preview"
-BACKUP_DIR_NAME = ".adjudant-tidy-backup"
+# Kept as scratch *kinds*, not directory names: since v3 these resolve under
+# $TMPDIR via _scratch.scratch_dir, never inside the vault. The names are
+# unchanged so a reader grepping for the old dirs lands here.
+PREVIEW_KIND = "tidy-preview"
+BACKUP_KIND = "tidy-backup"
+
+
+def preview_dir(project_dir: Path) -> Path:
+    return scratch_dir(project_dir, PREVIEW_KIND)
+
+
+def backup_root(project_dir: Path) -> Path:
+    return scratch_dir(project_dir, BACKUP_KIND)
 
 DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:-(.*))?$")
 
@@ -97,8 +112,8 @@ UPDATED_BUMP_TYPES = {"doc", "project", "note"}
 def detect_phase(project_dir: Path) -> str:
     """Return 'preview' if preview dir exists, 'applied' if backup but no preview,
     else 'fresh'."""
-    preview = project_dir / PREVIEW_DIR_NAME
-    backup = project_dir / BACKUP_DIR_NAME
+    preview = preview_dir(project_dir)
+    backup = backup_root(project_dir)
     if preview.is_dir():
         return "preview"
     if backup.is_dir() and any(backup.iterdir()):
@@ -773,11 +788,12 @@ def _hash_short(s: str) -> str:
 
 
 def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path:
-    """Write the change_set to .adjudant-tidy-preview/. Returns preview path."""
-    preview = project_dir / PREVIEW_DIR_NAME
+    """Write the change_set to the out-of-vault preview dir. Returns its path."""
+    preview = preview_dir(project_dir)
+    preview.parent.mkdir(parents=True, exist_ok=True)
     if preview.exists():
         shutil.rmtree(preview)
-    preview.mkdir()
+    preview.mkdir(parents=True)
 
     # changes.json
     (preview / "changes.json").write_text(json.dumps(change_set, indent=2, default=str))
@@ -843,7 +859,7 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
     summary_lines.append("")
     summary_lines.append("- Review the proposed files under `files/`")
     summary_lines.append("- To apply: `python3 tidy.py apply --project-dir <PATH>`")
-    summary_lines.append(f"- To discard: delete `{PREVIEW_DIR_NAME}/`")
+    summary_lines.append(f"- To discard: delete `{preview}`")
     (preview / "summary.md").write_text("\n".join(summary_lines) + "\n")
 
     return preview
@@ -947,7 +963,7 @@ def read_skipped_note(backup_dir: Path) -> list[dict[str, str]]:
 
 
 def apply_preview(project_dir: Path) -> Path:
-    """Apply .adjudant-tidy-preview/ to live files. Returns backup dir path.
+    """Apply the scratch preview to live files. Returns backup dir path.
 
     Every proposal is gated four ways before it can touch a live file: the
     target must stay inside the project, the path must not have been applied
@@ -955,7 +971,7 @@ def apply_preview(project_dir: Path) -> Path:
     was computed from (see `_skip_reason`), and the pre-change copy must land
     in a backup dir that no concurrent or retried apply can overwrite.
     """
-    preview = project_dir / PREVIEW_DIR_NAME
+    preview = preview_dir(project_dir)
     if not preview.is_dir():
         raise RuntimeError(f"no preview at {preview}")
     changes_path = preview / "changes.json"
@@ -966,10 +982,10 @@ def apply_preview(project_dir: Path) -> Path:
     # Unique per apply: second-granularity dirs with exist_ok=True let a retry
     # inside the same second overwrite the ONLY pre-change backup with
     # already-tidied content, making the original unrecoverable.
-    backup_root = project_dir / BACKUP_DIR_NAME
-    backup_root.mkdir(parents=True, exist_ok=True)
+    backup_root_dir = backup_root(project_dir)
+    backup_root_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_dir = Path(tempfile.mkdtemp(prefix=f"{timestamp}-", dir=backup_root))
+    backup_dir = Path(tempfile.mkdtemp(prefix=f"{timestamp}-", dir=backup_root_dir))
 
     files_root = preview / "files"
     skipped: list[tuple[str, str]] = []
@@ -1015,6 +1031,7 @@ def apply_preview(project_dir: Path) -> Path:
 
     # Clean up preview
     shutil.rmtree(preview)
+    prune_backups(backup_root_dir, BACKUP_KEEP)
     return backup_dir
 
 
@@ -1083,7 +1100,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
 
     if args.phase == "preview":
         if detect_phase(project_dir) == "preview":
-            print(f"error: preview already exists at {project_dir / PREVIEW_DIR_NAME}", file=sys.stderr)
+            print(f"error: preview already exists at {preview_dir(project_dir)}", file=sys.stderr)
             print("delete it or run 'apply' to commit it", file=sys.stderr)
             return 1
         vault_index = build_vault_index(vault_dir) if vault_dir and vault_dir.is_dir() else set()
@@ -1102,7 +1119,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
 
     if args.phase == "apply":
         if detect_phase(project_dir) != "preview":
-            print(f"error: no preview at {project_dir / PREVIEW_DIR_NAME}; run 'preview' first", file=sys.stderr)
+            print(f"error: no preview at {preview_dir(project_dir)}; run 'preview' first", file=sys.stderr)
             return 1
         backup_dir = apply_preview(project_dir)
         skipped = read_skipped_note(backup_dir)

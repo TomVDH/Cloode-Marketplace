@@ -3,20 +3,22 @@
 import contextlib
 import io
 import json
+import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from tidy import (
-    PREVIEW_DIR_NAME,
-    BACKUP_DIR_NAME,
     apply_preview,
+    backup_root,
     build_preview,
     cli_main as tidy_cli,
     detect_phase,
     fix_wikilink_form,
     generate_index_content,
     normalize_tags,
+    preview_dir,
     upsert_index_content,
     write_preview_to_disk,
     _migrate_ob_to_bucket_a,
@@ -24,6 +26,31 @@ from tidy import (
     _bump_updated_field,
 )
 from _vault_walk import build_vault_index
+
+_MODULE_TMP = None
+_OLD_TMPDIR = None
+
+
+def setUpModule():
+    """Pin $TMPDIR for this module.
+
+    Since v3 tidy's preview and backup live under $TMPDIR rather than in
+    the vault, so an un-pinned run would leave rotated backup dirs behind
+    in the developer's real temp dir, run after run.
+    """
+    global _MODULE_TMP, _OLD_TMPDIR
+    _OLD_TMPDIR = os.environ.get("TMPDIR")
+    _MODULE_TMP = tempfile.mkdtemp(prefix="adjudant-test-tidy-")
+    os.environ["TMPDIR"] = _MODULE_TMP
+
+
+def tearDownModule():
+    if _OLD_TMPDIR is None:
+        os.environ.pop("TMPDIR", None)
+    else:
+        os.environ["TMPDIR"] = _OLD_TMPDIR
+    if _MODULE_TMP:
+        shutil.rmtree(_MODULE_TMP, ignore_errors=True)
 
 
 def _w(p: Path, content: str) -> None:
@@ -44,13 +71,13 @@ class TestDetectPhase(unittest.TestCase):
 
     def test_preview(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / PREVIEW_DIR_NAME).mkdir()
+            preview_dir(Path(tmp)).mkdir(parents=True)
             self.assertEqual(detect_phase(Path(tmp)), "preview")
 
     def test_applied(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / BACKUP_DIR_NAME / "20260526T120000Z").mkdir(parents=True)
-            (Path(tmp) / BACKUP_DIR_NAME / "20260526T120000Z" / "x.legacy").write_text("old")
+            (backup_root(Path(tmp)) / "20260526T120000Z").mkdir(parents=True)
+            (backup_root(Path(tmp)) / "20260526T120000Z" / "x.legacy").write_text("old")
             self.assertEqual(detect_phase(Path(tmp)), "applied")
 
 
@@ -501,7 +528,7 @@ class TestApplySafety(unittest.TestCase):
             self._dirty(root)
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
-            preview = root / PREVIEW_DIR_NAME
+            preview = preview_dir(root)
             changes = json.loads((preview / "changes.json").read_text())
             escaped = "../escaped-outside-project.md"
             changes["file_proposals"][escaped] = {
@@ -680,7 +707,7 @@ class TestPreviewApplyRoundTrip(unittest.TestCase):
             self.assertGreater(cs["summary"]["total_changes"], 0)
             write_preview_to_disk(root, cs)
             self.assertEqual(detect_phase(root), "preview")
-            preview = root / PREVIEW_DIR_NAME
+            preview = preview_dir(root)
             self.assertTrue((preview / "summary.md").is_file())
             self.assertTrue((preview / "changes.json").is_file())
             self.assertTrue((preview / "files" / "brief.md").is_file())
@@ -700,7 +727,7 @@ class TestPreviewApplyRoundTrip(unittest.TestCase):
             live_brief = (root / "brief.md").read_text()
             self.assertNotIn("ob/project", live_brief)
             # Preview gone
-            self.assertFalse((root / PREVIEW_DIR_NAME).exists())
+            self.assertFalse(preview_dir(root).exists())
             self.assertEqual(detect_phase(root), "applied")
 
     def test_idempotence(self):
@@ -971,6 +998,88 @@ class TestSchemaPhase(unittest.TestCase):
             self.assertEqual(cs2["schema_actions"], {})
             self.assertNotIn("notes/n.md", cs2["file_proposals"])
             self.assertNotIn("_handoff.md", cs2["file_proposals"])
+
+
+class TestScratchIsOutsideTheVault(unittest.TestCase):
+    """The defect this whole plan exists for: tidy wrote its working copies
+    into the vault it was cleaning, and nothing ever reaped them."""
+
+    def _isolate_scratch(self, tmp: Path) -> None:
+        """Point $TMPDIR at this test's own temp dir.
+
+        _scratch keys on the project *name*, so every test whose project is
+        called "demo" shares one scratch subtree, and nothing reaps it between
+        runs: a backup left by an earlier test would make `detect_phase` report
+        "applied" on a freshly built project. Pinning $TMPDIR here makes the
+        scratch per-test and lets the temp dir take it away.
+        """
+        old = os.environ.get("TMPDIR")
+        os.environ["TMPDIR"] = str(tmp)
+
+        def _restore():
+            if old is None:
+                os.environ.pop("TMPDIR", None)
+            else:
+                os.environ["TMPDIR"] = old
+
+        self.addCleanup(_restore)
+
+    def _project(self, tmp: Path) -> Path:
+        self._isolate_scratch(tmp)
+        project = tmp / "vault" / "projects" / "demo"
+        (project / "notes").mkdir(parents=True)
+        _w(project / "notes" / "a.md",
+           "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - ob/note\n---\n\n# A\n")
+        _w(project / "notes" / "b.md",
+           "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - ob/note\n---\n\n# B\n")
+        return project
+
+    def _preview(self, project: Path) -> dict:
+        return build_preview(project, build_vault_index(project), "demo")
+
+    def test_preview_writes_nothing_into_the_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            before = {p for p in project.rglob("*")}
+            change_set = self._preview(project)
+            write_preview_to_disk(project, change_set)
+            after = {p for p in project.rglob("*")}
+            self.assertEqual(before, after,
+                             "tidy preview created files inside the vault project")
+
+    def test_apply_writes_no_backup_into_the_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            change_set = self._preview(project)
+            write_preview_to_disk(project, change_set)
+            apply_preview(project)
+            stray = [p for p in project.rglob(".adjudant-*")]
+            self.assertEqual(stray, [],
+                             f"tidy apply left scratch in the vault: {stray}")
+
+    def test_detect_phase_reads_the_scratch_location(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            self.assertEqual(detect_phase(project), "fresh")
+            change_set = self._preview(project)
+            write_preview_to_disk(project, change_set)
+            self.assertEqual(detect_phase(project), "preview")
+            apply_preview(project)
+            self.assertEqual(detect_phase(project), "applied")
+
+    def test_backups_rotate(self):
+        from _scratch import BACKUP_KEEP, scratch_dir
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(Path(tmp))
+            for i in range(BACKUP_KEEP + 3):
+                _w(project / "notes" / f"n{i}.md",
+                   "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - ob/note\n---\n\n# N\n")
+                change_set = self._preview(project)
+                write_preview_to_disk(project, change_set)
+                apply_preview(project)
+            root = scratch_dir(project, "tidy-backup")
+            kept = [d for d in root.iterdir() if d.is_dir()]
+            self.assertLessEqual(len(kept), BACKUP_KEEP)
 
 
 if __name__ == "__main__":

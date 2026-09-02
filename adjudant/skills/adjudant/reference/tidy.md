@@ -53,17 +53,18 @@ Repo ops use `--project-dir` as the repo root directly (no breadcrumb).
 > Render the JSON `cost` block as one line: `cost: ~{est_read_tokens/1000}k tokens, {files} files`.
 
 ```bash
-# Phase 1 — preview (writes .adjudant-tidy-preview/, never touches live files)
+# Phase 1 — preview (writes the scratch preview dir, never touches live files)
 python3 "$(dirname "$0")/../../../scripts/tidy.py" preview \
   --project-dir "$PROJECT_ROOT" \
   --vault-dir "$VAULT_PATH"
 
-# Review the preview
-# - .adjudant-tidy-preview/summary.md            human-readable diff
-# - .adjudant-tidy-preview/changes.json          structured change list
-# - .adjudant-tidy-preview/files/<rel_path>      proposed file contents
+# Review the preview. Since v3 it lives OUTSIDE the vault, at
+# $TMPDIR/adjudant/{project}/tidy-preview — preview prints the path on stderr.
+# - {preview}/summary.md            human-readable diff
+# - {preview}/changes.json          structured change list
+# - {preview}/files/<rel_path>      proposed file contents
 
-# Phase 2 — apply (creates .adjudant-tidy-backup/{timestamp}/, then writes live)
+# Phase 2 — apply (backs up to $TMPDIR/adjudant/{project}/tidy-backup/{ts}/, then writes live)
 python3 "$(dirname "$0")/../../../scripts/tidy.py" apply --project-dir "$PROJECT_ROOT"
 
 # Or: detect what state we're in without touching anything
@@ -77,9 +78,14 @@ what was written and name a follow-up only if something was skipped.
 
 ## Apply: what happens
 
-- Backup live files to `.adjudant-tidy-backup/{ISO-8601-Z-timestamp}/<rel_path>.legacy`
-- Copy `.adjudant-tidy-preview/files/<rel_path>` to live position
-- Delete `.adjudant-tidy-preview/`
+- Backup live files to `$TMPDIR/adjudant/{project}/tidy-backup/{ISO-8601-Z-timestamp}/<rel_path>.legacy`
+- Copy `{preview}/files/<rel_path>` to live position
+- Delete the preview dir
+- Keep the newest 5 backups for the project and delete older ones
+
+Neither directory is in the vault. A cleanup verb that wrote three copies of
+every touched note into the thing it was cleaning added more than it removed;
+since v3 both land under `$TMPDIR` and the backups rotate.
 
 ## Stale-preview guard (locked)
 
