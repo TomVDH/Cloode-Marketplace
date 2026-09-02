@@ -27,9 +27,9 @@ main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
 
-  # Best-effort: read the Claude Code session UUID from stdin JSON (same
-  # advisory pattern as session-start.sh). It keys the task ledger the
-  # task-ledger hook may have written for this session.
+  # Drain stdin. Nothing here needs the payload since the v3 ledger replay
+  # went away, but an unread SessionEnd payload EPIPEs the harness writer
+  # when this process exits.
   local session_id=""
   if [ ! -t 0 ] && command -v python3 >/dev/null 2>&1; then
     local payload
@@ -124,21 +124,15 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
     python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/precompact.py" --sync-only 2>/dev/null || true
   fi
 
-  # Task bridge + board reseed (best effort, never block). A session ledger
-  # (written by the task-ledger hook) turns its survivors into task notes
-  # and births/reseeds the board; without one, an existing board still gets
-  # the ensure-only reseed. No ledger and no board: nothing to do, no board
-  # is born from a bare session end.
+  # Board reseed only. The ledger replay that turned every uncompleted harness
+  # todo into a permanent vault note was removed in v3: an id with no
+  # TaskCompleted event is an abandoned or renamed todo, not a work item. The
+  # ledger itself stays in $TMPDIR, where the statusline reads it.
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/board_bridge.py" ] \
-     && command -v python3 >/dev/null 2>&1; then
-    local ledger="${TMPDIR:-/tmp}/adjudant-task-ledger-${session_id}.jsonl"
-    if [ -n "$session_id" ] && [ -f "$ledger" ]; then
-      python3 "$CLAUDE_PLUGIN_ROOT/scripts/board_bridge.py" --bridge "$ledger" \
-        --project-dir "$vault_project" >/dev/null 2>&1 || true
-    elif [ -f "$vault_project/board/board-data.json" ]; then
-      python3 "$CLAUDE_PLUGIN_ROOT/scripts/board_bridge.py" --ensure-only \
-        --project-dir "$vault_project" >/dev/null 2>&1 || true
-    fi
+     && command -v python3 >/dev/null 2>&1 \
+     && [ -f "$vault_project/board/board-data.json" ]; then
+    python3 "$CLAUDE_PLUGIN_ROOT/scripts/board_bridge.py" --ensure-only \
+      --project-dir "$vault_project" >/dev/null 2>&1 || true
   fi
 }
 

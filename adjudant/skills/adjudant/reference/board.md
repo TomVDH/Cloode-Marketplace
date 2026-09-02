@@ -204,7 +204,8 @@ and the sitrep board line all read the note rather than the deck.
 - Only `status:` changes; other fields, their order, the body and the line
   endings are left exactly as they were. The write is atomic and locked.
 - Cards with no task note (hand-added on the board) are never materialized
-  into notes here; that is `board_bridge`'s job.
+  into notes here, and since v3 nowhere else either: write the note yourself,
+  or use `/adjudant advisor capture-task`.
 - It converges: once the note matches, the next run reports `no-change`.
 
 ### Kanban surface (v0.23.0)
@@ -227,9 +228,9 @@ keep the board current without being asked:
   stale flag when any task note is newer than the deck.
 - **PostToolUse (Write|Edit)** under `tasks/` nudges `board_bridge.py
   --ensure-only`, so editing a task's `status:` refreshes the board.
-- **SessionEnd** replays the session task ledger through `board_bridge.py
-  --bridge` (survivors become `tasks/` notes, deduped by slug) or runs
-  `--ensure-only` when no ledger exists; either path ends in `ensure_board`.
+- **SessionEnd** runs `board_bridge.py --ensure-only` when a deck already
+  exists, so the last edits of the session reach the board. A session end
+  never births a board.
 
 Because three surfaces write the deck, the whole read-merge-write runs under an
 advisory lock and both files land via a temp file plus `os.replace`, so a
@@ -239,11 +240,14 @@ atomic.
 
 Read-only views: `check` renders a board section, `sitrep` one board line.
 
-`scripts/board_bridge.py` is the ledger-to-vault bridge: TaskCreated and
-TaskCompleted events append to a TMPDIR ledger during the session (zero vault
-writes in-session); at close, ids never completed become schema-conformant
-task notes from `templates/task.md`, and the first bridged note births the
-board.
+`scripts/board_bridge.py` ensures the deck and its HTML match `tasks/`, and
+does nothing else. Until v3 it also replayed the session task ledger at close:
+every id without a `TaskCompleted` event became a task note. Status changes
+other than completion fire no events, so abandoned and renamed todos qualified
+too, and `tasks/` filled with cards nobody wrote. A task note is now written
+only when someone asks for one — `/adjudant advisor capture-task`, or your own
+hand. The ledger still lives in `$TMPDIR` for the statusline; nothing reads it
+into the vault.
 
 ## Merge provenance (refresh-without-clobber)
 
