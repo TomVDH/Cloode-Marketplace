@@ -339,6 +339,43 @@ class TestSchemaSection(unittest.TestCase):
             _json.dumps(report)
 
 
+class TestRememberSection(unittest.TestCase):
+    """The handoff's source is a dependency, and check declares it. When
+    `.remember/` was missing or empty adjudant mirrored nothing and said
+    nothing, so the handoff read as a banner with no body."""
+
+    def test_absent_remember_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            report = run_check(root)
+            self.assertIn("remember", report)
+            self.assertFalse(report["remember"]["present"])
+
+    def test_probe_reads_the_code_root_not_the_vault_project(self):
+        # `.remember/` lives beside the code, never in the vault.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault_project = root / "vault" / "projects" / "t"
+            code = root / "code"
+            _write(vault_project / "brief.md", _CLEAN_BRIEF)
+            _write(code / ".remember" / "remember.md", "## State\nwork\n")
+            report = run_check(vault_project, code_root=code)
+            self.assertTrue(report["remember"]["present"])
+            self.assertFalse(report["remember"]["empty"])
+
+    def test_present_but_empty_is_distinguished_from_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault_project = root / "vault" / "projects" / "t"
+            code = root / "code"
+            _write(vault_project / "brief.md", _CLEAN_BRIEF)
+            _write(code / ".remember" / "remember.md", "\n  \n")
+            report = run_check(vault_project, code_root=code)
+            self.assertTrue(report["remember"]["present"])
+            self.assertTrue(report["remember"]["empty"])
+
+
 class TestFreshnessSection(unittest.TestCase):
     """v0.22.0: run_check carries the freshness report (single walk shared
     with the schema section)."""

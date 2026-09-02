@@ -241,6 +241,49 @@ def compute_freshness(
 
 
 # ============================================================
+# The handoff's source — one picker, one probe
+# ============================================================
+
+
+# The handoff body's source, when the remember plugin is installed. This lived
+# in two near-identical copies (sync.py and precompact.py) that had already
+# drifted; this module exists to hold exactly this kind of shared primitive.
+_REMEMBER_CANDIDATES = ("remember.md", "now.md")
+
+
+def find_remember_source(project_dir: Path) -> Optional[Path]:
+    """`.remember/remember.md`, falling back to `.remember/now.md`. None when
+    the remember plugin is not installed for this project."""
+    base = project_dir / ".remember"
+    for name in _REMEMBER_CANDIDATES:
+        candidate = base / name
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def remember_status(project_dir: Path) -> dict:
+    """Whether the remember plugin is usable here, for `check` to report.
+
+    Adjudant read `.remember/` as the handoff's source and said nothing when it
+    was missing or empty: 7 of 12 handoffs in the real vault were a banner and
+    an empty body, because an empty source mirrored to an empty handoff. A
+    dependency that fails silently is worse than one that is absent.
+    """
+    source = find_remember_source(project_dir)
+    if source is None:
+        return {"present": False, "source": None, "empty": True}
+    try:
+        empty = not source.read_text(errors="replace").strip()
+    except OSError:
+        empty = True
+    return {"present": True, "source": str(source), "empty": empty}
+
+
+# ============================================================
 # The one handoff layout — shared by /adjudant sync and the hooks
 # ============================================================
 

@@ -47,8 +47,8 @@ JSON output shape (top-level keys):
 - `counts` — non-_index .md per common folder (decisions, sessions, dreams, notes, etc.)
 - `recent` — last_session, last_decision, last_dream (YYYY-MM-DD)
 - `handoff` — two clocks, deliberately. `updated` + `stale_hours` are the **mirror
-  clock**: when the handoff was last written. Every SessionEnd/PreCompact stamps
-  it, so a mirror of an empty buffer still reads fresh — diagnostic only, never
+  clock**: when the handoff was last written. Only SessionEnd stamps it now, and it
+  stamps to today, so a mirror of an empty buffer still reads fresh — diagnostic only, never
   the answer to "are we drifting?". `light` / `age` / `next` / `stale` are the
   **activity clock** from `_handoff_freshness` (remember dailies + session-note
   markers) — the same sensor sync and the hooks render into the handoff banner.
@@ -62,6 +62,10 @@ JSON output shape (top-level keys):
 - `suitcase`: `{present}` from a PATH probe for `suitcase-brief` (never executed).
   Render one line only when true: `Suitcase: present (suitcase-brief for orientation)`;
   skip entirely when false. Ground rules in reference/suitcase.md
+- `remember`: `{present, source, empty}` — the probe for the handoff's body source,
+  `.remember/remember.md` (or `now.md`), read from the CODE root, never executed.
+  Render one line only when `present` is false or `empty` is true; say nothing when
+  the source is there and has content. Lines are under Status nudges below
 - `status` — declared vs. machine-suggested lifecycle status: `declared`, `declared_valid`,
   `last_session`, `days_quiet`, `suggested`, `reason`, `nudge`, `zone`, `zone_matches`
 - `schema` — frontmatter drift per `FIELD_SCHEMA`: `checked`, `unchecked` (no block /
@@ -128,6 +132,8 @@ next ambient refresh), no alarm.
 - If `status.zone_matches` is false, flag the mismatch: the declared status doesn't match the vault zone the project actually sits in.
 - If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant tidy (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.
 - If `freshness.expired` or `freshness.dangling_supersession` is non-empty, render one line: "{n} declared facts need review (expired validity / dangling supersession) → run /adjudant dream". Judgment-heavy by design: expiry review is dream territory, never tidy's.
+- If `remember.present` is false, render one line: "remember: not detected — the handoff is written from session context only".
+- If `remember.present` is true and `remember.empty` is true, render one line: "remember: present but empty — the handoff carries no mirrored body". Neither is an error: the handoff still renders, it just has nothing to mirror into the body. Adjudant read `.remember/` as the source and said nothing when it was missing or empty, so a handoff that was a banner with no body looked the same as one nobody had written yet.
 
 ## Inputs
 

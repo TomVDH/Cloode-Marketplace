@@ -37,6 +37,7 @@ from _vault_walk import (
 from _handoff_freshness import (
     HANDOFF_FRONTMATTER_TEMPLATE,
     compute_freshness,
+    find_remember_source,
     freshness_header,
     latest_session_file,
     preserved_frontmatter,
@@ -98,24 +99,6 @@ def refresh_brief_updated(brief_path: Path, today: str) -> str:
 # ============================================================
 # Step 2: handoff mirror
 # ============================================================
-
-
-def find_remember_source(project_root: Path) -> Optional[Path]:
-    """Return the best `.remember/` file to mirror into handoff body.
-
-    Priority:
-      1. `.remember/remember.md` (canonical per sync runbook)
-      2. `.remember/now.md` (newer convention used on this machine)
-
-    Returns None if neither exists.
-    """
-    canonical = project_root / ".remember" / "remember.md"
-    if canonical.is_file():
-        return canonical
-    now_file = project_root / ".remember" / "now.md"
-    if now_file.is_file():
-        return now_file
-    return None
 
 
 def mirror_handoff(
