@@ -1617,6 +1617,54 @@ class TestCaptureTask(_Harness):
             self.assertIn("title", err.lower())
 
 
+class TestTriageCli(unittest.TestCase):
+
+    def _vault(self, tmp: Path) -> tuple:
+        vault = tmp / "vault"
+        for slug, zone, sess in (("a", "active", "2026-08-30"),
+                                 ("b", "active", "2025-01-01")):
+            pdir = vault / "projects" / zone / slug
+            (pdir / "sessions").mkdir(parents=True)
+            (pdir / "brief.md").write_text(
+                "---\ntype: project\nupdated: 2026-09-01\n---\n\n# x\n")
+            (pdir / "sessions" / f"{sess}.md").write_text("---\ntype: session\n---\n")
+        code = tmp / "code"
+        (code / ".claude").mkdir(parents=True)
+        (code / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: a\nmode: project\n")
+        return vault, code
+
+    def test_triage_lists_every_project_and_moves_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, code = self._vault(Path(tmp))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = status_cli(["--project-dir", str(code), "--triage"])
+            self.assertEqual(rc, 0)
+            rows = _json.loads(out.getvalue())["triage"]
+            self.assertEqual([r["slug"] for r in rows], ["a", "b"])
+            self.assertFalse(rows[0]["move"])
+            self.assertTrue(rows[1]["move"])
+            self.assertEqual(rows[1]["suggested"], "paused")
+            self.assertTrue((vault / "projects" / "active" / "b").is_dir())
+
+    def test_move_moves_exactly_one_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, code = self._vault(Path(tmp))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = status_cli(["--project-dir", str(code), "--move", "b", "paused"])
+            self.assertEqual(rc, 0)
+            self.assertTrue((vault / "projects" / "paused" / "b").is_dir())
+            self.assertTrue((vault / "projects" / "active" / "a").is_dir())
+
+    def test_move_to_a_bad_zone_exits_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _vault, code = self._vault(Path(tmp))
+            with contextlib.redirect_stderr(io.StringIO()):
+                rc = status_cli(["--project-dir", str(code), "--move", "b", "_fridge"])
+            self.assertEqual(rc, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

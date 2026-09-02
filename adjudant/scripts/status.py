@@ -24,6 +24,8 @@ CLI:
     python3 status.py --advisor {on,off,status}
     python3 status.py --capture-task --title TITLE [--note NOTE]
     python3 status.py --slug TEXT...
+    python3 status.py --triage
+    python3 status.py --move SLUG ZONE
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -60,6 +63,7 @@ from _handoff_freshness import (  # noqa: E402
     render_handoff,
     traffic_light,
 )
+from _lifecycle import apply_move, triage_plan  # noqa: E402
 from _vault_walk import (  # noqa: E402
     DEFAULT_STALE_DAYS,
     VaultUnresolvableError,
@@ -1149,6 +1153,13 @@ def cli_main(argv: Optional[list] = None) -> int:
                         help="Project root (default: cwd)")
     parser.add_argument("--vault-dir",
                         help="Vault root (auto-resolved from the breadcrumb otherwise)")
+    parser.add_argument("--triage", action="store_true",
+                        help="Print one lifecycle prompt per project in the vault "
+                             "(JSON). Read-only: moves nothing.")
+    parser.add_argument("--move", nargs=2, metavar=("SLUG", "ZONE"),
+                        help="Move one project into a lifecycle folder "
+                             "(active|paused|finished|archive). One project per "
+                             "call, only after the operator confirms.")
     parser.add_argument("--out", help="Write JSON to FILE instead of stdout")
     parser.add_argument("--estimate-only", action="store_true",
                         help="Print only the cost block (stat-only walk) and exit")
@@ -1165,6 +1176,33 @@ def cli_main(argv: Optional[list] = None) -> int:
     parser.add_argument("--slug", action="store_true",
                         help="Print the kebab-case slug for TEXT and exit")
     args = parser.parse_args(argv)
+
+    if args.triage or args.move:
+        try:
+            vault = resolve_vault(Path(args.project_dir).expanduser(),
+                                  os.environ.get("OB_VAULT"))
+        except VaultUnresolvableError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        if vault is None:
+            print("error: no vault resolved", file=sys.stderr)
+            return 1
+        if args.move:
+            slug, zone = args.move
+            try:
+                dest = apply_move(vault, slug, zone)
+            except ValueError as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 1
+            print(json.dumps({"moved": slug, "to": zone, "path": str(dest)}))
+            return 0
+        plan = triage_plan(vault, date.today())
+        print(json.dumps({"triage": [
+            {"slug": e.slug, "zone": e.zone, "suggested": e.suggested,
+             "reason": e.reason, "last_session": e.last_session,
+             "days_quiet": e.days_quiet, "move": e.suggested != e.zone}
+            for e in plan]}, indent=2))
+        return 0
 
     if args.slug:
         if not args.text:

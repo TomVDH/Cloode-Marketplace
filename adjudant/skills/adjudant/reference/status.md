@@ -156,6 +156,21 @@ remember exists. `off` removes both. `--capture-task` lands an approved
 suggestion as a task note through the same rail the session-end bridge uses,
 deduplicated by slug so a re-capture never clobbers an edited note.
 
+## Lifecycle triage
+
+```bash
+python3 status.py --triage --project-dir "$REPO_ROOT"
+python3 status.py --move SLUG ZONE --project-dir "$REPO_ROOT"
+```
+
+`--triage` prints one prompt per project in the vault and moves nothing — a
+read-only plan, never an action. Ask about each project one at a time rather
+than dumping the whole list and letting it get skimmed. Each confirmed move is
+exactly one `--move SLUG ZONE` call, so nothing moves until a person says so
+for that project. A project in `active/` with no session for 30 days is the
+prompt that makes triage happen at all — the verb it replaces went unused for
+a year because nothing ever asked.
+
 ## Naming a thing
 
 ```bash
@@ -182,6 +197,7 @@ cwd.
 ## See also
 
 - `scripts/status.py`, `scripts/test_status.py`
+- `scripts/_lifecycle.py`, `scripts/test__lifecycle.py` — the guided triage behind `--triage`/`--move`
 - `reference/clean.md` — repairs what this reports
 - `reference/dream.md` — the deeper diagnostic; use when `drift_signal` looks elevated
 - `reference/advisor.md` — the standing contract behind the advisor rails
