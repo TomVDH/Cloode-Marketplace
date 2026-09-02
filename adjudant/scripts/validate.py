@@ -27,8 +27,9 @@ Validators:
   21. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
   22. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
   23. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
+  24. place-zone-parity           : _place's lifecycle folder set matches _vault_walk.PROJECT_ZONES
 
-23 validators total.
+24 validators total.
 """
 
 import ast
@@ -40,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _voice  # noqa: E402
-from _vault_walk import FIELD_SCHEMA  # noqa: E402
+from _vault_walk import FIELD_SCHEMA, PROJECT_ZONES  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL = ROOT / "skills" / "adjudant"
@@ -929,6 +930,23 @@ def validate_hooks_wiring(r: Result) -> None:
     r.add_pass(name)
 
 
+def validate_place_zone_parity(r: Result) -> None:
+    """24. place-zone-parity — _place's lifecycle folder set matches _vault_walk.
+
+    _place.py duplicates the four folder names on purpose: a hook in degraded
+    mode imports it without _vault_walk. Every duplicate drifts unless
+    something compares them, which is the lesson the 110-key frontmatter
+    taught.
+    """
+    name = "place-zone-parity"
+    from _place import _LIFECYCLE_FOLDERS
+    if set(_LIFECYCLE_FOLDERS) != set(PROJECT_ZONES):
+        r.add_fail(name, f"_place {sorted(_LIFECYCLE_FOLDERS)} vs "
+                         f"_vault_walk {sorted(PROJECT_ZONES)}")
+        return
+    r.add_pass(name)
+
+
 def main() -> int:
     print(f"adjudant validators — running from {ROOT}")
     r = Result()
@@ -955,6 +973,7 @@ def main() -> int:
     validate_voice_patterns(r)
     validate_render_voice(r)
     validate_advisor_wiring(r)
+    validate_place_zone_parity(r)
     return r.report()
 
 

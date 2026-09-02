@@ -909,6 +909,32 @@ class TestAdvisorWiring(unittest.TestCase):
             self.assertTrue(any("advisor-wiring" in f for f in r.failures))
 
 
+class TestPlaceZoneParity(unittest.TestCase):
+    """24. place-zone-parity - _place duplicates the four lifecycle folder
+    names so a degraded hook can import it without _vault_walk. The outcome
+    that matters is that a drifted copy fails the build, not that the happy
+    path prints a tick."""
+
+    def test_passes_on_the_real_tree(self):
+        r = validate.Result()
+        validate.validate_place_zone_parity(r)
+        self.assertIn("place-zone-parity", r.passes)
+        self.assertEqual(r.failures, [])
+
+    def test_fails_when_the_two_lists_drift(self):
+        import _place
+        orig = _place._LIFECYCLE_FOLDERS
+        _place._LIFECYCLE_FOLDERS = frozenset({"active", "paused", "shelved"})
+        try:
+            r = validate.Result()
+            validate.validate_place_zone_parity(r)
+        finally:
+            _place._LIFECYCLE_FOLDERS = orig
+        self.assertTrue(any("place-zone-parity" in f for f in r.failures))
+        self.assertNotIn("place-zone-parity", r.passes,
+                         "a drifted list reported a pass alongside the fail")
+
+
 class TestParityValidatorsRemoved(unittest.TestCase):
     """The six validators that existed only to compare two declarations.
 
