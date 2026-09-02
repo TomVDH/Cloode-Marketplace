@@ -753,5 +753,48 @@ class TestWrongFolder(unittest.TestCase):
             self.assertNotIn("project-zone-drift", _kinds(report))
 
 
+class TestAgentsReachDetector(unittest.TestCase):
+
+    def test_a_named_script_that_does_not_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = _project(root)
+            code = root / "code"
+            code.mkdir()
+            _w(code / "AGENTS.md",
+               "Enforced mechanically by `scripts/enforce-branch-rule.sh`.\n")
+            report = truth_report(pdir, vault=root / "vault", code_root=code,
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "agents-missing-path"]
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0]["band"], "wrong-now")
+            self.assertEqual(hits[0]["file"], "",
+                             "the repo file is named in the detail, so `file` "
+                             "stays a project-relative path")
+            self.assertIn("AGENTS.md", hits[0]["detail"])
+            self.assertIn("scripts/enforce-branch-rule.sh", hits[0]["detail"])
+
+    def test_no_code_root_means_no_reach(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("agents-missing-path", _kinds(report))
+            self.assertNotIn("agents-unchanged", _kinds(report))
+
+    def test_an_agents_file_that_names_only_real_things_is_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = _project(root)
+            code = root / "code"
+            (code / "scripts").mkdir(parents=True)
+            _w(code / "scripts" / "real.sh", "#!/bin/sh\n")
+            _w(code / "AGENTS.md", "Run `scripts/real.sh`.\n")
+            report = truth_report(pdir, vault=root / "vault", code_root=code,
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("agents-missing-path", _kinds(report))
+
+
 if __name__ == "__main__":
     unittest.main()

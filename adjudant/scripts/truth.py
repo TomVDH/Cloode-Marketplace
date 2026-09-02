@@ -24,6 +24,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from _agents_reach import AGENTS_STALE_COMMITS, agents_reach
 from _vault_walk import (
     ALIAS_SEP_RE as _ALIAS_SEP_RE,
     FIELD_SCHEMA,
@@ -655,6 +656,39 @@ def _check_project_zone_drift(ctx: _Ctx) -> Iterator[Finding]:
                   f"`/adjudant status --move {ctx.slug} paused` moves it")
 
 
+# ============================================================
+# The reach outside the vault
+# ============================================================
+
+
+def _check_agents_reach(ctx: _Ctx) -> Iterator[Finding]:
+    """AGENTS.md: what it names that is not there, and how long since it moved.
+
+    The one detector that reads a file outside the vault. `file` stays empty,
+    as the Finding contract says: AGENTS.md is not a project-relative vault
+    path, so it is named in the detail instead.
+
+    Nothing is written. A context file adjudant edits is a context file nobody
+    trusts, which is why three writers under three contradictory policies were
+    collapsed to one rule: connect provisions once if missing, and adjudant
+    never overwrites.
+    """
+    if ctx.code_root is None:
+        return
+    reach = agents_reach(ctx.code_root)
+    if not reach["present"]:
+        return
+    for miss in reach["missing"]:
+        yield Finding("wrong-now", "agents-missing-path", "",
+                      f"AGENTS.md line {miss['line']} names "
+                      f"{miss['token']!r}, which is not there")
+    n = reach["commits_since_change"]
+    if n is not None and n >= AGENTS_STALE_COMMITS:
+        changed = reach["last_changed"] or "an unknown date"
+        yield Finding("going-stale", "agents-unchanged", "",
+                      f"AGENTS.md last changed {changed}, {n} commits ago")
+
+
 # Tasks 11 to 14 append to this tuple. Order inside a band is the order
 # findings are reported in, so keep the most concrete first.
 #
@@ -668,6 +702,7 @@ _DETECTORS: tuple = (
     _check_superseded_target_missing,
     _check_task_spec_missing,
     _check_brief_repo_missing,
+    _check_agents_reach,
     _check_open_card_in_archive,
     _check_bug_entry_uncited,
     _check_spec_agreed_unbuilt,
