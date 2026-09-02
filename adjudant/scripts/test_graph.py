@@ -771,6 +771,74 @@ class TestOutGuards(unittest.TestCase):
             self.assertIn("flowchart LR", out.read_text())
 
 
+class TestOutBackupsAreBounded(unittest.TestCase):
+    """`--out --force` leaves a backup inside the vault project. That is a
+    deliberate exception to "scratch leaves the vault" — it is an undo record
+    for a destructive command the user typed, and the vault is what syncs
+    across machines while $TMPDIR does not — so it is named in
+    reference/state-contract.md. A named exception has to be a bounded one:
+    every forced overwrite used to leave another `.bak` beside the target,
+    forever, while board.py's twin path had rotated at five since v0.19.0.
+    """
+
+    def _force_write(self, root: Path, target: Path):
+        return _run_cli(["--mode", "tiers", "--project-dir", str(root),
+                         "--out", str(target), "--force"])
+
+    def test_backups_rotate(self):
+        from graph import BACKUP_KEEP
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            brief = root / "brief.md"
+            brief.write_text("PRECIOUS\n")
+            for _ in range(BACKUP_KEEP + 3):
+                rc, _so, err = self._force_write(root, brief)
+                self.assertEqual(rc, 0, err)
+            self.assertEqual(len(_baks(root)), BACKUP_KEEP,
+                             [b.name for b in _baks(root)])
+
+    def test_rotation_keeps_the_newest(self):
+        # Pruning the wrong end would throw away the copy of the file the user
+        # is most likely to want back.
+        from graph import BACKUP_KEEP
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            brief = root / "brief.md"
+            for n in range(BACKUP_KEEP + 3):
+                brief.write_text(f"GEN{n}\n")
+                rc, _so, err = self._force_write(root, brief)
+                self.assertEqual(rc, 0, err)
+            bodies = {b.read_text() for b in _baks(root)}
+            self.assertIn(f"GEN{BACKUP_KEEP + 2}\n", bodies)
+            self.assertNotIn("GEN0\n", bodies)
+
+    def test_rotation_only_prunes_this_targets_backups(self):
+        # Two --out targets in one folder each keep their own five. A blind
+        # `*.bak` sweep would let a busy target evict the other's history.
+        from graph import BACKUP_KEEP
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            other = root / "other.md"
+            other.write_text("OTHER\n")
+            rc, _so, err = self._force_write(root, other)
+            self.assertEqual(rc, 0, err)
+            brief = root / "brief.md"
+            brief.write_text("PRECIOUS\n")
+            for _ in range(BACKUP_KEEP + 3):
+                rc, _so, err = self._force_write(root, brief)
+                self.assertEqual(rc, 0, err)
+            self.assertEqual([b.read_text() for b in _baks(root)
+                              if "other.md" in b.name], ["OTHER\n"])
+
+    def test_the_state_contract_names_this_exception(self):
+        # The decision must not be revertible in silence: whichever way it
+        # goes, code and contract move together.
+        contract = (Path(__file__).resolve().parent.parent / "skills" /
+                    "adjudant" / "reference" / "state-contract.md").read_text()
+        self.assertIn("graph.py", contract)
+        self.assertIn("backup_out", contract)
+
+
 def _linked_project(root: Path, slug: str = "demo") -> tuple[Path, Path]:
     """A code repo with a `.claude/adjudant` breadcrumb + its vault project."""
     vault = root / "vault"

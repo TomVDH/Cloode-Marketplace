@@ -801,12 +801,19 @@ own filename.
 **A project in the wrong folder.** In `active/` with no session for 30 days. This
 is the prompt that makes lifecycle triage happen instead of never happening.
 
-**One exception to "scratch leaves the vault", to be confirmed in plan 3.**
-`board.py` keeps a rotating `.bak/` beside the deck it backs up, inside the
-project. It is the only backup path that always rotated, and a deck holds real
-content rather than scratch. Plan 3 either moves it or names it as a deliberate
-exception; leaving the rule stated absolutely while this survives makes the rule
-false.
+**Two exceptions to "scratch leaves the vault", confirmed in plan 3.** Both
+stay, and both are named in `reference/state-contract.md` so the rule is no
+longer stated absolutely while they survive. `board.py` keeps a rotating
+`.bak/` beside the deck it backs up; `graph.py` keeps a dot-prefixed timestamped
+copy beside an `--out` target it replaces. Neither is scratch: each holds
+content the user authored rather than a preview the plugin can rebuild, each
+fires only on a destructive command someone typed, and the vault is what syncs
+across machines while `$TMPDIR` does not — a deck replaced on one machine and
+missed until the next day on the other would have its only copy in a temp dir
+that is already gone. The one correction plan 3 made: `board.py` was described
+here as the only backup path that always rotated, which was true, and `graph.py`
+was the unbounded twin nobody had counted. It rotates at five now, per target.
+An exception has to be bounded to be defensible.
 
 **Output is a read-only report ordered by cost of being wrong**, in three bands:
 wrong now, going stale, worth a look. It never gates anything.

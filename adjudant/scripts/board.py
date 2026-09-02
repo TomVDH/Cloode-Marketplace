@@ -776,9 +776,11 @@ def scaffold_one(
     # ONE lock over the whole read-merge-render-write cycle. Locking only the
     # write serialises nothing: the deck is read here, merged, and written back,
     # so a second writer landing anywhere in that window used to be overwritten
-    # silently. The deck has three routine writers (the verb, `board_bridge
-    # --ensure-only` on every task-note Write/Edit, and SessionEnd), so this is
-    # the normal case, not an edge case. `locked` may be False on a mount where
+    # silently. The deck has two routine writers (the verb and SessionEnd's
+    # `board_bridge --ensure-only` reseed; the PostToolUse nudge on every
+    # task-note Write/Edit went with the auto-seed it carried), and a serve
+    # session's browser saves land through the verb, so concurrent writers stay
+    # the normal case. `locked` may be False on a mount where
     # flock does not work; the write below is still atomic, so the worst case is
     # exactly the old behaviour rather than a hang or a crash.
     with file_lock(data_path):

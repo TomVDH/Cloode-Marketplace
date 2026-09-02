@@ -65,7 +65,11 @@ and it is the only write the helper performs, so it is gated:
 - **No silent clobber.** An existing file is refused. `--force` replaces it and
   copies the current contents to a dot-prefixed, timestamped sibling first
   (`.brief.md.20260731-120000.bak`), invisible to Obsidian and to the vault
-  walkers. A backup that fails cancels the write.
+  walkers. A backup that fails cancels the write. The newest five per target are
+  kept; older ones are pruned, and two `--out` files in one folder each keep
+  their own five. This is one of the two backup paths that deliberately live
+  inside the vault rather than in `$TMPDIR` — see `reference/state-contract.md`
+  for why, and for the other.
 - **Atomic.** A run that fails part way leaves the target byte for byte as it
   was.
 

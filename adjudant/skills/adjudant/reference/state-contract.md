@@ -47,6 +47,40 @@ not read from the breadcrumb.
 4. Scratch is `$TMPDIR/adjudant/{key}/{kind}`, where `{key}` is the basename of
    the directory being operated on with every character outside
    `[A-Za-z0-9_.-]` collapsed to a hyphen, ends trimmed, empty becoming
-   `project`. Adding a kind is safe; renaming one is not.
+   `project`. Adding a kind is safe; renaming one is not. Two paths are named
+   exceptions to it — see below — and they are the only two.
 5. Anything added to this table needs the statusline updated in the same
    change. Nothing in this repo can catch that break.
+
+## In-vault backups: the two named exceptions
+
+Rule 4 sends scratch out of the vault. Two backup paths deliberately stay in,
+and v3 confirmed both rather than leaving the rule stated absolutely while they
+survived:
+
+| Path | Written by | Fires on | Bound |
+|---|---|---|---|
+| `{project}/board/.bak/board-data-{ts}.json` | `board.py`, `backup_deck` | an explicit `board --force` or `board --data`, never the ambient reseed | newest 5 |
+| `.{name}.{ts}.bak` beside an `--out` target | `graph.py`, `backup_out` | `draw --out … --force` over a file that already exists | newest 5 per target |
+
+Three reasons they are not scratch, all three needed:
+
+- **What they hold is the user's own content, not a derived preview.** A deck
+  carries cards hand-added straight to `board-data.json` and lane placement
+  that exists nowhere else; an `--out` target is whatever the operator pointed
+  `--force` at. Neither is rebuildable from the vault.
+- **They are the undo for a destructive command someone typed**, not a
+  by-product of a routine pass. A project that never runs one never grows them.
+- **The vault syncs across machines and `$TMPDIR` does not.** A deck replaced
+  on one machine and missed until the next day on the other would have its only
+  copy in a temp dir that is already gone.
+
+Both are dot-prefixed, so Obsidian never lists them, the `rglob("*.md")`
+walkers never index them, and `check`/`clean` never report them as schema-less
+notes. Both rotate, because an unbounded exception is just the growth this
+release exists to stop: `backup_out` was uncapped until v3.
+
+Nothing else adjudant writes into a vault project is a backup. A third belongs
+in this table or in `$TMPDIR`, and either way the code and this section move
+together — `test_board.py` and `test_graph.py` each assert their own path is
+named here.

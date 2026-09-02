@@ -151,7 +151,10 @@ Re-running `board` does not wipe in-progress card state:
   Any replace (`--force` or `--data`) first copies the old deck to
   `board/.bak/board-data-<YYYYMMDD-HHMMSS>.json`, newest 5 kept. The copy is
   taken once the replacement deck has been read and validated, so a run that
-  fails and writes nothing leaves every earlier backup byte-identical.
+  fails and writes nothing leaves every earlier backup byte-identical. This
+  directory is one of the two backup paths that deliberately live inside the
+  vault rather than in `$TMPDIR` — see `reference/state-contract.md` for why,
+  and for the other.
 - **`--data FILE` → that deck verbatim** (missing standard fields are backfilled).
 - A corrupt/unreadable `board-data.json` (or `--data` file) exits non-zero with
   a clear error — it never tracebacks or silently rebuilds.
@@ -237,7 +240,7 @@ that had never run `board`. That branch is deleted. A deck is born by
 `/adjudant board` and by nothing else; a task-note edit reaches the board at
 session end.
 
-Because three surfaces write the deck, the whole read-merge-write runs under an
+Because two surfaces write the deck, the whole read-merge-write runs under an
 advisory lock and both files land via a temp file plus `os.replace`, so a
 concurrent reader never sees a half-written deck and two writers cannot lose
 each other's work. On a mount where locking does not work the write is still

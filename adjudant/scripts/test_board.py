@@ -622,6 +622,32 @@ class TestForceSafety(unittest.TestCase):
             self.assertEqual(len(names), BACKUP_KEEP, names)
             self.assertNotIn("board-data-20200100-000000.json", names)  # oldest pruned
 
+    def test_the_bak_dir_stays_inside_the_project(self):
+        # The decision, pinned. v3 moved every scratch tree out of the vault
+        # ($TMPDIR/adjudant/{key}/{kind}); the deck backup deliberately did not
+        # follow. It is not scratch: a deck holds cards hand-added straight to
+        # board-data.json and lane placement that exists nowhere else, it is
+        # only ever written by a destructive command the user typed
+        # (`--force`/`--data`, never the ambient reseed), and the vault is what
+        # syncs across machines while $TMPDIR does not — an undo record that
+        # evaporates before the mistake is noticed on the other machine is not
+        # an undo record. Reversing this means moving the doc with the code.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj, dest = self._seeded_board(Path(tmp))
+            rc, _ = _scaffold(proj, dest, from_tasks=True, data=None,
+                              force=True, title=None, board_id="proj")
+            self.assertEqual(rc, 0)
+            baks = _backups(dest)
+            self.assertEqual(len(baks), 1)
+            self.assertEqual(baks[0].parent, dest / BACKUP_DIR_NAME)
+            self.assertTrue(baks[0].name.startswith("board-data-"))
+
+    def test_the_state_contract_names_this_exception(self):
+        contract = (Path(__file__).resolve().parent.parent / "skills" /
+                    "adjudant" / "reference" / "state-contract.md").read_text()
+        self.assertIn("board/.bak/", contract)
+        self.assertIn("backup_deck", contract)
+
     def test_non_object_deck_friendly_error(self):
         # Valid JSON that isn't an object (null/[]) must hit the same friendly
         # error path, not an AttributeError traceback.
@@ -1071,9 +1097,11 @@ class TestConcurrentDeckWrites(unittest.TestCase):
     """Audit 2026-07-30 finding 5 (tier 4). scaffold_one reads the deck, merges,
     renders, then blind-writes: an unlocked read-modify-write ending in a
     truncating write_text. A prior audit MEASURED 35 torn or empty deck reads
-    in 20 seconds with two writers. The deck is written by the verb, by
-    `board_bridge --ensure-only` on every task-note Write/Edit, and by
-    SessionEnd, so concurrent writers are the normal case.
+    in 20 seconds with two writers. The deck is written by the verb and by
+    SessionEnd's `board_bridge --ensure-only` reseed, so concurrent writers are
+    the normal case. (A third writer, the PostToolUse nudge on every task-note
+    Write/Edit, went with the auto-seed it carried; the race it opened is the
+    same one, so this test still measures it.)
 
     Real processes, no sleeps: children spin on a barrier file so they are
     already warm and hit the window together."""

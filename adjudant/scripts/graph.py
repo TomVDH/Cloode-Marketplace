@@ -46,6 +46,10 @@ from _vault_walk import (
 )
 
 DEFAULT_MAX_NODES = 30
+# Backups of an `--out` target live beside it, newest BACKUP_KEEP per target.
+# Mirrors board.py's constant of the same name rather than importing it, the
+# same way `_is_inside` is twinned: neither module depends on the other.
+BACKUP_KEEP = 5
 # One classDef per file role, palette ≤ 6 (generation-rules discipline)
 CLASS_DEFS = {
     "project": "fill:#efe7ff,stroke:#7c5cff,color:#1d1633",
@@ -444,7 +448,7 @@ def _is_inside(child: Path, parent: Path) -> bool:
     return c == p or p in c.parents
 
 
-def backup_out(path: Path) -> Path:
+def backup_out(path: Path, keep: int = BACKUP_KEEP) -> Path:
     """Copy an `--out` target about to be replaced to a timestamped sibling.
 
     Never a fixed `{name}.bak`: that fixed name was the v0.19.0 board bug,
@@ -457,6 +461,14 @@ def backup_out(path: Path) -> Path:
     index it, Obsidian never lists it, and `check`/`clean` never report it
     as a schema-less note.
 
+    Rotated, newest ``keep`` per target. This lands inside a vault project,
+    which v3 named as one of two deliberate exceptions to "scratch leaves the
+    vault" (reference/state-contract.md). An exception has to be bounded to be
+    defensible, and this path was the unbounded one: board.py's twin has
+    rotated since v0.19.0 while every `draw --out --force` here left another
+    copy beside the target forever. Pruning is per target, by name prefix, so
+    two `--out` files in one folder each keep their own history.
+
     Raises OSError; callers refuse the write rather than proceed unbacked.
     """
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -466,6 +478,25 @@ def backup_out(path: Path) -> Path:
         target = path.with_name(f".{path.name}.{stamp}-{n}.bak")
         n += 1
     shutil.copy2(path, target)
+    prefix = f".{path.name}."
+    mine = []
+    for sib in target.parent.iterdir():
+        if not (sib.name.startswith(prefix) and sib.name.endswith(".bak")):
+            continue
+        try:
+            mine.append((sib.stat().st_mtime, sib.name, sib))
+        except OSError:
+            continue                             # vanished under us; nothing to prune
+    # mtime first, name second: within one second the collision suffix (`-2`)
+    # sorts BEFORE the plain stamp by name alone, which would prune the newer
+    # copy. copy2 carries the SOURCE mtime, so ties are broken by name only
+    # when two backups really are the same age.
+    mine.sort()
+    for _, _, stale in mine[:max(0, len(mine) - keep)]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass                                 # rotation is housekeeping, never fatal
     return target
 
 
