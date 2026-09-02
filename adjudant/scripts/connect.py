@@ -489,9 +489,8 @@ def scaffold_vault_project(
             idx_content = (
                 "---\n"
                 "type: index\n"
+                f"created: {today}\n"
                 f"updated: {today}\n"
-                "tags:\n"
-                "  - index\n"
                 "---\n\n"
                 f"# {heading}\n\n"
                 "## Entries\n\n"
@@ -671,7 +670,8 @@ def upsert_projects_index_row(
     )
     if not idx.is_file():
         idx.write_text(
-            "---\ntype: index\nupdated: " + datetime.now().strftime("%Y-%m-%d") + "\ntags:\n  - index\n---\n\n"
+            "---\ntype: index\ncreated: " + datetime.now().strftime("%Y-%m-%d")
+            + "\nupdated: " + datetime.now().strftime("%Y-%m-%d") + "\n---\n\n"
             "# All Projects\n\n"
             "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
             "|---------|------|--------|-----------|----------|--------------|\n"

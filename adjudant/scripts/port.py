@@ -839,7 +839,10 @@ def _upsert_project_index_row(idx_path: Path, slug: str) -> None:
 
     if not idx_path.is_file():
         idx_path.write_text(
-            "---\ntype: index\ntags:\n  - index\n---\n\n# All Projects\n\n"
+            "---\ntype: index\n"
+            f"created: {datetime.now().strftime('%Y-%m-%d')}\n"
+            f"updated: {datetime.now().strftime('%Y-%m-%d')}\n"
+            "---\n\n# All Projects\n\n"
             f"{PROJECTS_INDEX_HEADER}\n{PROJECTS_INDEX_SEP}\n{row}\n"
         )
         return

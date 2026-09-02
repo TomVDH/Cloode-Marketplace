@@ -79,3 +79,48 @@ class TestTagsAreGone(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoWriterEmitsTags(unittest.TestCase):
+    """Retiring tags from the schema is not the same as retiring them from the
+    writers. An adversarial prover ran the real connect CLI against a fresh
+    vault and found five of the seven files it creates carrying a `tags:`
+    block that the schema now rejects.
+    """
+
+    def test_no_source_file_writes_a_tags_block(self):
+        import re as _re
+        scripts = Path(__file__).resolve().parent
+        hooks = scripts.parent / "hooks" / "scripts"
+        offenders = []
+        for d in (scripts, hooks):
+            for py in sorted(d.glob("*.py")):
+                if py.name.startswith("test_"):
+                    continue
+                for i, line in enumerate(py.read_text().splitlines(), 1):
+                    # Any `tags:` inside a string literal, however it is
+                    # spliced. The first version of this test required a quote
+                    # immediately before it and missed a site written as
+                    # "...\\ntags:\\n  - index...", which is exactly the blind
+                    # spot the provers keep finding in fixtures.
+                    if _re.search(r'(["\']|\\n)tags:', line):
+                        offenders.append(f"{py.name}:{i}")
+        self.assertEqual(offenders, [],
+                         f"these still write a tags block: {offenders}")
+
+    def test_connect_creates_no_file_carrying_tags(self):
+        import subprocess, os
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            proj, vault = tmp / "proj", tmp / "vault"
+            proj.mkdir(); vault.mkdir()
+            env = dict(os.environ); env.pop("OB_VAULT", None)
+            subprocess.run(
+                ["python3", str(Path(__file__).resolve().parent / "connect.py"),
+                 "--project-root", str(proj), "--vault-path", str(vault),
+                 "--slug", "demo-proj", "--project-type", "coding",
+                 "--project-name", "Demo"],
+                env=env, capture_output=True, text=True, timeout=60)
+            tagged = [str(p.relative_to(vault)) for p in vault.rglob("*.md")
+                      if "\ntags:" in p.read_text() or p.read_text().startswith("tags:")]
+            self.assertEqual(tagged, [], f"connect wrote tags into: {tagged}")

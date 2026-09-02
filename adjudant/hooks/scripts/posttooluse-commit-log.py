@@ -296,9 +296,8 @@ def _upsert_index(releases: Path, slug: str, plugin: str, version: str, today: s
             index.write_text(
                 "---\n"
                 "type: index\n"
+                f"created: {today}\n"
                 f"updated: {today}\n"
-                "tags:\n"
-                "  - index\n"
                 "---\n\n"
                 "# Releases\n\n"
                 "## Entries\n\n"
