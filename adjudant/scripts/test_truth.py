@@ -374,5 +374,142 @@ class TestNobodyHasCheckedItLately(unittest.TestCase):
             self.assertEqual(hits[0]["band"], "worth-a-look")
 
 
+class TestWorkNobodyCanSee(unittest.TestCase):
+
+    def test_an_open_card_in_the_archive(self):
+        # The 17 August sweep moved 97 cards and closed zero. 44 of them still
+        # read open from inside tasks/_archive/.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "tasks" / "_archive" / "closed.md",
+               "---\ntype: task\ncreated: 2026-01-01\nupdated: 2026-02-01\n"
+               "status: done\n---\n\n# Closed\n")
+            _w(pdir / "tasks" / "_archive" / "dropped.md",
+               "---\ntype: task\ncreated: 2026-01-01\nupdated: 2026-02-01\n"
+               "status: dropped\n---\n\n# Dropped\n")
+            _w(pdir / "tasks" / "_archive" / "alive.md",
+               "---\ntype: task\ncreated: 2026-01-01\nupdated: 2026-02-01\n"
+               "status: doing\n---\n\n# Alive\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "open-card-in-archive"]
+            self.assertEqual([h["file"] for h in hits],
+                             ["tasks/_archive/alive.md"])
+            self.assertEqual(hits[0]["band"], "wrong-now")
+            self.assertIn("doing", hits[0]["detail"])
+
+    def test_a_bug_entry_with_no_card_citing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "docs" / "bug-log.md",
+               "---\ntype: doc\nupdated: 2026-09-01\nverified: 2026-09-01\n---\n\n"
+               "# Bug log\n\n"
+               "## BUG-001 cold cache\nstatus: closed\nfixed on 2026-08-01.\n\n"
+               "## BUG-002 warm cache\nSomething is wrong.\n\n"
+               "## BUG-003 hot cache\nSomething else is wrong.\n")
+            _w(pdir / "tasks" / "fix-warm.md",
+               "---\ntype: task\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "status: doing\n---\n\n# Fix warm\n\nCloses BUG-002.\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "bug-entry-uncited"]
+            self.assertEqual(len(hits), 1)
+            self.assertIn("BUG-003", hits[0]["detail"])
+            self.assertEqual(hits[0]["file"], "docs/bug-log.md")
+
+    def test_a_spec_agreed_with_no_cards_and_no_verification(self):
+        # SPEC-012 exactly.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "specs" / "spec-012-campaign-factory.md",
+               "---\ntype: spec\nstatus: agreed\ncreated: 2026-06-01\n"
+               "updated: 2026-06-01\n---\n\n# SPEC-012\n\n## Goal\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "spec-agreed-unbuilt"]
+            self.assertEqual(len(hits), 1)
+            self.assertIn("92 days", hits[0]["detail"])
+            self.assertEqual(hits[0]["band"], "wrong-now")
+
+    def test_a_cited_spec_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "specs" / "spec-012-campaign-factory.md",
+               "---\ntype: spec\nstatus: agreed\ncreated: 2026-06-01\n"
+               "updated: 2026-06-01\n---\n\n# SPEC-012\n\n## Goal\n")
+            _w(pdir / "tasks" / "build-it.md",
+               "---\ntype: task\ncreated: 2026-06-02\nupdated: 2026-06-02\n"
+               "status: doing\n"
+               "spec: \"[[demo/specs/spec-012-campaign-factory|SPEC-012]]\"\n"
+               "---\n\n# Build it\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("spec-agreed-unbuilt", _kinds(report))
+
+    def test_a_spec_cited_by_an_unquoted_card_is_not_flagged(self):
+        # `spec: [[demo/specs/…|SPEC-012]]` is what Obsidian's Properties
+        # editor writes, and the frontmatter parser reads the brackets as a
+        # one-item list. Read literally that is not a string, the citation
+        # goes unseen, and an actively worked spec is reported as intent that
+        # never became work — a wrong-now finding on the good case.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "specs" / "spec-012-campaign-factory.md",
+               "---\ntype: spec\nstatus: agreed\ncreated: 2026-06-01\n"
+               "updated: 2026-06-01\n---\n\n# SPEC-012\n\n## Goal\n")
+            _w(pdir / "tasks" / "build-it.md",
+               "---\ntype: task\ncreated: 2026-06-02\nupdated: 2026-06-02\n"
+               "status: doing\n"
+               "spec: [[demo/specs/spec-012-campaign-factory|SPEC-012]]\n"
+               "---\n\n# Build it\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("spec-agreed-unbuilt", _kinds(report))
+
+    def test_a_verified_spec_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "specs" / "spec-012-campaign-factory.md",
+               "---\ntype: spec\nstatus: agreed\ncreated: 2026-06-01\n"
+               "updated: 2026-06-01\nverified: 2026-08-30\n---\n\n# SPEC-012\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("spec-agreed-unbuilt", _kinds(report))
+
+    def test_a_draft_spec_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "specs" / "spec-013-idea.md",
+               "---\ntype: spec\nstatus: draft\ncreated: 2026-01-01\n"
+               "updated: 2026-01-01\n---\n\n# SPEC-013\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("spec-agreed-unbuilt", _kinds(report))
+
+    def test_a_decision_whose_consequence_names_work_with_no_card(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "tasks" / "strip-bucket-a-tags.md",
+               "---\ntype: task\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "status: doing\n---\n\n# Strip\n")
+            _w(pdir / "decisions" / "2026-09-01-carded.md",
+               "---\ntype: decision\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "status: active\n---\n\n# Carded\n\n## Consequence\n"
+               "Work: [[demo/tasks/strip-bucket-a-tags]]\n")
+            _w(pdir / "decisions" / "2026-09-01-uncarded.md",
+               "---\ntype: decision\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "status: active\n---\n\n# Uncarded\n\n## Consequence\n"
+               "Work: someone has to rewrite the branch tracker.\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "decision-consequence-uncarded"]
+            self.assertEqual([h["file"] for h in hits],
+                             ["decisions/2026-09-01-uncarded.md"])
+
+
 if __name__ == "__main__":
     unittest.main()

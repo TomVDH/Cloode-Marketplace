@@ -220,6 +220,147 @@ def _check_brief_repo_missing(ctx: _Ctx) -> Iterator[Finding]:
 
 
 # ============================================================
+# Band: wrong-now — work nobody can see
+# ============================================================
+
+# A spec agreed this long with no card and no verification is intent that
+# never became work. SPEC-012 sat at 60+ days.
+SPEC_UNBUILT_DAYS = 60
+
+# Archiving is derived from status, never manual: `clean` moves only done and
+# dropped cards. Anything else in the archive is work that was hidden rather
+# than finished.
+_CLOSED_TASK_STATUSES: frozenset[str] = frozenset({"done", "dropped"})
+
+_BUG_HEADING_RE = re.compile(r"^#{2,3}\s+(BUG-\d+)\b", re.MULTILINE)
+_BUG_CLOSED_RE = re.compile(r"^\s*status\s*:\s*(closed|fixed|dropped)\s*$",
+                            re.IGNORECASE | re.MULTILINE)
+_BUG_ID_RE = re.compile(r"\bBUG-\d+\b")
+_CONSEQUENCE_RE = re.compile(
+    r"^##\s+Consequence\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
+_WORK_LINE_RE = re.compile(r"^\s*Work\s*:\s*(.+)$", re.MULTILINE)
+
+
+def _target_stem(value: Any) -> Optional[str]:
+    """The bare stem of a frontmatter wikilink, through `_wikilink_target`.
+
+    `_vault_walk._wikilink_stem` computes the same thing and is not used here
+    for one reason: it takes only a string, and the unquoted spelling
+    `spec: [[demo/specs/s-1|SPEC-1]]` reaches the parser as a one-item LIST.
+    Read literally, a card written that way stops counting as a citation, and
+    a spec somebody is actively building gets reported as intent that never
+    became work.
+    """
+    target = _wikilink_target(value)
+    if not target:
+        return None
+    stem = target.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].strip()
+    if stem.endswith(".md"):
+        stem = stem[:-3]
+    return stem or None
+
+
+def _check_open_card_in_archive(ctx: _Ctx) -> Iterator[Finding]:
+    """A card in `tasks/_archive/` that still reads open. The 44."""
+    for vf in ctx.by_type.get("task", []):
+        parts = vf.rel_path.parts
+        if "_archive" not in parts:
+            continue
+        status = ctx.fields(vf).get("status")
+        text = str(status).strip() if status is not None else ""
+        if text in _CLOSED_TASK_STATUSES:
+            continue
+        yield Finding("wrong-now", "open-card-in-archive", ctx.rel(vf),
+                      f"status {text or 'unset'!r} inside tasks/_archive/; "
+                      "only done and dropped cards belong there")
+
+
+def _check_bug_entry_uncited(ctx: _Ctx) -> Iterator[Finding]:
+    """A bug entry still open with no task card citing it.
+
+    The bug log is one document on purpose: three of its sixteen entries
+    turned out to be the same defect class on different surfaces, which only
+    became visible once they sat in one list. Splitting it into sixteen files
+    would destroy the one thing it is for, so the only mechanism it needs is
+    this: what never got picked up.
+    """
+    logs = [vf for vf in ctx.files if vf.path.stem == "bug-log"]
+    if not logs:
+        return
+    cited: set = set()
+    for vf in ctx.by_type.get("task", []):
+        # A card cites a bug by naming its id anywhere in its body. The vault
+        # runs four number registries at once (BUG-NNN, T<N>, harness numbers,
+        # GitHub numbers) under a standing rule never to cite a bare number,
+        # so the prefix is what makes this unambiguous.
+        cited.update(_BUG_ID_RE.findall(vf.body))
+    for log in logs:
+        body = log.body
+        headings = list(_BUG_HEADING_RE.finditer(body))
+        for i, m in enumerate(headings):
+            bug_id = m.group(1)
+            end = headings[i + 1].start() if i + 1 < len(headings) else len(body)
+            section = body[m.end():end]
+            if _BUG_CLOSED_RE.search(section):
+                continue
+            if bug_id in cited:
+                continue
+            yield Finding("wrong-now", "bug-entry-uncited", ctx.rel(log),
+                          f"{bug_id} reads open and no task card cites it")
+
+
+def _check_spec_agreed_unbuilt(ctx: _Ctx) -> Iterator[Finding]:
+    """A spec agreed 60 days, zero cards citing it, never verified.
+
+    How much is built is the status of the cards citing it. No cards and no
+    `verified:` means the intent was recorded and the work never started, and
+    nothing said so.
+    """
+    cited: set = set()
+    for vf in ctx.by_type.get("task", []):
+        stem = _target_stem(ctx.fields(vf).get("spec"))
+        if stem:
+            cited.add(stem)
+    for vf in ctx.by_type.get("spec", []):
+        fields = ctx.fields(vf)
+        if str(fields.get("status", "")).strip() != "agreed":
+            continue
+        if fields.get("verified") is not None:
+            continue
+        if vf.path.stem in cited:
+            continue
+        agreed_on = _as_date(fields.get("updated")) or _as_date(fields.get("created"))
+        if agreed_on is None:
+            continue
+        age = (ctx.today - agreed_on).days
+        if age < SPEC_UNBUILT_DAYS:
+            continue
+        yield Finding("wrong-now", "spec-agreed-unbuilt", ctx.rel(vf),
+                      f"agreed {age} days ago, no card cites it, never verified")
+
+
+def _check_decision_consequence_uncarded(ctx: _Ctx) -> Iterator[Finding]:
+    """A decision whose `## Consequence` names work with no card.
+
+    One axis only: `status:` says whether a decision is in force, and whether
+    it was carried out is a card. A `Work:` line with no link is a job that
+    exists in prose and nowhere a board can see it.
+    """
+    for vf in ctx.by_type.get("decision", []):
+        m = _CONSEQUENCE_RE.search(vf.body)
+        if not m:
+            continue
+        section = m.group(1)
+        for work in _WORK_LINE_RE.finditer(section):
+            if "[[" in work.group(1):
+                continue
+            yield Finding("wrong-now", "decision-consequence-uncarded",
+                          ctx.rel(vf),
+                          f"Consequence names work with no card: "
+                          f"{work.group(1).strip()[:60]!r}")
+
+
+# ============================================================
 # Band: going-stale — nobody has checked it lately
 # ============================================================
 
@@ -317,6 +458,10 @@ _DETECTORS: tuple = (
     _check_superseded_target_missing,
     _check_task_spec_missing,
     _check_brief_repo_missing,
+    _check_open_card_in_archive,
+    _check_bug_entry_uncited,
+    _check_spec_agreed_unbuilt,
+    _check_decision_consequence_uncarded,
     _check_verified_stale,
     _check_verified_missing,
     _check_verified_docs_only,
