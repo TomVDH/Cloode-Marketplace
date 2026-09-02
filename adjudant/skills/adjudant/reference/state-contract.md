@@ -12,14 +12,16 @@ in iCloud and syncs to both machines, so it is edited once and lands on both.
 
 Paths below are relative to the vault project directory unless they say
 otherwise. `{project}` is that directory, `{repo}` is the code root, `{slug}`
-is its basename, and the zone (`_fridge`, `_archive`) is resolved by probing,
-not read from the breadcrumb.
+is its basename, and the lifecycle folder (`active`, `paused`, `finished`,
+`archive`, plus the pre-v3 shapes resolved after them) is resolved by
+probing, not read from the breadcrumb.
 
 | It reads | For |
 |---|---|
 | `{repo}/.claude/adjudant`, `vault_path:` and `slug:` | vault location, project name |
 | `{repo}/.claude/adjudant`, `stale_after_days:` | the threshold for both the lifecycle hint and the dream age (30 when absent or non-numeric) |
-| `{vault}/projects/[_fridge/ or _archive/]{slug}/brief.md` | which zone holds the project |
+| `{vault}/projects/{active\|paused\|finished\|archive}/{slug}/` (dir exists) | lifecycle folder, rendered as a badge for anything but `active` |
+| `{vault}/projects/{slug}/`, `{vault}/projects/_fridge/{slug}/`, `{vault}/projects/_archive/{slug}/` | pre-v3 shapes, probed after the four; `_fridge` reads as paused, `_archive` as archive |
 | `$TMPDIR/adjudant/{slug}-{digest}/clean-preview`, directory exists | "cleaning" state |
 | `$TMPDIR/adjudant/{repo basename}-{digest}/repo-tidy-preview`, directory exists | "repo-tidying" state |
 | `{project}/.adjudant-remise-preview`, directory exists | "remising" (reserved, nothing writes it yet) |
@@ -61,6 +63,12 @@ not read from the breadcrumb.
    exceptions to it — see below — and they are the only two.
 5. Anything added to this table needs the statusline updated in the same
    change. Nothing in this repo can catch that break.
+6. The lifecycle folder is the project's lifecycle state; `zone_of()` is
+   authoritative and nothing compares it against a declared status anymore.
+   A v3 brief writes no `status:` field. Where one survives from before v3,
+   it is read only to suggest a stale/active transition, never to grade the
+   folder. A project's folder and the newest file in its `sessions/` are the
+   two inputs to lifecycle drift.
 
 ## In-vault backups: the two named exceptions
 

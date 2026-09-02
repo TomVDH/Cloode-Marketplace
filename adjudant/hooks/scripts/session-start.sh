@@ -17,14 +17,20 @@ set -euo pipefail
 # costs no extra subprocess on a hook that fires every session.
 # Returns non-zero when the project exists in NO zone — callers must no-op
 # rather than create, or an unconnected slug materializes a phantom project.
+# Four named folders first, then the pre-v3 shapes, so a migrated project
+# always beats a twin left behind by an interrupted move.
 zone_project_dir() {
   local vault="$1" slug="$2" c
-  for c in "$vault/projects/$slug" "$vault/projects/_fridge/$slug" \
-           "$vault/projects/_archive/$slug"; do
+  local zones="active paused finished archive"
+  local legacy="_fridge _archive"
+  local cands=""
+  for c in $zones; do cands="$cands $vault/projects/$c/$slug"; done
+  cands="$cands $vault/projects/$slug"
+  for c in $legacy; do cands="$cands $vault/projects/$c/$slug"; done
+  for c in $cands; do
     if [ -f "$c/brief.md" ]; then printf '%s' "$c"; return 0; fi
   done
-  for c in "$vault/projects/$slug" "$vault/projects/_fridge/$slug" \
-           "$vault/projects/_archive/$slug"; do
+  for c in $cands; do
     if [ -d "$c" ]; then printf '%s' "$c"; return 0; fi
   done
   return 1

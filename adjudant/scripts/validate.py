@@ -606,6 +606,12 @@ def validate_hook_zone_awareness(r: Result) -> None:
     the active zone that hooks wrote to forever, while writes to the real
     project were silently dropped. Hooks must resolve via find_project_dir
     (python) or zone_project_dir (bash), and gate the slug first.
+
+    v3: the lifecycle is four named folders (active/paused/finished/archive)
+    probed before the two pre-v3 shapes (bare, _fridge/_archive) still on
+    disk until triage runs. The exemption below already strips a resolver's
+    own function body before scanning for the `projects/<slug>` offender
+    shape, so the four folder names appearing there as literals is not drift.
     """
     name = "hook-zone-awareness"
     scripts = sorted((ROOT / "hooks" / "scripts").glob("*"))

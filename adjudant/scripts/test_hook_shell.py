@@ -9,14 +9,17 @@ pointer it hands the per-turn hook, and SessionEnd appends no marker, so its
 vault-touching lane is the board reseed.
 """
 
+import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 HOOKS = Path(__file__).resolve().parent.parent / "hooks" / "scripts"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -659,6 +662,76 @@ class TestZoneAwareness(unittest.TestCase):
             deck = json.loads((board / "board-data.json").read_text())
             self.assertIn("one-task", [c["id"] for c in deck["cards"]])
             self.assertFalse((home / "vault" / "projects" / "demo").exists())
+
+
+class TestZoneWalkCoversTheFourFolders(unittest.TestCase):
+    """Both shell hooks carry their own copy of find_project_dir, because a
+    python shim would cost a subprocess on a hook that fires every session.
+    Two copies drift, so this test reads both."""
+
+    HOOKS = Path(__file__).resolve().parent.parent / "hooks" / "scripts"
+
+    def test_both_hooks_list_all_four_folders(self):
+        for name in ("session-start.sh", "sessionend.sh"):
+            text = (self.HOOKS / name).read_text()
+            self.assertIn('local zones="active paused finished archive"', text,
+                          f"{name} does not probe the four lifecycle folders")
+
+    def test_both_hooks_still_probe_the_legacy_shapes(self):
+        for name in ("session-start.sh", "sessionend.sh"):
+            text = (self.HOOKS / name).read_text()
+            self.assertIn('local legacy="_fridge _archive"', text, name)
+            self.assertIn('cands="$cands $vault/projects/$slug"', text,
+                          f"{name} dropped the untriaged shape")
+
+    def test_the_bare_shape_is_probed_after_the_named_folders(self):
+        # A migrated project must beat a twin left behind by an interrupted
+        # move, so order in the candidate list is load-bearing.
+        for name in ("session-start.sh", "sessionend.sh"):
+            text = (self.HOOKS / name).read_text()
+            self.assertLess(text.index('for c in $zones;'),
+                            text.index('cands="$cands $vault/projects/$slug"'),
+                            name)
+
+    def test_python_hook_fallbacks_list_all_four_folders(self):
+        # The degraded resolver only runs once `_vault_walk` fails to import,
+        # which never happens organically while this repo's own suite runs
+        # (the module is always on sys.path). Forcing that import failure and
+        # calling the fallback for real — rather than grepping the source for
+        # a literal shape — is what actually catches a resolver that silently
+        # drops a folder: a DRY rewrite (`for z in (...)`) is correct and
+        # never spells any zone name out next to `"projects" /` in the source
+        # text, which a substring check alone cannot tell apart from a
+        # resolver that dropped paused/finished entirely.
+        for name in ("posttooluse-vault-log.py", "posttooluse-commit-log.py"):
+            path = self.HOOKS / name
+            mod_name = "_degraded_" + name.replace("-", "_").replace(".", "_")
+            spec = importlib.util.spec_from_file_location(mod_name, path)
+            mod = importlib.util.module_from_spec(spec)
+            with mock.patch.dict(sys.modules, {"_vault_walk": None}):
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "_bootstrap"):
+                    mod._bootstrap()  # vault-log.py defers the import to here
+            self.assertFalse(getattr(mod, "_RESOLVER", None),
+                             f"{name}: _vault_walk import unexpectedly "
+                             f"succeeded, so this never reached the fallback")
+            with tempfile.TemporaryDirectory() as tmp:
+                vault = Path(tmp)
+                for zone in ("active", "paused", "finished", "archive"):
+                    d = vault / "projects" / zone / f"p-{zone}"
+                    d.mkdir(parents=True)
+                    (d / "brief.md").write_text("---\ntype: project\n---\n")
+                for zone in ("active", "paused", "finished", "archive"):
+                    found = mod.find_project_dir(vault, f"p-{zone}")
+                    self.assertEqual(
+                        found, vault / "projects" / zone / f"p-{zone}",
+                        f"{name}'s degraded resolver misses {zone}/")
+                legacy = vault / "projects" / "old-shape"
+                legacy.mkdir(parents=True)
+                (legacy / "brief.md").write_text("---\ntype: project\n---\n")
+                self.assertEqual(
+                    mod.find_project_dir(vault, "old-shape"), legacy,
+                    f"{name}'s degraded resolver dropped the untriaged shape")
 
 
 if __name__ == "__main__":

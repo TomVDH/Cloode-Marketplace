@@ -83,9 +83,11 @@ def _bootstrap() -> None:
         # succeeding (stdlib-free: this block runs when imports are already
         # failing).
         def find_project_dir(vault, slug):  # type: ignore
-            cands = [vault / "projects" / slug,
-                     vault / "projects" / "_fridge" / slug,
-                     vault / "projects" / "_archive" / slug]
+            cands = [vault / "projects" / z / slug
+                     for z in ("active", "paused", "finished", "archive")]
+            cands.append(vault / "projects" / slug)
+            cands += [vault / "projects" / z / slug
+                      for z in ("_fridge", "_archive")]
             for c in cands:
                 if (c / "brief.md").is_file():
                     return c
