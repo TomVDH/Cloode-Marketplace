@@ -12,11 +12,13 @@ exact back-compat, `/adjudant tidy` is unchanged).
 
   ```bash
   python3 "$(dirname "$0")/../../../scripts/repo_tidy.py" preview --project-dir "$REPO_ROOT"
-  # review .adjudant-repo-tidy-preview/summary.md, then:
+  # review {preview}/summary.md (preview prints the path; it is under
+  # $TMPDIR/adjudant/{repo}/repo-tidy-preview, not in the repo), then:
   python3 "$(dirname "$0")/../../../scripts/repo_tidy.py" apply --project-dir "$REPO_ROOT"
   ```
 
-  `apply` backs the prior link state up to `.adjudant-repo-tidy-backup/{ts}/*.legacy`,
+  `apply` backs the prior link state up to
+  `$TMPDIR/adjudant/{repo}/repo-tidy-backup/{ts}/*.legacy` (newest 5 kept),
   recreates each missing/dangling harness symlink on an **already-adopted**
   plugin as a relative link to its canonical `skills/<name>`, and deletes the
   preview. It **never** creates a harness for a plugin that lacks one
