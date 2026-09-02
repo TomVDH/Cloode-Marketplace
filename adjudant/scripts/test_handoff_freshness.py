@@ -203,10 +203,24 @@ class TestRenderHandoff(unittest.TestCase):
         self.assertIn("*Mirrored from `.remember/now.md` on 2026-06-01 09:30.*", out)
         self.assertTrue(out.endswith("---\n\nbody line\n"))
 
-    def test_template_carries_source_stem(self):
+    def test_template_is_the_v3_handoff_shape(self):
+        # v3: the block is derived from templates/handoff.md, which declares
+        # type/created/updated and nothing else. `source` and the `handoff`
+        # tag are gone with the inline copy that used to declare them, and
+        # `created` (a required field the copy omitted) is present.
         fm = pc.HANDOFF_FRONTMATTER_TEMPLATE.format(
             slug="p", today="2026-06-01", source_stem="remember")
-        self.assertIn("source: remember", fm)
+        self.assertEqual(fm, "---\ntype: handoff\ncreated: 2026-06-01\n"
+                             "updated: 2026-06-01\n---\n\n")
+
+    def test_template_matches_the_shipped_template(self):
+        # The point of the derivation: editing templates/handoff.md changes
+        # what the mirror writes, with no Python edit.
+        from _template_schema import FIELD_SCHEMA
+        fm = pc.HANDOFF_FRONTMATTER_TEMPLATE.format(
+            slug="p", today="2026-06-01", source_stem="remember")
+        keys = {ln.split(":", 1)[0] for ln in fm.splitlines() if ":" in ln}
+        self.assertEqual(keys, set(FIELD_SCHEMA["handoff"]["required"]))
 
     def test_rendered_handoff_has_no_em_dash(self):
         # voice.md: no em dashes in vault writes. The old hook heading had one.

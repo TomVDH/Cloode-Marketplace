@@ -34,6 +34,8 @@ Every file-touching verb is backed by a Python helper. Helpers follow the `.clau
 
 `_vault_walk.py` is the shared primitives module (frontmatter, wikilinks, tags, vault index, vault/project resolvers, schema constants). Read-only CLI smoke-test: `python3 _vault_walk.py --project-dir PATH [--vault-dir PATH]`.
 
+`_template_schema.py` parses `templates/*.md` into the schema at import, and `_vault_walk.FIELD_SCHEMA` is the result. `_render.py` writes with it: `render(kind, fields, body)` for a full note, `frontmatter(kind, fields)` for a writer that supplies its own body (`port` mirrors a legacy brief, the handoff mirror mirrors `.remember/`). Every mechanical vault write goes through one of the two. A missing template raises; there is no fallback copy to substitute.
+
 ## Hooks
 
 This plugin registers 11 hook entries across 10 events (vault-aware only):

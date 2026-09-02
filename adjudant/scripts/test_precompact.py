@@ -435,6 +435,14 @@ class TestImportDegradation(_EnvHygiene):
         (plugin / "hooks" / "scripts").mkdir(parents=True)
         (plugin / "scripts").mkdir(parents=True)
         shutil.copy2(HOOK, plugin / "hooks" / "scripts" / "precompact.py")
+        # The real plugin layout, because _handoff_freshness derives the
+        # handoff frontmatter from templates/handoff.md through _render since
+        # v3. A tree without the templates is not a plugin, and testing
+        # degradation against one would only prove the fixture is incomplete.
+        for mod in ("_render.py", "_template_schema.py"):
+            shutil.copy2(SCRIPTS / mod, plugin / "scripts")
+        shutil.copytree(SCRIPTS.parent / "skills" / "adjudant" / "templates",
+                        plugin / "skills" / "adjudant" / "templates")
         if break_freshness:
             (plugin / "scripts" / "_handoff_freshness.py").write_text("def (broken syntax\n")
         else:

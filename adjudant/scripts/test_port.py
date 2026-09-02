@@ -308,9 +308,15 @@ class TestGeneratePreviewY(unittest.TestCase):
             self.assertTrue(proposed_brief.is_file())
             text = proposed_brief.read_text()
             self.assertIn("type: project", text)              # canonical template shape
-            self.assertIn("project_type: coding", text)
             self.assertNotIn("type: project-brief-ob", text)
             self.assertIn("Original content.", text)
+            # v3: the block comes from templates/brief.md, which declares
+            # type/created/updated/verified/verified_by and nothing else. The
+            # five fields port used to declare inline (project_type, slug,
+            # aliases, status, a project tag) are not `project` fields.
+            keys = {ln.split(":", 1)[0] for ln in text.split("---")[1].splitlines() if ":" in ln}
+            self.assertEqual(keys, {"type", "created", "updated",
+                                    "verified", "verified_by"})
 
     def test_y_apply_actually_replaces_brief_md(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as vault:
@@ -327,8 +333,8 @@ class TestGeneratePreviewY(unittest.TestCase):
             apply_preview(root)
             new_brief = (Path(vault) / "projects" / "p" / "brief.md").read_text()
             self.assertIn("type: project", new_brief)         # canonical template shape
-            self.assertIn("project_type: coding", new_brief)
             self.assertNotIn("type: project-brief-ob", new_brief)
+            self.assertNotIn("project_type:", new_brief)      # v3 dropped it
             self.assertIn("Old content.", new_brief)
 
     def test_y_claude_md_heading_uses_first_letter_capitalization_only(self):
@@ -417,7 +423,13 @@ class TestGeneratePreviewXBriefIsFile(unittest.TestCase):
             self.assertTrue(brief.is_file(), "brief.md must be a FILE, not a directory")
             content = brief.read_text()
             self.assertIn("type: project", content)          # canonical template shape
-            self.assertIn("project_type: coding", content)
+            # v3: the regen stub is rendered from templates/brief.md. The copy
+            # that used to stand in port.py stamped `project_type: coding` on
+            # every project it regenerated, whatever the project was, and the
+            # v3 `project` kind has no such field.
+            self.assertNotIn("project_type:", content)
+            self.assertIn("# myproj", content)
+            self.assertIn("## Where things are", content)
 
 
 from port import apply_preview, _apply_vault_change

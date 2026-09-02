@@ -41,6 +41,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from _render import render
 from _vault_walk import (
     INDEX_EXEMPT_FOLDERS,
     PROJECT_TYPE_DEFAULT_FOLDERS,
@@ -387,6 +388,8 @@ def derive_project_type(
 
 
 BRIEF_PURPOSE_PLACEHOLDER = "{One sentence. What this is and who it is for.}"
+SESSION_SUMMARY_PLACEHOLDER = (
+    "{One line, written at session end, saying what this session did.}")
 
 _WHEN_RE = re.compile(r"^<!--\s*when:\s*([^>]*?)\s*-->\s*$")
 
@@ -455,18 +458,13 @@ def scaffold_vault_project(
     # brief.md
     brief_path = proj_dir / "brief.md"
     if not brief_path.is_file():
-        template_path = TEMPLATES / "brief.md"
-        if not template_path.is_file():
-            raise RuntimeError(f"template missing: {template_path}")
-        text = apply_when_markers(template_path.read_text(), project_type)
-        text = (
-            text.replace("{kebab-slug}", slug)
-                .replace("{YYYY-MM-DD}", today)
-                .replace("{Project Name}", project_name)
-        )
+        body = {"Project Name": project_name}
         if purpose:
-            text = text.replace(BRIEF_PURPOSE_PLACEHOLDER, purpose, 1)
-        brief_path.write_text(text)
+            body[BRIEF_PURPOSE_PLACEHOLDER.strip("{}")] = purpose
+        text = render("project",
+                      {"created": today, "updated": today, "verified": today},
+                      body)
+        brief_path.write_text(apply_when_markers(text, project_type))
         created.append("brief.md")
     else:
         preserved.append("brief.md")
@@ -517,7 +515,19 @@ def write_session_note(
     proj_dir: Optional[Path] = None,
 ) -> str:
     """`proj_dir` lets the caller pass a zone-resolved dir; defaults to the
-    live-zone path when omitted, matching prior behavior."""
+    live-zone path when omitted, matching prior behavior.
+
+    `now_hhmm` no longer reaches the note. v3 dropped `started:` from the
+    session shape, and the Log rows in the template are examples of the three
+    entry forms rather than a first entry to stamp: writing a real time into
+    them would forge three log lines. The argument stays because callers pass
+    it and the day, not the minute, is what a session note records.
+
+    One render call, no fallback. The old template-or-inline branch wrote
+    `date`, `started`, `session_id` and a `session` tag when the template was
+    unreadable, four fields v3 does not have, so a missing template quietly
+    produced a note the schema gate would reject. It now raises.
+    """
     if proj_dir is None:
         proj_dir = vault_path / "projects" / slug
     sess_dir = proj_dir / "sessions"
@@ -525,36 +535,12 @@ def write_session_note(
     sess_file = sess_dir / f"{today}.md"
     if sess_file.is_file():
         return "preserved"
-    template_path = TEMPLATES / "session.md"
-    if template_path.is_file():
-        text = template_path.read_text()
-        text = (
-            text.replace("{slug}", slug)
-                .replace("{YYYY-MM-DD}", today)
-                .replace("{HH:MM}", now_hhmm)
-        )
-        # Default intent + first log entry if template has placeholder
-        text = text.replace(
-            "{One-line intent. Frozen after first write.}",
-            "Session initiated by /adjudant connect.",
-        )
-    else:
-        # Template-less fallback. session_id starts empty; the SessionStart
-        # hook appends the live conversation UUID on the next session start.
-        text = (
-            "---\n"
-            "type: session\n"
-            f"date: {today}\n"
-            f"started: \"{now_hhmm}\"\n"
-            "session_id: []\n"
-            "tags:\n"
-            "  - session\n"
-            "---\n\n"
-            f"> Session initiated by /adjudant connect.\n\n"
-            "## Log\n\n"
-            f"- {now_hhmm} · session started\n"
-        )
-    sess_file.write_text(text)
+    sess_file.write_text(render(
+        "session",
+        {"created": today, "updated": today},
+        {SESSION_SUMMARY_PLACEHOLDER.strip("{}"):
+            "Session initiated by /adjudant connect."},
+    ))
     return "created"
 
 

@@ -4,8 +4,12 @@ The hook is SELF-GATED: any hooks.json `if` filter added at wiring time is
 defense in depth, never a dependency. So these tests drive main() with full
 PostToolUse(Bash) payloads and assert the gates hold (non-commit ignored,
 failed commit ignored, stale breadcrumb fail-closed) and the writes land
-(session-log commit line, release stub from templates/release.md, one index
-row in releases/_index.md, never clobbering an existing note).
+(session-log commit line, release stub rendered from templates/release.md,
+one index row in releases/_index.md, never clobbering an existing note).
+
+Since v3 the stub goes through `_render`; there is no inlined fallback
+frontmatter, so a missing template writes no stub at all rather than one the
+schema gate would reject.
 """
 
 import importlib.util
@@ -231,8 +235,16 @@ class TestReleaseScaffold(_CommitLogCase):
         self.assertIn("version: 0.15.0", text)
         # v0.16.0: membership is the path — no project: field on written notes
         self.assertNotIn("project:", text)
-        self.assertIn("# v0.15.0 (adjudant)", text)
-        self.assertIn("- task schema locked", text)
+        # v3: templates/release.md declares the heading as `# v{X.Y.Z}`, so
+        # the plugin's name moved to the opening line rather than being
+        # smuggled into a version span. Both facts are still asserted.
+        self.assertIn("# v0.15.0\n", text)
+        self.assertIn("adjudant v0.15.0, released", text)
+        # The commit body is the ## Changes list now, not loose trailing prose.
+        self.assertIn("## Changes\n\n- task schema locked", text)
+        self.assertIn("- board born on first task", text)
+        # No pre-written empty field survived the render (README rule 1).
+        self.assertNotIn('""', text)
         index = self.project_root / "releases" / "_index.md"
         self.assertTrue(index.is_file(), "index must be created on first release")
         self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]", index.read_text())

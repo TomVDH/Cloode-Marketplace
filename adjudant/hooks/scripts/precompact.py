@@ -51,13 +51,15 @@ try:
         render_handoff,
     )
 except Exception:  # pragma: no cover - degrade: mechanical work without freshness
+    # The v3 `handoff` shape, kept in step with templates/handoff.md by
+    # test_precompact. This is the ONE surviving inline copy and it exists for
+    # a different reason than the ones v3 deleted: it runs only when the
+    # shared module itself failed to import, when there is no renderer to ask.
     HANDOFF_FRONTMATTER_TEMPLATE = (
         "---\n"
         "type: handoff\n"
+        "created: {today}\n"
         "updated: {today}\n"
-        "source: {source_stem}\n"
-        "tags:\n"
-        "  - handoff\n"
         "---\n\n"
     )
 

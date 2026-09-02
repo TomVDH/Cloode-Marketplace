@@ -17,7 +17,12 @@ CLI:
     python3 board_bridge.py --ensure-only [--project-dir PATH]
 
 `render_task_note` stays: the advisor's `capture-task` verb writes a task note
-on an explicit request, which is the supported way one gets created.
+on an explicit request, which is the supported way one gets created. It goes
+through `_render` now. The inline fallback copy of the template is gone, and
+with it the comment stripper that existed because the fallback and the real
+template disagreed: the fallback declared `code`, `note` and a `task` tag,
+none of which is a v3 field, and the real template's guidance comments
+survived the minimal YAML parser and poisoned card ids.
 """
 
 from __future__ import annotations
@@ -25,32 +30,12 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from pathlib import Path
+from datetime import datetime
 from typing import Optional
 
+from _render import render
 from _vault_walk import VaultUnresolvableError, smart_project_dir
 from board import ensure_board
-
-TEMPLATE = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "templates" / "task.md"
-
-# Inlined equivalent of templates/task.md, used only when the template file
-# is unreadable (mid-sync clone): an explicit capture must not lose its note
-# over a missing template.
-_FALLBACK_TEMPLATE = """---
-type: task
-status: todo
-category: ""
-code: ""
-related: []
-note: ""
-tags:
-  - task
----
-
-## Task
-
-## Notes
-"""
 
 # Vault task filenames are strict ascii kebab ({kebab-title}.md per
 # vault-standards §naming); 80 chars keeps sync-hostile paths off the table.
@@ -63,49 +48,23 @@ def kebab(subject: str) -> str:
     return s[:_KEBAB_MAX].rstrip("-")
 
 
-def _strip_frontmatter_comments(text: str) -> str:
-    """Drop `# guidance` comments inside the frontmatter block, full-line
-    and trailing forms both.
+def render_task_note(title: str, description: str = "") -> str:
+    """A task note from templates/task.md: the title in the heading, the
+    description under `## Notes`.
 
-    The template carries them for the human/model author; a mechanical
-    writer must emit clean values (the minimal YAML parser keeps trailing
-    comments on quoted-value lines like `code: ""  # ...`, which would then
-    leak into card ids)."""
-    lines = text.split("\n")
-    closes = [i for i, ln in enumerate(lines[1:], 1) if ln.rstrip() == "---"]
-    if not text.startswith("---") or not closes:
-        return text
-    out: list[str] = []
-    for i, ln in enumerate(lines):
-        if 0 < i < closes[0]:
-            if ln.lstrip().startswith("#"):
-                continue
-            ln = re.sub(r"[ \t]+#.*$", "", ln)
-        out.append(ln)
-    return "\n".join(out)
-
-
-def render_task_note(slug: str, description: str) -> str:
-    """templates/task.md with {slug} filled and the description inserted
-    into the ## Notes section (left untouched when the description is empty,
-    matching the template's own empty shape).
-
-    v3 moved the insertion point: the title line is the task now, and ## Notes
-    is what the template offers for "anything the person picking this up
-    needs". The old ## Task section is gone from the template."""
-    try:
-        text = TEMPLATE.read_text()
-    except OSError:
-        text = _FALLBACK_TEMPLATE
-    text = _strip_frontmatter_comments(text).replace("{slug}", slug)
-    desc = description.strip()
-    if desc:
-        marker = "## Notes\n"
-        idx = text.find(marker)
-        if idx != -1:
-            at = idx + len(marker)
-            text = text[:at] + "\n" + desc + "\n" + text[at:]
-    return text
+    The card's title on the board is the note's first heading, so a capture
+    that left `# {What needs doing}` in place produced a card literally called
+    that. The optional fields (`session`, `spec`, `category`, `related`) are
+    omitted rather than written bare, which is README rule 1 and the reason
+    the comment stripper is gone: there is no valueless line left to clean.
+    """
+    body = {}
+    if title.strip():
+        body["What needs doing"] = title.strip()
+    if description.strip():
+        body["Anything the person picking this up needs."] = description.strip()
+    today = datetime.now().strftime("%Y-%m-%d")
+    return render("task", {"created": today, "updated": today}, body)
 
 
 def main(argv: Optional[list[str]] = None) -> int:

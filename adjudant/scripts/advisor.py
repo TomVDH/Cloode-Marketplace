@@ -175,11 +175,13 @@ def run_pulse(project_dir: Path, today: _dt.date) -> dict[str, Any]:
 def capture_task(project_dir: Path, title: str, note: str = "") -> tuple[int, str]:
     """Land an approved suggestion as a task note through the existing rail.
 
-    (exit code, message). Writes tasks/{slug}.md from templates/task.md and
-    lets board.ensure_board seed the card - the same path the session-end
-    bridge uses, so a captured task is indistinguishable from any other.
-    Dedup by slug is the advisor's raise-once rule enforced at the disk
-    layer: a re-capture never clobbers a note someone has since edited.
+    (exit code, message). Writes tasks/{slug}.md through `_render` from
+    templates/task.md and lets board.ensure_board seed the card - the same
+    path the session-end bridge uses, so a captured task is indistinguishable
+    from any other. Dedup by slug is the advisor's raise-once rule enforced at
+    the disk layer: a re-capture never clobbers a note someone has since
+    edited. The title lands in the heading, which is what the board reads as
+    the card's name.
     """
     from board import ensure_board
     from board_bridge import kebab, render_task_note
@@ -192,7 +194,7 @@ def capture_task(project_dir: Path, title: str, note: str = "") -> tuple[int, st
     if note_path.is_file():
         return 0, f"tasks/{slug}.md already exists; not touching it"
     tasks.mkdir(parents=True, exist_ok=True)
-    body = render_task_note(slug, note or title)
+    body = render_task_note(title, note)
     with file_lock(note_path):
         atomic_write_text(note_path, body)
     try:

@@ -16,6 +16,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from _render import frontmatter
+
 
 # Traffic-light thresholds, in hours
 LIGHT_GREEN_MAX_H = 2.0
@@ -288,15 +290,13 @@ def remember_status(project_dir: Path) -> dict:
 # ============================================================
 
 
-HANDOFF_FRONTMATTER_TEMPLATE = (
-    "---\n"
-    "type: handoff\n"
-    "updated: {today}\n"
-    "source: {source_stem}\n"
-    "tags:\n"
-    "  - handoff\n"
-    "---\n\n"
-)
+# Derived from templates/handoff.md, not declared here. The block this used
+# to hardcode carried `source` and a `handoff` tag and omitted `created`,
+# three disagreements with the template nothing ever reconciled, because
+# nothing read templates/handoff.md at all. `{today}` survives the render as
+# a str.format field, so the two call sites keep their `.format(...)` call.
+HANDOFF_FRONTMATTER_TEMPLATE = frontmatter(
+    "handoff", {"created": "{today}", "updated": "{today}"}) + "\n"
 
 
 def preserved_frontmatter(handoff_path: Path, today: str) -> Optional[str]:

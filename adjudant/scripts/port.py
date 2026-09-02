@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from connect import validate_slug  # single source of the kebab-case rule
+from _render import frontmatter, render
+from connect import apply_when_markers, validate_slug  # kebab rule + when: markers
 
 
 def create_backup(project_root: Path, files_to_backup: list[Path]) -> Path:
@@ -328,11 +329,18 @@ def _write_source_hash(preview_dir: Path, project_root: Path) -> None:
     (preview_dir / "source-hash.txt").write_text(_agents_hash(project_root) + "\n")
 
 
-def render_brief_md_y(legacy_brief_text: str, slug: str, project_type: str) -> str:
-    """For Y flavor: produce a new adjudant-shape brief.md preserving the legacy body.
+def render_brief_md_y(legacy_brief_text: str) -> str:
+    """For Y flavor: the v3 `project` frontmatter over the legacy body.
 
-    Strips the legacy frontmatter (if any), writes a new adjudant frontmatter
-    block, appends the legacy body (without its title duplicate if present).
+    Strips the legacy frontmatter (if any) and keeps the prose: port's job is
+    to fix the shape without touching what a person wrote.
+
+    The block comes from templates/brief.md through `_render`. It used to be
+    declared here instead, and it declared `project_type`, `slug`, `aliases`,
+    `status` and a `project` tag, five fields the v3 `project` kind does not
+    have. The comment that stood here said the two "have not been reconciled";
+    this is the reconciliation. The project's type now shows in the sections
+    the brief carries, and its slug is the folder it lives in.
     """
     body = legacy_brief_text
     # Strip legacy frontmatter
@@ -342,25 +350,9 @@ def render_brief_md_y(legacy_brief_text: str, slug: str, project_type: str) -> s
     body = body.lstrip()
 
     today = datetime.now().strftime("%Y-%m-%d")
-    # Pre-v3 brief frontmatter shape: type is `project` with project_type
-    # alongside, NOT type: project-brief-*. port still writes this shape;
-    # templates/brief.md is the v3 one and they have not been reconciled.
-    return (
-        f"---\n"
-        f"type: project\n"
-        f"project_type: {project_type}\n"
-        f"slug: {slug}\n"
-        f"aliases:\n"
-        f"  - {slug}\n"
-        f"status: active\n"
-        f"created: {today}\n"
-        f"updated: {today}\n"
-        f"tags:\n"
-        f"  - project\n"
-        f"---\n"
-        f"\n"
-        f"{body}"
-    )
+    head = frontmatter("project",
+                       {"created": today, "updated": today, "verified": today})
+    return f"{head}\n{body}"
 
 
 def generate_preview_y(
@@ -432,7 +424,7 @@ def generate_preview_y(
     # Generate brief.md.proposed if the legacy vault project has a brief
     legacy_brief = vault_path / "projects" / slug / "brief.md"
     if legacy_brief.is_file():
-        brief_out = render_brief_md_y(legacy_brief.read_text(), slug, project_type)
+        brief_out = render_brief_md_y(legacy_brief.read_text())
         (preview_dir / "brief.md.proposed").write_text(brief_out)
 
     vault_changes = _y_vault_changes(vault_path, slug, project_type)
@@ -782,12 +774,21 @@ def _apply_vault_change(line: str, preview_dir: Optional[Path] = None) -> None:
             if target.name == "brief.md":
                 slug = target.parent.name
                 today = datetime.now().strftime("%Y-%m-%d")
-                target.write_text(
-                    f"---\ntype: project\nproject_type: coding\nslug: {slug}\n"
-                    f"aliases:\n  - {slug}\nstatus: active\n"
-                    f"created: {today}\nupdated: {today}\ntags:\n  - project\n---\n\n"
-                    "# Brief\n\n(Brief content goes here. Edit and re-run `/adjudant:adjudant sync`.)\n"
-                )
+                # From templates/brief.md, not from a second copy of it. The
+                # copy that stood here declared `project_type: coding` for
+                # every project it regenerated, plus `slug`, `aliases`,
+                # `status` and a `project` tag: a guess and four fields the
+                # v3 `project` kind does not have. No project type is known
+                # at regen time, so the conditional sections are left out and
+                # a human adds them with the rest of the brief.
+                target.write_text(apply_when_markers(render(
+                    "project",
+                    {"created": today, "updated": today, "verified": today},
+                    {"Project Name": slug,
+                     "One sentence. What this is and who it is for.":
+                         "(Brief content goes here. Edit and re-run "
+                         "`/adjudant:adjudant sync`.)"},
+                ), ""))
             else:
                 target.write_text(f"# Index\n\n(Regenerate manually or via `/adjudant:adjudant ramasse`)\n")
     elif action == "UPDATE-ROW":
