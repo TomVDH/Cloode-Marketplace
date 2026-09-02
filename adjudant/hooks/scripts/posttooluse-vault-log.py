@@ -23,7 +23,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Shared primitives live in <plugin>/scripts/. Deferred behind the breadcrumb
@@ -272,14 +272,25 @@ def main() -> int:
                 "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md"))
         except OSError:
             candidates = []
-        # Real dates not after today only (finding 19): a future-dated note
-        # must never absorb appends; the digit glob admits impossible dates.
+        # Yesterday or today only. Two guards, two different bugs:
+        #
+        # A future-dated note must never absorb appends (finding 19) — the
+        # digit glob admits impossible dates.
+        #
+        # And the straddle has a FLOOR. This fallback exists for a session
+        # that starts 23:40 and ends 00:10; it is not a licence to append to
+        # whatever note happens to be newest. Before lazy creation this never
+        # showed, because SessionStart always made today's note first. With
+        # Task 6 the mask is gone, and an unbounded `<= today` let a vault
+        # whose newest session note was months old silently absorb the day's
+        # work into it. Found by an adversarial prover after plan 1 landed.
+        yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
         for cand in reversed(candidates):
             try:
                 datetime.strptime(cand.stem, "%Y-%m-%d")
             except ValueError:
                 continue
-            if cand.stem <= today:
+            if yesterday <= cand.stem <= today:
                 session_file = cand
                 break
 

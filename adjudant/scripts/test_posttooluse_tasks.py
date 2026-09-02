@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -49,7 +50,11 @@ class _TasksHookCase(unittest.TestCase):
         self.project_root = self.vault / "projects" / "demo"
         (self.project_root / "sessions").mkdir(parents=True)
         (self.project_root / "tasks").mkdir()
-        self.session_note = self.project_root / "sessions" / "2020-01-02.md"
+        # Yesterday, not a fixed 2020 date: the midnight-straddle fallback
+        # now has a floor, so a note from years ago is deliberately no
+        # longer eligible to absorb today's log lines.
+        _y = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        self.session_note = self.project_root / "sessions" / f"{_y}.md"
         self.session_note.write_text("## Log\n")
         (self.project / ".claude").mkdir(parents=True)
         (self.project / ".claude" / "adjudant").write_text(

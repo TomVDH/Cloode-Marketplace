@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "posttooluse-vault-log.py"
@@ -189,9 +189,14 @@ class TestSessionLogFormat(_HookHarness):
         with tempfile.TemporaryDirectory() as tmp:
             project, proot, session = self._fixture(Path(tmp))
             session.unlink()
-            latest = proot / "sessions" / "2020-01-02.md"
+            # Yesterday and the day before. The straddle has a floor now, so
+            # the older note is doubly ineligible; the assertion under test is
+            # still "the latest eligible note wins, and the decoy never does".
+            _y = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            _d = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            latest = proot / "sessions" / f"{_y}.md"
             latest.write_text("## Log\n")
-            (proot / "sessions" / "2020-01-01.md").write_text("## Log\n")
+            (proot / "sessions" / f"{_d}.md").write_text("## Log\n")
             decoy = proot / "sessions" / "abcd-ef-gh.md"
             decoy.write_text("## Not a session\n")
             note = self._note(proot, "notes/idea.md")
@@ -516,7 +521,10 @@ class TestFutureSessionFallback(_HookHarness):
         with tempfile.TemporaryDirectory() as tmp:
             project, proot, session = self._fixture(Path(tmp))
             session.unlink()                       # no note for today
-            past = proot / "sessions" / "2026-01-01.md"
+            # Yesterday: an eligible past note. The assertion under test is
+            # that the FUTURE note is skipped, which is unchanged.
+            _y = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            past = proot / "sessions" / f"{_y}.md"
             past.write_text("## Log\n")
             future = proot / "sessions" / "2029-12-31.md"
             future.write_text("## Log\n")
@@ -593,3 +601,50 @@ class TestHookCostAndWiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStraddleIsBounded(_HookHarness):
+    """An adversarial prover found this after plan 1 landed.
+
+    The midnight-straddle fallback exists for a session that starts 23:40 and
+    ends 00:10, but its guard is `cand.stem <= today` with no lower bound, so
+    it reaches back arbitrarily far. Eager session-note creation used to mask
+    it: SessionStart always made today's note, so the fallback never fired in
+    practice. Lazy creation (Task 6) removed the mask, and a vault whose newest
+    session note is months old silently absorbs today's work into it.
+    """
+
+    def _aged(self, tmp: Path, days: int) -> tuple[Path, Path, str]:
+        """Fixture with ONE session note `days` old and none for today."""
+        project = tmp / "code"
+        vault = tmp / "vault"
+        proot = vault / "projects" / "demo"
+        (proot / "sessions").mkdir(parents=True)
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
+        old = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        (proot / "sessions" / f"{old}.md").write_text(
+            "---\ntype: session\n---\n\n## Log\n\n- 09:00 · earlier work\n")
+        return project, proot, old
+
+    def test_a_months_old_note_does_not_absorb_todays_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot, old = self._aged(Path(tmp), days=60)
+            self._run(project, self._payload(self._note(proot, "notes/a.md")))
+            today = datetime.now().strftime("%Y-%m-%d")
+            self.assertTrue((proot / "sessions" / f"{today}.md").is_file(),
+                            "today's note was never created")
+            self.assertNotIn("a.md", (proot / "sessions" / f"{old}.md").read_text(),
+                             f"today's work was filed into a {old} note")
+
+    def test_yesterday_still_straddles(self):
+        # The real case the fallback exists for must keep working.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot, old = self._aged(Path(tmp), days=1)
+            self._run(project, self._payload(self._note(proot, "notes/b.md")))
+            today = datetime.now().strftime("%Y-%m-%d")
+            self.assertIn("b.md", (proot / "sessions" / f"{old}.md").read_text(),
+                          "a genuine midnight straddle stopped working")
+            self.assertFalse((proot / "sessions" / f"{today}.md").exists(),
+                             "straddling should append, not create a second note")
