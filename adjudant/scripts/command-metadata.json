@@ -39,7 +39,7 @@
     },
     {
       "name": "dream",
-      "description": "Semantic refresh, the deepest tier: surfaces stale, contradictory, redundant, or orphaned content as candidates you judge before anything changes. --folder scopes the walk to one subtree.",
+      "description": "Semantic refresh, the deepest tier: surfaces stale, superseded, redundant, or orphaned content as scored candidates you judge before anything changes. --folder scopes the walk to one subtree.",
       "argumentHint": "[--folder <path>]",
       "reference": "reference/dream.md",
       "weight": "heavy"

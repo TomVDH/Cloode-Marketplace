@@ -20,7 +20,7 @@ Vault editor/writer and project initializer. One skill, one command, ten verbs. 
 | `check` | `reference/check.md` | Read-only project + vault health, with schema drift. `[vault\|repo\|all]` also audits repo structure (versions, symlinks, registration, stale plans) |
 | `sitrep` | `reference/sitrep.md` | Plain-language orientation after a break: where you left off, what's done, where the vault is, what's next, plus git and dev-server state. Read-only |
 | `clean` | `reference/clean.md` | Cleanup sweep: indexes, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply, and it never creates a vault file. `--deep` adds the structural pass (folder shape, types, naming, broken wikilinks); `[vault\|repo\|all]` adds repo symlinks |
-| `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: flags stale, contradictory, redundant, and orphaned content as candidates Claude judges before anything changes |
+| `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: flags stale, superseded, redundant, and orphaned content as scored candidates Claude judges before anything changes |
 | `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, hand-authored or generated from vault data |
 | `board` | `reference/board.md` | Scaffold a self-hosted kanban seeded from `tasks/`: drag to move, saved to disk, re-seeds without clobbering dragged cards. `--project <slug>` or `--all` |
 | `advisor` | `reference/advisor.md` | Toggle the opt-in proactive advisor (visible breadcrumb flag + AGENTS.md marker) or run its read-only context pulse. `[on\|off\|status\|pulse]` |
@@ -39,7 +39,7 @@ dream        = content/knowledge/memory refresh (semantic; judgment-heavy)
 
 `clean` may rewrite a file in place and remove one. It may not create a vault file — `_vault_write.VaultWriteGuard` enforces that, so anything clean cannot fix by rewriting it reports instead. A folder missing its `_index.md` is reported as a gap, never filled.
 
-`dream` reads actual prose and surfaces outdated/redundant/stale/orphaned content as *candidates* for Claude to judge. `dream.py` is its read-only analyser.
+`dream` reads actual prose and surfaces outdated/redundant/stale/orphaned content as scored *candidates* for Claude to judge, capped at the twenty most confident. `dream.py` is its read-only analyser.
 
 ## Cost gate (locked)
 

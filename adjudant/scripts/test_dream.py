@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import dream
 from dream import (
     cli_main as dream_cli,
-    detect_contradiction_candidates,
     detect_dangling_scopes,
     detect_documentation_gaps,
     detect_orphan_questions,
@@ -134,7 +134,8 @@ class TestDetectSupersession(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_file(root / "decisions" / "2026-01-01-cache-layer.md",
-                        "---\ntype: decision\ndate: 2026-01-01\nsuperseded: true\n---\n\nRedis cache layer.")
+                        "---\ntype: decision\ndate: 2026-01-01\n"
+                        'superseded_by: "[[2026-05-01-cache-layer]]"\n---\n\nRedis cache layer.')
             _write_file(root / "decisions" / "2026-05-01-cache-layer.md",
                         "---\ntype: decision\ndate: 2026-05-01\n---\n\nIn-memory cache layer.")
             files = list(walk_project(root))
@@ -142,33 +143,19 @@ class TestDetectSupersession(unittest.TestCase):
             self.assertEqual(len(out), 1)
             self.assertTrue(out[0]["older_has_superseded_marker"])
 
-
-# ============================================================
-# Contradiction
-# ============================================================
-
-
-class TestDetectContradiction(unittest.TestCase):
-
-    def test_change_verb_with_overlap_flagged(self):
+    def test_a_field_the_schema_does_not_define_is_not_a_marker(self):
+        # The detector tested for a key named `superseded` for a year. No
+        # template declares one, so the frontmatter half never fired.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _write_file(root / "decisions" / "2026-01-01-build-tooling.md",
-                        "---\ntype: decision\ndate: 2026-01-01\n---\n\nWe use webpack for build tooling.")
-            _write_file(root / "decisions" / "2026-05-01-build-tooling.md",
-                        "---\ntype: decision\ndate: 2026-05-01\n---\n\nWe no longer use webpack; switched to vite.")
+            _write_file(root / "decisions" / "2026-01-01-cache-layer.md",
+                        "---\ntype: decision\ndate: 2026-01-01\nsuperseded: true\n---\n\nRedis cache layer.")
+            _write_file(root / "decisions" / "2026-05-01-cache-layer.md",
+                        "---\ntype: decision\ndate: 2026-05-01\n---\n\nIn-memory cache layer.")
             files = list(walk_project(root))
-            out = detect_contradiction_candidates(files, TODAY)
+            out = detect_supersession_signals(files, TODAY)
             self.assertEqual(len(out), 1)
-            self.assertTrue(out[0]["a"]["line"] or out[0]["b"]["line"])
-
-    def test_overlap_without_change_verb_not_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "a-build-tooling.md", "---\ntype: note\n---\n\nNotes about build tooling setup.")
-            _write_file(root / "b-build-tooling.md", "---\ntype: note\n---\n\nMore on build tooling config.")
-            files = list(walk_project(root))
-            self.assertEqual(detect_contradiction_candidates(files, TODAY), [])
+            self.assertFalse(out[0]["older_has_superseded_marker"])
 
 
 # ============================================================
@@ -322,17 +309,6 @@ class TestDetectUnactedDecisions(unittest.TestCase):
             out = detect_unacted_decisions(files, TODAY)
             self.assertEqual(len(out), 1)
             self.assertIn("Rewrite", out[0]["consequence_excerpt"])
-
-    def test_referenced_by_session_not_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "decisions" / "2026-01-01-migrate.md",
-                        "---\ntype: decision\nstatus: active\ndate: 2026-01-01\n---\n\n"
-                        "## Decision\nMigrate.\n\n## Consequence\nRewrite config.\n")
-            _write_file(root / "sessions" / "2026-02-01.md",
-                        "---\ntype: session\n---\n\nDid the [[2026-01-01-migrate]] rewrite today.")
-            files = list(walk_project(root))
-            self.assertEqual(detect_unacted_decisions(files, TODAY), [])
 
     def test_recent_decision_not_flagged(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -682,6 +658,163 @@ class TestFolderScope(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertIn("nope", err.getvalue())
 
+
+class TestPrecisionRebuild(unittest.TestCase):
+    """The rebuild for precision.
+
+    The 2026-08-13 run turned 602 files into 602 candidates, 463 of them
+    contradictions, none real, at 918k read tokens. These tests pin the four
+    causes shut: the detector that fired on shared vocabulary, the field name
+    that never matched, the exclusion that ate 47 of 55 active decisions, and
+    the census that nobody could read.
+    """
+
+    DAY = dt.date(2026, 9, 1)
+
+    def _project(self, root: Path) -> Path:
+        """A project with one aged, unlinked, single-line note at notes/a.md."""
+        _make_minimal_project(root)
+        _write_file(root / "notes" / "a.md",
+                    "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n\n"
+                    "An aged note nothing links to.\n")
+        return root
+
+    def _noisy_project(self, root: Path, notes: int = 200) -> Path:
+        """The shape of the real run: hundreds of files, each mildly flaggable."""
+        _make_minimal_project(root)
+        for i in range(notes):
+            _write_file(root / "notes" / f"n{i:03d}.md",
+                        "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n\n"
+                        f"Aged prose number {i}, linked from nowhere.\n")
+        return root
+
+    def _dismissal_report(self, project: Path, date: str, finding: str) -> None:
+        dreams = project / "dreams"
+        dreams.mkdir(parents=True, exist_ok=True)
+        (dreams / f"{date}-dream.md").write_text(
+            f"---\ntype: dream\ncreated: {date}\nupdated: {date}\n---\n\n"
+            f"# Dream {date}\n\n1 findings, 0 acted on, 1 dismissed.\n\n"
+            "## Dismissed\n\n| Finding | Why | Suppress until |\n|---|---|---|\n"
+            f"| {finding} | intentional | the file changes |\n")
+
+    def test_the_contradiction_detector_is_gone(self):
+        # 463 candidates, 23 sampled, zero real. It fired on any two files
+        # sharing vocabulary where one contained a negation cue, which in a
+        # vault of decisions that say "we switched from X to Y" is every pair.
+        self.assertFalse(hasattr(dream, "detect_contradiction_candidates"))
+        self.assertNotIn("contradiction", dream.__doc__ or "")
+
+    def test_supersession_reads_the_real_field_name(self):
+        # The check tested for a key named `superseded`. The schema field is
+        # `superseded_by`, so the frontmatter half could never pass and only
+        # the prose regex ever fired.
+        src = Path(dream.__file__).read_text()
+        self.assertNotIn('"superseded" in older.frontmatter.fields', src)
+        self.assertIn('"superseded_by" in older.frontmatter.fields', src)
+
+    def test_a_session_link_no_longer_proves_closure(self):
+        # The check skipped any decision a session linked to. Adjudant tells
+        # you to link decisions from sessions, so this excluded 47 of 55 active
+        # decisions — the only verb auditing them, defeated by its own
+        # convention.
+        src = Path(dream.__file__).read_text()
+        self.assertNotIn("a session points at it", src)
+
+    def test_a_session_link_lowers_the_score_instead(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_file(root / "decisions" / "2026-01-01-migrate.md",
+                        "---\ntype: decision\nstatus: active\ndate: 2026-01-01\n---\n\n"
+                        "## Decision\nMigrate.\n\n## Consequence\nRewrite config.\n")
+            _write_file(root / "sessions" / "2026-02-01.md",
+                        "---\ntype: session\n---\n\nDid the [[2026-01-01-migrate]] rewrite today.")
+            linked = detect_unacted_decisions(list(walk_project(root)), TODAY)
+            self.assertEqual(len(linked), 1)
+            self.assertGreater(linked[0]["inbound_session_refs"], 0)
+            self.assertLess(dream._score("unacted_decisions", linked[0]),
+                            dream._BASE_CONFIDENCE["unacted_decisions"])
+
+    def test_every_candidate_carries_a_confidence(self):
+        with tempfile.TemporaryDirectory() as t:
+            project = self._project(Path(t))
+            report = dream.run_dream(project, project, today=self.DAY)
+            seen = 0
+            for key, entries in report.items():
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    seen += 1
+                    self.assertIn("confidence", entry, f"{key} entry has no score")
+                    self.assertGreaterEqual(entry["confidence"], 0.0)
+                    self.assertLessEqual(entry["confidence"], 1.0)
+            self.assertGreater(seen, 0, "fixture produced no candidates to score")
+
+    def test_the_catalog_is_capped(self):
+        with tempfile.TemporaryDirectory() as t:
+            project = self._noisy_project(Path(t), notes=200)
+            report = dream.run_dream(project, project, today=self.DAY)
+            total = sum(len(v) for v in report.values() if isinstance(v, list))
+            self.assertLessEqual(total, 20,
+                                 "the catalog is a shortlist, not a census")
+            self.assertGreater(report["summary"]["candidates_found"], 20,
+                               "the fixture did not exceed the cap")
+
+    def test_the_cap_keeps_the_report_readable_by_its_consumers(self):
+        # cli_main prints meta and summary; a cap that dropped them would take
+        # the CLI down with it.
+        with tempfile.TemporaryDirectory() as t:
+            project = self._noisy_project(Path(t), notes=40)
+            report = dream.run_dream(project, project, today=self.DAY)
+            for key in ("scope", "meta", "summary"):
+                self.assertIn(key, report)
+            self.assertEqual(report["meta"]["project_slug"], "test")
+
+    def test_the_catalog_is_ordered_by_confidence(self):
+        with tempfile.TemporaryDirectory() as t:
+            project = self._noisy_project(Path(t), notes=60)
+            report = dream.run_dream(project, project, today=self.DAY)
+            kept = [e["confidence"] for v in report.values()
+                    if isinstance(v, list) for e in v]
+            self.assertEqual(kept, sorted(kept, reverse=True))
+
+    def test_dismissals_suppress_a_repeat(self):
+        # Two consecutive real reports dismissed the _archive/ naming finding
+        # in identical words.
+        with tempfile.TemporaryDirectory() as t:
+            project = self._project(Path(t))
+            self._dismissal_report(project, "2026-08-01", "notes/a.md orphaned")
+            report = dream.run_dream(project, project, today=self.DAY)
+            flagged = [e["file"] for v in report.values() if isinstance(v, list)
+                       for e in v if "file" in e]
+            self.assertNotIn("notes/a.md", flagged)
+
+    def test_a_dismissal_expires_when_the_file_changes(self):
+        # "Suppress until: the file changes" is the template's own wording. A
+        # dismissal that outlived the file it judged would hide new drift.
+        with tempfile.TemporaryDirectory() as t:
+            project = self._project(Path(t))
+            _write_file(project / "notes" / "a.md",
+                        "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-08-20\n---\n\n"
+                        "Rewritten after the dismissal.\n")
+            self._dismissal_report(project, "2026-08-01", "notes/a.md orphaned")
+            report = dream.run_dream(project, project, today=self.DAY)
+            flagged = [e["file"] for v in report.values() if isinstance(v, list)
+                       for e in v if "file" in e]
+            self.assertIn("notes/a.md", flagged)
+
+    def test_dismissals_are_read_from_the_filename_dream_actually_writes(self):
+        # reference/dream.md mandates `{YYYY-MM-DD}-dream.md`; the state
+        # contract records the statusline reading either spelling.
+        with tempfile.TemporaryDirectory() as t:
+            project = self._project(Path(t))
+            self._dismissal_report(project, "2026-08-01", "notes/a.md orphaned")
+            (project / "dreams" / "2026-07-01.md").write_text(
+                "---\ntype: dream\ncreated: 2026-07-01\nupdated: 2026-07-01\n---\n\n"
+                "# Dream 2026-07-01\n\n## Dismissed\n\n"
+                "| Finding | Why | Suppress until |\n|---|---|---|\n"
+                "| notes/b.md stale | intentional | the file changes |\n")
+            found = dream.read_dismissals(project)
+            self.assertEqual(sorted(found), ["notes/a.md", "notes/b.md"])
 
 if __name__ == "__main__":
     unittest.main()
