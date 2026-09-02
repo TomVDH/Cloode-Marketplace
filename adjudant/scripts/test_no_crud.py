@@ -4,6 +4,13 @@ Before this plan, one ordinary session produced eight unrequested vault files,
 eleven whole-file rewrites and fourteen log lines against six intentional
 writes — better than three to one, machine to human. This test fails if any of
 that comes back.
+
+The session runs twice, once writing into `notes/` and once into `tasks/`, and
+both must leave the same single unrequested file. Plan 1's version only ever
+wrote to `notes/`, and that one fixture choice hid a live leak: the PostToolUse
+hook fired `board_bridge.py --ensure-only` on any write under `tasks/`, so the
+same six writes scaffolded a whole board nobody asked for. The folder is a
+parameter now precisely so no future branch can hide behind it.
 """
 
 import json
@@ -28,6 +35,7 @@ class TestSessionLeavesNoCrud(unittest.TestCase):
         self.vault = self.home / "vault"
         self.vp = self.vault / "projects" / "demo"
         (self.vp / "notes").mkdir(parents=True)
+        (self.vp / "tasks").mkdir(parents=True)
         (self.project / ".claude").mkdir(parents=True)
         (self.project / ".claude" / "adjudant").write_text(
             f"vault_path: {self.vault}\nvault_name: vault\nslug: demo\nmode: project\n")
@@ -54,8 +62,16 @@ class TestSessionLeavesNoCrud(unittest.TestCase):
                        input=json.dumps(payload), capture_output=True,
                        text=True, timeout=20)
 
-    def test_one_session_writes_only_what_was_asked_for(self):
-        sid = "s-accept-1"
+    _BODY = {
+        "notes": "---\ntype: note\ncreated: 2026-09-01\nupdated: 2026-09-01\n---\n\n# N%d\n",
+        "tasks": ("---\ntype: task\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+                  "status: backlog\n---\n\n# T%d\n"),
+    }
+
+    def _one_session(self, folder: str):
+        """Six intentional writes into `folder`, with the full hook lifecycle
+        around them. Returns (written, session_note)."""
+        sid = f"s-accept-{folder}"
         # Session opens, twice (a resume), then compacts once.
         self._hook("session-start.sh", {"session_id": sid, "source": "startup"})
         self._hook("session-start.sh", {"session_id": sid, "source": "resume"})
@@ -63,9 +79,8 @@ class TestSessionLeavesNoCrud(unittest.TestCase):
         # Six intentional writes.
         written = []
         for i in range(6):
-            note = self.vp / "notes" / f"n{i}.md"
-            note.write_text(
-                f"---\ntype: note\ncreated: 2026-09-01\nupdated: 2026-09-01\n---\n\n# N{i}\n")
+            note = self.vp / folder / f"n{i}.md"
+            note.write_text(self._BODY[folder] % i)
             written.append(note)
             self._hook("posttooluse-vault-log.py", {
                 "tool_name": "Write",
@@ -96,6 +111,18 @@ class TestSessionLeavesNoCrud(unittest.TestCase):
 
         # No scratch anywhere in the vault.
         self.assertEqual(list(self.vault.rglob(".adjudant-*")), [])
+
+    def test_one_session_writes_only_what_was_asked_for(self):
+        self._one_session("notes")
+
+    def test_a_session_of_task_writes_leaves_no_crud_either(self):
+        # Same six writes, one folder over. A board is opt-in: writing a task
+        # note must not scaffold board-data.json, board.html or a lock file.
+        self._one_session("tasks")
+        board = self.vp / "board"
+        self.assertFalse(board.exists(),
+                         f"a task write scaffolded a board: "
+                         f"{sorted(p.name for p in board.rglob('*'))}")
 
     def test_a_session_with_no_writes_leaves_nothing(self):
         sid = "s-accept-2"

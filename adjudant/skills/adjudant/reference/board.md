@@ -226,11 +226,16 @@ keep the board current without being asked:
 
 - **SessionStart** renders one board status line: per-column counts plus a
   stale flag when any task note is newer than the deck.
-- **PostToolUse (Write|Edit)** under `tasks/` nudges `board_bridge.py
-  --ensure-only`, so editing a task's `status:` refreshes the board.
 - **SessionEnd** runs `board_bridge.py --ensure-only` when a deck already
   exists, so the last edits of the session reach the board. A session end
   never births a board.
+
+Until v3 a third surface wrote here: PostToolUse fired `board_bridge.py
+--ensure-only` on any Write or Edit under `tasks/`, which meant the first task
+note scaffolded `board-data.json`, `board.html` and a lock file into a project
+that had never run `board`. That branch is deleted. A deck is born by
+`/adjudant board` and by nothing else; a task-note edit reaches the board at
+session end.
 
 Because three surfaces write the deck, the whole read-merge-write runs under an
 advisory lock and both files land via a temp file plus `os.replace`, so a

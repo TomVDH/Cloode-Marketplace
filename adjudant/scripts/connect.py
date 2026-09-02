@@ -745,11 +745,13 @@ def build_receipt(summary: dict[str, Any]) -> list[dict[str, str]]:
         {"artifact": ".gitignore entries", "state": _RECEIPT_MARK.get(steps["gitignore"], steps["gitignore"])},
         {"artifact": "projects/_index.md row", "state": _RECEIPT_MARK.get(steps["projects_index_row"], steps["projects_index_row"])},
     ]
-    # Board pointer for the project types that get a tasks/ folder by default
+    # Board pointer for the project types that get a tasks/ folder by default.
+    # The board is opt-in and never auto-seeded: v3 deleted the PostToolUse
+    # branch that scaffolded a deck on the first write under tasks/.
     if summary.get("project_type") in ("coding", "plugin"):
         receipt.append({
             "artifact": "board",
-            "state": "tasks/ seeds the kanban: /adjudant board, born automatically on the first task note",
+            "state": "tasks/ holds the cards; run /adjudant board to open a deck on them (opt-in, never auto-seeded)",
         })
     return receipt
 

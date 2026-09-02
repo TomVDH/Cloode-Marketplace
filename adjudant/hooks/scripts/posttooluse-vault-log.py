@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """PostToolUse hook for adjudant.
 
-Three mechanical jobs on tool writes under {vault}/projects/{slug}/:
+Two mechanical jobs on tool writes under {vault}/projects/{slug}/:
 
-  0. On a task-note change (Write OR Edit under tasks/), nudge the board:
-     `board_bridge.py --ensure-only` in a capped subprocess, fire-and-forget.
   1. Append a `- HH:MM · Decision|Added: [[link]]` entry to today's session
      log, creating that note when this is the first real write of the day
      (v3: SessionStart no longer creates one on every open).
@@ -15,13 +13,21 @@ Three mechanical jobs on tool writes under {vault}/projects/{slug}/:
      the per-file stamp is opt-in provenance, not a default. Session notes /
      _handoff / _index files are excluded by the stamping primitive.
 
-Jobs 1 and 2 fire only on Write (not Edit/MultiEdit, which typically modify
-existing files). All jobs are best-effort and fail-closed.
+Both jobs fire only on Write (not Edit/MultiEdit, which typically modify
+existing files). Both are best-effort and fail-closed.
+
+This hook spawns no subprocess. Until v3 a job 0 fired
+`board_bridge.py --ensure-only` on any Write OR Edit under `tasks/`, which
+scaffolded `board-data.json`, `board.html` and a lock file into a vault
+project that had never asked for a board — three unrequested files against
+six intentional writes. `board` is opt-in: the deck is born by running
+`/adjudant board`, and nothing else. Deleting the branch is what let the
+PostToolUse matcher narrow back to `Write`, so an Edit anywhere on the
+machine no longer wakes this hook for work it cannot do.
 """
 
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -238,22 +244,7 @@ def main() -> int:
     if not parts:
         return 0
 
-    # --- Job 0: task-note change (Write OR Edit under tasks/) nudges the
-    # board. Capped subprocess (3s), output discarded, every failure mode
-    # (missing bridge, timeout, dead python3) swallowed: a board refresh must
-    # never block the hook or the log jobs below. ---
-    if tool_name in ("Write", "Edit") and parts[0] == "tasks":
-        bridge = Path(__file__).resolve().parents[2] / "scripts" / "board_bridge.py"
-        try:
-            subprocess.run(
-                ["python3", str(bridge), "--ensure-only",
-                 "--project-dir", str(project_dir)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=3, check=False)
-        except Exception:
-            pass
-
-    # Jobs 1 and 2 act only on NEW files (Write tool, not Edit/MultiEdit)
+    # Both jobs act only on NEW files (Write tool, not Edit/MultiEdit)
     if tool_name != "Write":
         return 0
 

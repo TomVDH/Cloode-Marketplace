@@ -47,9 +47,9 @@ You don't call a verb for any of that. It rides on hooks.
 
 ## 3. Tasks and the board
 
-Write a task note under the project's `tasks/` folder and a **kanban board** is born automatically. From then on:
+Task notes live under the project's `tasks/` folder. Run `/adjudant board` once and a **kanban board** opens on them. Writing a task note never creates a board by itself — until v3 it did, which is how projects that never asked for one grew a `board/` folder anyway. From then on:
 
-- The board reseeds itself when tasks change.
+- The board reseeds itself at session end, once it exists.
 - Open it with `/adjudant board serve` — a single HTML file, drag cards between columns, changes save to disk.
 - A card you drag writes its new status back into the task note, so the board and your notes never disagree.
 
