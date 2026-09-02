@@ -662,7 +662,6 @@ class TestRunCheck(unittest.TestCase):
             self.assertEqual(report["status"]["declared"], "active")
             self.assertEqual(report["status"]["suggested"], "stale")
             self.assertIn("zone", report["status"])
-            self.assertIn("zone_matches", report["status"])
 
 
 class TestBoardStatus(unittest.TestCase):
@@ -988,7 +987,6 @@ class TestRunSitrep(unittest.TestCase):
             self.assertEqual(rep["status"]["declared"], "active")
             self.assertEqual(rep["status"]["suggested"], "stale")
             self.assertIn("zone", rep["status"])
-            self.assertIn("zone_matches", rep["status"])
 
     def test_empty_project_no_activity(self):
         with tempfile.TemporaryDirectory() as tmp:

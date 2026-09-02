@@ -798,6 +798,8 @@ from datetime import date
 
 from _vault_walk import (
     DEFAULT_STALE_DAYS,
+    LEGACY_ZONES,
+    LEGACY_ZONE_ALIAS,
     PROJECT_ZONES,
     ZONE_FOR_STATUS,
     enumerate_projects_all_zones,
@@ -805,7 +807,7 @@ from _vault_walk import (
     newest_dated_stem,
     resolve_project_from_cwd,
     suggest_status,
-    zone_matches_status,
+    zone_dir,
     zone_of,
 )
 
@@ -823,19 +825,36 @@ def _mk_project(vault: Path, slug: str, zone: str = "", status: str = "active",
     return pdir
 
 
-class TestStatusVocabulary(unittest.TestCase):
+class TestLifecycleFolders(unittest.TestCase):
 
-    def test_locked_values(self):
-        # v3: ZONE_FOR_STATUS is the vocabulary. It was a second tuple until
-        # the templates became the schema and the brief lost its status field.
-        self.assertEqual(tuple(ZONE_FOR_STATUS),
-                         ("active", "stale", "fridge", "done", "dead", "seed"))
+    def test_four_named_folders(self):
+        self.assertEqual(PROJECT_ZONES,
+                         ("active", "paused", "finished", "archive"))
+        self.assertNotIn("", PROJECT_ZONES,
+                         "the live zone is a named folder now, not the absence of one")
 
-    def test_zone_map_total(self):
-        self.assertEqual(ZONE_FOR_STATUS["fridge"], "_fridge")
-        self.assertEqual(ZONE_FOR_STATUS["done"], "_archive")
-        self.assertEqual(ZONE_FOR_STATUS["dead"], "_archive")
-        self.assertEqual(ZONE_FOR_STATUS["active"], "")
+    def test_legacy_shapes_map_onto_the_four(self):
+        self.assertEqual(LEGACY_ZONES, ("", "_fridge", "_archive"))
+        self.assertEqual(set(LEGACY_ZONE_ALIAS.values()) - set(PROJECT_ZONES), set())
+        self.assertEqual(LEGACY_ZONE_ALIAS[""], "active")
+        self.assertEqual(LEGACY_ZONE_ALIAS["_fridge"], "paused")
+        self.assertEqual(LEGACY_ZONE_ALIAS["_archive"], "archive")
+
+    def test_status_migration_map_lands_in_the_four(self):
+        # The retired project status vocabulary still sits in briefs written
+        # before v3. It is read to SUGGEST a folder during triage, never to
+        # grade one.
+        self.assertEqual(set(ZONE_FOR_STATUS.values()) - set(PROJECT_ZONES), set())
+        self.assertEqual(ZONE_FOR_STATUS["active"], "active")
+        self.assertEqual(ZONE_FOR_STATUS["stale"], "active")
+        self.assertEqual(ZONE_FOR_STATUS["seed"], "active")
+        self.assertEqual(ZONE_FOR_STATUS["fridge"], "paused")
+        self.assertEqual(ZONE_FOR_STATUS["done"], "finished")
+        self.assertEqual(ZONE_FOR_STATUS["dead"], "archive")
+
+    def test_zone_dir(self):
+        self.assertEqual(zone_dir(Path("/v"), "paused"),
+                         Path("/v/projects/paused"))
 
 
 class TestSuggestStatus(unittest.TestCase):
@@ -924,32 +943,53 @@ class TestSuggestStatus(unittest.TestCase):
 
 class TestZones(unittest.TestCase):
 
-    def test_find_project_dir_across_zones(self):
+    def test_find_project_dir_across_the_four(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = Path(tmp)
-            _mk_project(vault, "alive")
-            _mk_project(vault, "cold", zone="_fridge", status="fridge")
-            _mk_project(vault, "gone", zone="_archive", status="dead")
-            self.assertEqual(zone_of(find_project_dir(vault, "alive")), "")
-            self.assertEqual(zone_of(find_project_dir(vault, "cold")), "_fridge")
-            self.assertEqual(zone_of(find_project_dir(vault, "gone")), "_archive")
+            for zone in ("active", "paused", "finished", "archive"):
+                _mk_project(vault, f"p-{zone}", zone=zone)
+            for zone in ("active", "paused", "finished", "archive"):
+                found = find_project_dir(vault, f"p-{zone}")
+                self.assertEqual(zone_of(found), zone)
             self.assertIsNone(find_project_dir(vault, "nope"))
 
-    def test_zone_matches_status(self):
-        self.assertTrue(zone_matches_status("fridge", "_fridge"))
-        self.assertFalse(zone_matches_status("fridge", ""))
-        self.assertTrue(zone_matches_status("active", ""))
-        self.assertFalse(zone_matches_status("dead", ""))
-        self.assertTrue(zone_matches_status("not-a-status", "_archive"))
-
-    def test_enumerate_all_zones(self):
+    def test_find_project_dir_still_finds_an_unmigrated_project(self):
+        # A vault that has not been triaged yet must keep working: every hook
+        # and every verb resolves through this one function.
         with tempfile.TemporaryDirectory() as tmp:
             vault = Path(tmp)
-            _mk_project(vault, "a")
-            _mk_project(vault, "b", zone="_fridge", status="fridge")
+            _mk_project(vault, "bare", zone="")
+            _mk_project(vault, "cold", zone="_fridge")
+            _mk_project(vault, "gone", zone="_archive")
+            self.assertEqual(find_project_dir(vault, "bare"),
+                             vault / "projects" / "bare")
+            self.assertEqual(zone_of(find_project_dir(vault, "bare")), "active")
+            self.assertEqual(zone_of(find_project_dir(vault, "cold")), "paused")
+            self.assertEqual(zone_of(find_project_dir(vault, "gone")), "archive")
+
+    def test_named_folder_beats_a_legacy_twin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            _mk_project(vault, "p", zone="")
+            _mk_project(vault, "p", zone="active")
+            self.assertEqual(find_project_dir(vault, "p"),
+                             vault / "projects" / "active" / "p")
+
+    def test_enumerate_normalises_the_zone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            _mk_project(vault, "a", zone="active")
+            _mk_project(vault, "b", zone="_fridge")
             (vault / "projects" / "_index.md").write_text("idx")
             rows = enumerate_projects_all_zones(vault)
-            self.assertEqual([(s, z) for s, _p, z in rows], [("a", ""), ("b", "_fridge")])
+            self.assertEqual([(s, z) for s, _p, z in rows],
+                             [("a", "active"), ("b", "paused")])
+
+    def test_zone_matches_status_is_gone(self):
+        import _vault_walk
+        self.assertFalse(hasattr(_vault_walk, "zone_matches_status"),
+                         "the folder IS the lifecycle state; nothing grades it "
+                         "against a field the brief no longer carries")
 
     def test_resolve_project_from_cwd_finds_archived(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -964,6 +1004,7 @@ class TestZones(unittest.TestCase):
             self.assertTrue(ctx.is_connected)
             self.assertEqual(ctx.vault_project_dir,
                              vault / "projects" / "_archive" / "proj")
+            self.assertEqual(zone_of(ctx.vault_project_dir), "archive")
 
 
 from _vault_walk import (

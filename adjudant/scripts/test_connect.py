@@ -759,7 +759,9 @@ class TestZoneAwareReconnect(unittest.TestCase):
                 slug="p", project_type="coding", type_signal="test",
                 initial_status="active", status_signal="test", purpose=None)
             self.assertEqual(contract["state"], "connected")
-            self.assertEqual(contract["zone"], "_fridge")
+            # zone_of() normalises since Task 1: the legacy _fridge/ folder
+            # reads as "paused", one of the four named lifecycle folders.
+            self.assertEqual(contract["zone"], "paused")
             states = {a["artifact"]: a["state"] for a in contract["artifacts"]}
             self.assertEqual(states["vault scaffold"], "already-present")
 

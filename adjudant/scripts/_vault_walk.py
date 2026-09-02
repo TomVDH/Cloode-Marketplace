@@ -926,17 +926,40 @@ INDEX_EXEMPT_FOLDERS: frozenset[str] = frozenset({
 # Project status lifecycle + zones (locked 2026-07-16)
 # ============================================================
 
-# The six project states, and the zone folder each one lives in. This map is
-# the vocabulary: `status in ZONE_FOR_STATUS` is the membership test, and
-# `' | '.join(ZONE_FOR_STATUS)` is how the words are shown to a person. It was
-# a second tuple until v3, kept in step by a validator.
-ZONE_FOR_STATUS: dict[str, str] = {
-    "active": "", "stale": "", "fridge": "_fridge",
-    "done": "_archive", "dead": "_archive", "seed": "",
+# The lifecycle is the FOLDER, and there are four of them. Before v3 the live
+# zone was the absence of a folder (`projects/{slug}`), which is why every
+# consumer carried an `if zone else` branch and why the constant's first
+# element was the empty string. A named folder costs one path segment and
+# removes that branch everywhere.
+PROJECT_ZONES: tuple[str, ...] = ("active", "paused", "finished", "archive")
+
+# The pre-v3 shapes, still on disk until triage runs. Read-side only: nothing
+# writes these, and find_project_dir searches them after the named four so a
+# migrated project always wins over an abandoned twin.
+LEGACY_ZONES: tuple[str, ...] = ("", "_fridge", "_archive")
+LEGACY_ZONE_ALIAS: dict[str, str] = {
+    "": "active", "_fridge": "paused", "_archive": "archive",
 }
-PROJECT_ZONES: tuple[str, ...] = ("", "_fridge", "_archive")
+
+# The retired six-value project status, kept only to READ a pre-v3 brief and
+# suggest a destination folder during triage. v3 briefs carry no `status:`
+# field at all: a fourth hand-written answer to "where is this project" is a
+# fourth thing that can disagree with the other three. The vocabulary is
+# ZONE_FOR_STATUS's keys, not a second tuple — a schema-drift guard test
+# (test_no_hand_written_field_schema_remains) forbids a standalone
+# PROJECT_STATUS_VALUES constant from coming back.
+ZONE_FOR_STATUS: dict[str, str] = {
+    "active": "active", "stale": "active", "seed": "active",
+    "fridge": "paused", "done": "finished", "dead": "archive",
+}
 DEFAULT_STALE_DAYS = 30
 FRIDGE_NUDGE_DAYS = 180
+
+
+def zone_dir(vault: Path, zone: str) -> Path:
+    """`{vault}/projects/{zone}`. A legacy zone of "" collapses to projects/."""
+    base = vault / "projects"
+    return (base / zone) if zone else base
 
 
 # ============================================================
@@ -1317,12 +1340,20 @@ def suggest_status(
     return out
 
 
+def _project_candidates(vault: Path, slug: str) -> list[Path]:
+    """Every path a project called `slug` could occupy, best shape first.
+
+    The four named folders come first, so a migrated project always beats an
+    unmigrated twin left behind by an interrupted move.
+    """
+    out = [zone_dir(vault, z) / slug for z in PROJECT_ZONES]
+    out += [zone_dir(vault, z) / slug for z in LEGACY_ZONES]
+    return out
+
+
 def find_project_dir(vault: Path, slug: str) -> Optional[Path]:
-    """Locate a project across zones. Prefers a dir containing brief.md."""
-    candidates = [
-        (vault / "projects" / zone / slug) if zone else (vault / "projects" / slug)
-        for zone in PROJECT_ZONES
-    ]
+    """Locate a project across lifecycle folders. Prefers a dir with brief.md."""
+    candidates = _project_candidates(vault, slug)
     for c in candidates:
         if (c / "brief.md").is_file():
             return c
@@ -1333,39 +1364,46 @@ def find_project_dir(vault: Path, slug: str) -> Optional[Path]:
 
 
 def zone_of(project_dir: Path) -> str:
-    """'' | '_fridge' | '_archive' from the path shape projects[/zone]/slug."""
-    parent = project_dir.parent.name
-    return parent if parent in ("_fridge", "_archive") else ""
+    """The lifecycle folder a project sits in, always one of PROJECT_ZONES.
 
-
-def zone_matches_status(status: Optional[str], zone: str) -> bool:
-    """True when the folder zone agrees with the declared status.
-
-    Unknown status values return True: the vocabulary problem is reported
-    separately (declared_valid), not double-counted as a zone mismatch.
+    A pre-v3 path normalises: `projects/{slug}` reads as "active",
+    `_fridge` as "paused", `_archive` as "archive". Callers get a name they
+    can render and compare; nothing outside this module handles "".
     """
-    if status not in ZONE_FOR_STATUS:
-        return True
-    return ZONE_FOR_STATUS[status] == zone
+    parent = project_dir.parent.name
+    if parent in PROJECT_ZONES:
+        return parent
+    if parent in LEGACY_ZONE_ALIAS:
+        return LEGACY_ZONE_ALIAS[parent]
+    return "active"
 
 
 def enumerate_projects_all_zones(vault: Path) -> list[tuple[str, Path, str]]:
-    """Every project (slug, dir, zone) across projects/, _fridge/, _archive/.
+    """Every project (slug, dir, normalised zone) across all lifecycle folders.
 
     A project is a directory containing brief.md. Leading-underscore and dot
-    dirs are skipped inside each zone. Sorted by zone order then slug.
+    dirs are skipped inside each folder, which is also what keeps a legacy
+    `_fridge/` from being read as a project when scanning `projects/` itself.
+    A slug found in more than one place is reported once, from the first
+    folder in PROJECT_ZONES order, then legacy order.
     """
     out: list[tuple[str, Path, str]] = []
+    seen: set[str] = set()
     base = vault / "projects"
-    for zone in PROJECT_ZONES:
-        zdir = (base / zone) if zone else base
+    for zone in PROJECT_ZONES + LEGACY_ZONES:
+        zdir = zone_dir(vault, zone)
         if not zdir.is_dir():
             continue
         for d in sorted(zdir.iterdir(), key=lambda p: p.name):
             if not d.is_dir() or d.name.startswith("_") or d.name.startswith("."):
                 continue
+            if d.name in PROJECT_ZONES and d.parent == base:
+                continue            # a lifecycle folder is not a project
+            if d.name in seen:
+                continue
             if (d / "brief.md").is_file():
-                out.append((d.name, d, zone))
+                seen.add(d.name)
+                out.append((d.name, d, zone_of(d)))
     return out
 
 

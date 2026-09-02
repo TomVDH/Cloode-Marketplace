@@ -75,7 +75,6 @@ from _vault_walk import (  # noqa: E402
     smart_project_dir,
     suggest_status,
     walk_project,
-    zone_matches_status,
     zone_of,
 )
 from board_bridge import kebab as _bridge_kebab  # noqa: E402
@@ -391,9 +390,7 @@ def compliance(project_dir: Path, code_root: Optional[Path] = None,
     sug = suggest_status(
         brief.get("status") if brief.get("present") else None,
         project_dir, today or date.today(), stale_days)
-    zone = zone_of(project_dir)
-    status_block = {**sug, "zone": zone,
-                    "zone_matches": zone_matches_status(brief.get("status"), zone)}
+    status_block = {**sug, "zone": zone_of(project_dir)}
     files = list(walk_project(project_dir))
     return {
         "project": brief,
@@ -573,9 +570,7 @@ def orientation(
     sug = suggest_status(
         brief.get("status") if brief.get("present") else None,
         project_dir, now.date(), stale_days)
-    zone = zone_of(project_dir)
-    status_block = {**sug, "zone": zone,
-                    "zone_matches": zone_matches_status(brief.get("status"), zone)}
+    status_block = {**sug, "zone": zone_of(project_dir)}
 
     return {
         "project": brief,
