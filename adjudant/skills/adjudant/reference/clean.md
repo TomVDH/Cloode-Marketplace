@@ -2,7 +2,7 @@
 
 **Cleanup sweep.** Idempotent — a second run with no fresh drift makes no changes. **Two-phase preview → apply.**
 
-**The contract, enforced in code.** `clean` may rewrite a file in place and it may remove one. It may not create a vault file. `scripts/_vault_write.py` holds the guard every live write passes through, and a proposal naming a path that holds no file is refused and listed, not written. Anything clean cannot fix by rewriting, it reports. That was previously a sentence in this document, and a sentence cannot be tested.
+**The contract, enforced in code.** `clean` rewrites a file in place and may not create a vault file. It removes CONTENT, not files: a run strips retired fields and stale lines, so the byte count falls while the file count holds. Deleting a whole note is a judgement call and belongs to `dream`, which applies through this same guard. `VaultWriteGuard.remove` exists for that path and `clean` never calls it. `scripts/_vault_write.py` holds the guard every live write passes through, and a proposal naming a path that holds no file is refused and listed, not written. Anything clean cannot fix by rewriting, it reports. That was previously a sentence in this document, and a sentence cannot be tested.
 
 `clean` replaces `tidy` and `ramasse`. The surface sweep is the default; `--deep` adds the structural pass that was ramasse's analysis phase. Both read the whole project before proposing anything.
 
