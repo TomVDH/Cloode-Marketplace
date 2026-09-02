@@ -294,5 +294,85 @@ class TestNamesSomethingThatIsNotThere(unittest.TestCase):
             self.assertNotIn("brief-repo-missing", _kinds(report))
 
 
+class TestNobodyHasCheckedItLately(unittest.TestCase):
+
+    def test_the_verified_kinds_come_from_the_templates(self):
+        from truth import verified_kinds
+        kinds = verified_kinds()
+        self.assertIn("doc", kinds)
+        self.assertIn("spec", kinds)
+        # verified: is the only thing dividing a doc from a note. A note is a
+        # thought and cannot be wrong in that way.
+        self.assertNotIn("note", kinds)
+        self.assertNotIn("session", kinds)
+
+    def test_verified_over_ninety_days_old(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "docs" / "fresh.md",
+               "---\ntype: doc\nupdated: 2026-09-01\nverified: 2026-08-01\n---\n\n# F\n")
+            _w(pdir / "docs" / "stale.md",
+               "---\ntype: doc\nupdated: 2026-09-01\nverified: 2026-05-01\n---\n\n# S\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"] if f["kind"] == "verified-stale"]
+            self.assertEqual([h["file"] for h in hits], ["docs/stale.md"])
+            self.assertEqual(hits[0]["band"], "going-stale")
+            self.assertIn("123 days", hits[0]["detail"])
+
+    def test_exactly_ninety_days_is_the_edge_and_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "docs" / "edge.md",
+               "---\ntype: doc\nupdated: 2026-09-01\nverified: 2026-06-03\n---\n\n# E\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertIn("verified-stale", _kinds(report))
+
+    def test_a_page_with_no_verified_at_all(self):
+        # 71 component sidecars carry none. The generated half of the pair
+        # carries source: and is exempt; the hand-written half is not.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "docs" / "unchecked.md",
+               "---\ntype: doc\nupdated: 2026-09-01\n---\n\n# U\n")
+            _w(pdir / "notes" / "thought.md",
+               "---\ntype: note\ncreated: 2026-09-01\nupdated: 2026-09-01\n---\n\n# T\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"] if f["kind"] == "verified-missing"]
+            self.assertEqual([h["file"] for h in hits], ["docs/unchecked.md"])
+            self.assertEqual(hits[0]["band"], "going-stale")
+
+    def test_a_malformed_verified_date_is_reported_not_swallowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "docs" / "bad.md",
+               "---\ntype: doc\nupdated: 2026-09-01\nverified: last tuesday\n---\n\n# B\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"] if f["kind"] == "verified-missing"]
+            self.assertEqual(len(hits), 1)
+            self.assertIn("last tuesday", hits[0]["detail"])
+
+    def test_verified_by_docs_only(self):
+        # A bare date throws away the difference between a live probe and a
+        # skim of vendor documentation.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "api" / "contacts.md",
+               "---\ntype: api\nupdated: 2026-09-01\nverified: 2026-08-30\n"
+               "verified_by: docs\n---\n\n# Contacts\n")
+            _w(pdir / "api" / "objects.md",
+               "---\ntype: api\nupdated: 2026-09-01\nverified: 2026-08-30\n"
+               "verified_by: tested\n---\n\n# Objects\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "verified-docs-only"]
+            self.assertEqual([h["file"] for h in hits], ["api/contacts.md"])
+            self.assertEqual(hits[0]["band"], "worth-a-look")
+
+
 if __name__ == "__main__":
     unittest.main()

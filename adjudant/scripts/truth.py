@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from _vault_walk import (
     ALIAS_SEP_RE as _ALIAS_SEP_RE,
+    FIELD_SCHEMA,
     VaultFile,
     build_vault_index,
     is_checkable_wikilink,
@@ -218,6 +219,91 @@ def _check_brief_repo_missing(ctx: _Ctx) -> Iterator[Finding]:
                   f"repo path {value!r} does not resolve on this machine")
 
 
+# ============================================================
+# Band: going-stale — nobody has checked it lately
+# ============================================================
+
+# `verified:` says a human confirmed the file against reality. `updated:` only
+# says the text changed. Ninety days is the interval past which "someone
+# checked" stops meaning anything.
+VERIFIED_STALE_DAYS = 90
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def verified_kinds() -> frozenset[str]:
+    """Kinds whose template makes `verified` required.
+
+    Derived from FIELD_SCHEMA, which since v3 is parsed out of the template
+    files. Listing them here as well would be the second declaration this
+    whole design exists to remove: deleting `verified:` from a template must
+    change what is checked, with no Python edit.
+    """
+    return frozenset(
+        t for t, schema in FIELD_SCHEMA.items()
+        if "verified" in schema.get("required", frozenset()))
+
+
+def _as_date(value: Any) -> Optional[date]:
+    """A frontmatter value as a date, or None when it is not one."""
+    text = str(value).strip().strip('"').strip("'")
+    if not _ISO_DATE_RE.match(text):
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _check_verified_stale(ctx: _Ctx) -> Iterator[Finding]:
+    """`verified:` older than 90 days."""
+    for vf in ctx.files:
+        stamped = _as_date(ctx.fields(vf).get("verified"))
+        if stamped is None:
+            continue
+        age = (ctx.today - stamped).days
+        if age < VERIFIED_STALE_DAYS:
+            continue
+        yield Finding("going-stale", "verified-stale", ctx.rel(vf),
+                      f"last verified {stamped.isoformat()}, {age} days ago")
+
+
+def _check_verified_missing(ctx: _Ctx) -> Iterator[Finding]:
+    """A kind that must carry `verified:` and does not, or carries junk.
+
+    71 component sidecars in the real vault have none. The generated half of
+    each component pair carries `source:` and never reaches this detector.
+    """
+    required = verified_kinds()
+    for vf in ctx.files:
+        if (vf.file_type or "") not in required:
+            continue
+        raw = ctx.fields(vf).get("verified")
+        if raw is None:
+            yield Finding("going-stale", "verified-missing", ctx.rel(vf),
+                          f"a {vf.file_type} with no verified: date; nobody has "
+                          "confirmed it against reality")
+            continue
+        if _as_date(raw) is None:
+            yield Finding("going-stale", "verified-missing", ctx.rel(vf),
+                          f"verified: {raw!r} is not a YYYY-MM-DD date")
+
+
+def _check_verified_docs_only(ctx: _Ctx) -> Iterator[Finding]:
+    """Pages only ever `verified_by: docs`, never tested.
+
+    tested means someone ran it against the live thing, read means someone
+    read the code it describes, docs means someone took a vendor's word for
+    it. A bare date throws that difference away.
+    """
+    for vf in ctx.files:
+        value = ctx.fields(vf).get("verified_by")
+        if not isinstance(value, str) or value.strip() != "docs":
+            continue
+        yield Finding("worth-a-look", "verified-docs-only", ctx.rel(vf),
+                      "verified_by: docs — a vendor's word, never a live probe")
+
+
 # Tasks 11 to 14 append to this tuple. Order inside a band is the order
 # findings are reported in, so keep the most concrete first.
 #
@@ -231,6 +317,9 @@ _DETECTORS: tuple = (
     _check_superseded_target_missing,
     _check_task_spec_missing,
     _check_brief_repo_missing,
+    _check_verified_stale,
+    _check_verified_missing,
+    _check_verified_docs_only,
 )
 
 
