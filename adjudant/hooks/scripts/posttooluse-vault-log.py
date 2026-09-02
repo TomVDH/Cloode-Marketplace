@@ -5,7 +5,9 @@ Three mechanical jobs on tool writes under {vault}/projects/{slug}/:
 
   0. On a task-note change (Write OR Edit under tasks/), nudge the board:
      `board_bridge.py --ensure-only` in a capped subprocess, fire-and-forget.
-  1. Append a `- HH:MM · Decision|Added: [[link]]` entry to today's session log.
+  1. Append a `- HH:MM · Decision|Added: [[link]]` entry to today's session
+     log, creating that note when this is the first real write of the day
+     (v3: SessionStart no longer creates one on every open).
   2. Stamp `source_session: <uuid>` into the new file's frontmatter — ONLY
      when the breadcrumb opts in with `stamp_source_session: true` (accepted
      truthy spellings: true|1|yes|on, case-insensitive; absent means off).
@@ -115,6 +117,56 @@ def read_breadcrumb(project_dir: Path) -> dict:
         k, v = line.split(sep, 1)
         info[k.strip()] = v.strip()
     return info
+
+
+_SESSION_NOTE = """---
+type: session
+date: %(today)s
+started: %(ts)s
+session_id: []
+tags:
+  - session
+---
+
+> {One-line intent. Frozen after first write.}
+
+## Log
+
+"""
+
+
+def ensure_session_note(sessions_dir: Path, today: str, ts: str = "") -> Path:
+    """Today's session note, created if this is the first real write.
+
+    v3 moved creation here from SessionStart: a note that exists only because
+    a session opened records nothing, and 29% of the vault's notes were exactly
+    that. Created with noclobber semantics so two async hooks racing on the
+    first write of the day cannot truncate each other.
+
+    The frontmatter is the locked `session` shape (_vault_walk.FIELD_SCHEMA and
+    templates/session.md), not a new one — nothing here migrates the schema, so
+    a note this hook writes must still validate. The intent placeholder stays:
+    the UserPromptSubmit nudge greps for it.
+    """
+    note = sessions_dir / f"{today}.md"
+    if note.exists():
+        return note
+    try:
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(note, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return note                      # the other hook won; append to theirs
+    except OSError:
+        return note                      # read-only vault: caller's append no-ops
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(_SESSION_NOTE % {
+                "today": today,
+                "ts": ts or datetime.now().strftime("%H:%M"),
+            })
+    except OSError:
+        pass
+    return note
 
 
 def main() -> int:
@@ -231,16 +283,20 @@ def main() -> int:
                 session_file = cand
                 break
 
-    # --- Job 1: append a session-log entry (if a session note exists) ---
-    if session_file.exists():
-        is_decision = parts[0] == "decisions"
-        label = "Decision" if is_decision else "Added"
-        link = f"[[projects/{slug}/{'/'.join(parts)}]]"
-        try:
-            with session_file.open("a") as f:
-                f.write(f"- {ts} · {label}: {link}\n")
-        except OSError:
-            pass  # log-write failure must not block job 2
+    # --- Job 1: append a session-log entry, creating the note if this is the
+    # first real write of the day ---
+    is_decision = parts[0] == "decisions"
+    label = "Decision" if is_decision else "Added"
+    link = f"[[{slug}/{'/'.join(parts)}]]"
+    if not session_file.exists():
+        # No note for today and none to straddle into: this write is the first
+        # real work of the day, so the note is born here.
+        session_file = ensure_session_note(project_root / "sessions", today, ts)
+    try:
+        with session_file.open("a") as f:
+            f.write(f"- {ts} · {label}: {link}\n")
+    except OSError:
+        pass  # log-write failure must not block job 2
 
     # --- Job 2: stamp source_session on the new file, breadcrumb opt-in
     # (stamp_source_session: true). The stamping primitive itself decides

@@ -123,7 +123,7 @@ class TestTasksBranchFires(_TasksHookCase):
         rc, run = self._run_mocked(self._payload(task_note, tool_name="Write"))
         self.assertEqual(rc, 0)
         self.assertRegex(self.session_note.read_text(),
-                         r"- \d{2}:\d{2} · Added: \[\[projects/demo/tasks/refactor-auth\.md\]\]")
+                         r"- \d{2}:\d{2} · Added: \[\[demo/tasks/refactor-auth\.md\]\]")
 
 
 class TestTasksBranchGates(_TasksHookCase):

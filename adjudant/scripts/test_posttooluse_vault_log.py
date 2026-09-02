@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "posttooluse-vault-log.py"
@@ -115,7 +115,7 @@ class TestPayloadParsing(_HookHarness):
                                      "tool_input": {"path": str(note)},
                                      "session_id": SESSION_ID})
             self.assertEqual(rc, 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", session.read_text())
 
     def test_edit_tool_is_ignored(self):
         # Edit modifies existing files — logging it would double-count.
@@ -161,7 +161,7 @@ class TestSessionLogFormat(_HookHarness):
             self.assertEqual(rc, 0)
             self.assertRegex(
                 session.read_text(),
-                r"(?m)^- \d{2}:\d{2} · Added: \[\[projects/demo/notes/idea\.md\]\]$")
+                r"(?m)^- \d{2}:\d{2} · Added: \[\[demo/notes/idea\.md\]\]$")
 
     def test_decision_label_for_decisions_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -171,7 +171,7 @@ class TestSessionLogFormat(_HookHarness):
             self.assertEqual(rc, 0)
             self.assertRegex(
                 session.read_text(),
-                r"(?m)^- \d{2}:\d{2} · Decision: \[\[projects/demo/decisions/0001-pick-x\.md\]\]$")
+                r"(?m)^- \d{2}:\d{2} · Decision: \[\[demo/decisions/0001-pick-x\.md\]\]$")
 
     def test_nested_path_link_keeps_full_relative_path(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -179,7 +179,7 @@ class TestSessionLogFormat(_HookHarness):
             note = self._note(proot, "docs/sub/deep.md")
             rc = self._run(project, self._payload(note))
             self.assertEqual(rc, 0)
-            self.assertIn("Added: [[projects/demo/docs/sub/deep.md]]",
+            self.assertIn("Added: [[demo/docs/sub/deep.md]]",
                           session.read_text())
 
     def test_midnight_straddle_appends_to_latest_note(self):
@@ -197,7 +197,7 @@ class TestSessionLogFormat(_HookHarness):
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note))
             self.assertEqual(rc, 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", latest.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", latest.read_text())
             self.assertNotIn("idea", decoy.read_text())
 
     def test_no_session_note_still_stamps(self):
@@ -228,7 +228,7 @@ class TestSourceSessionStamp(_HookHarness):
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note, session_id="  "))
             self.assertEqual(rc, 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", session.read_text())
             self.assertNotIn("source_session", note.read_text())
 
     def test_missing_session_id_key_logs_but_does_not_stamp(self):
@@ -238,7 +238,7 @@ class TestSourceSessionStamp(_HookHarness):
             rc = self._run(project, {"tool_name": "Write",
                                      "tool_input": {"file_path": str(note)}})
             self.assertEqual(rc, 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", session.read_text())
             self.assertNotIn("source_session", note.read_text())
 
 
@@ -352,7 +352,7 @@ class TestSlugGuard(_HookHarness):
             project, vault_session, decoy_session, note = self._decoy(
                 Path(tmp), "decoy-project")
             self.assertEqual(self._run(project, self._payload(note)), 0)
-            self.assertIn("[[projects/decoy-project/notes/idea.md]]",
+            self.assertIn("[[decoy-project/notes/idea.md]]",
                           decoy_session.read_text())
 
     def test_valid_slug_still_logs(self):
@@ -361,7 +361,7 @@ class TestSlugGuard(_HookHarness):
             project, proot, session = self._fixture(Path(tmp))
             note = self._note(proot, "notes/idea.md")
             self.assertEqual(self._run(project, self._payload(note)), 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", session.read_text())
 
 
 class TestStampGate(_HookHarness):
@@ -374,7 +374,7 @@ class TestStampGate(_HookHarness):
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note))
             self.assertEqual(rc, 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", session.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", session.read_text())
             self.assertNotIn("source_session", note.read_text())
 
     def test_stamp_opt_in_spellings(self):
@@ -427,7 +427,7 @@ class TestStampSkipRules(_HookHarness):
                     self.assertNotIn("source_session", target.read_text())
                     # The log entry is still appended — skip rules gate only
                     # the stamp, not job 1.
-                    self.assertIn(f"[[projects/demo/{name}]]", session.read_text())
+                    self.assertIn(f"[[demo/{name}]]", session.read_text())
 
 
 class TestHookProcess(_HookHarness):
@@ -449,7 +449,7 @@ class TestHookProcess(_HookHarness):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertRegex(
                 session.read_text(),
-                r"(?m)^- \d{2}:\d{2} · Added: \[\[projects/demo/notes/idea\.md\]\]$")
+                r"(?m)^- \d{2}:\d{2} · Added: \[\[demo/notes/idea\.md\]\]$")
             self.assertIn(f"source_session: {SESSION_ID}", note.read_text())
 
     def test_garbage_stdin_exits_zero(self):
@@ -458,6 +458,54 @@ class TestHookProcess(_HookHarness):
             r = self._run_proc(project, "\x00garbage\nnot json")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(session.read_text(), "## Log\n")
+
+
+class TestLazySessionNote(_HookHarness):
+    """v3: the note is born on the first real write, not on session open.
+
+    `_fixture` seeds today's note, which is exactly what must NOT exist here,
+    so these tests build a bare project of their own."""
+
+    def _bare(self, tmp: Path) -> tuple[Path, Path]:
+        """Project + vault with NO sessions dir and no note. Returns
+        (project, project_root_in_vault)."""
+        project = tmp / "code"
+        vault = tmp / "vault"
+        proot = vault / "projects" / "demo"
+        (proot / "notes").mkdir(parents=True)
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
+        return project, proot
+
+    def test_first_write_creates_the_note(self):
+        # The note appears exactly when there is something to record in it.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._bare(Path(tmp))
+            self.assertFalse((proot / "sessions").exists())
+            note_path = self._note(proot, "notes/a.md")
+            rc = self._run(project, self._payload(note_path))
+            self.assertEqual(rc, 0)
+            session = proot / "sessions" / f"{date.today().isoformat()}.md"
+            self.assertTrue(session.is_file())
+            text = session.read_text()
+            self.assertIn("type: session", text)
+            self.assertIn("## Log", text)
+            self.assertIn("a.md", text)
+            # The UserPromptSubmit nudge greps the note for this exact string;
+            # SessionStart used to write it, so creation carries it here now.
+            self.assertIn("{One-line intent. Frozen after first write.}", text)
+
+    def test_second_write_appends_and_does_not_recreate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, proot = self._bare(Path(tmp))
+            for name in ("notes/a.md", "notes/b.md"):
+                self._run(project, self._payload(self._note(proot, name)))
+            session = proot / "sessions" / f"{date.today().isoformat()}.md"
+            text = session.read_text()
+            self.assertEqual(text.count("type: session"), 1)
+            self.assertIn("a.md", text)
+            self.assertIn("b.md", text)
 
 
 class TestFutureSessionFallback(_HookHarness):
@@ -475,7 +523,7 @@ class TestFutureSessionFallback(_HookHarness):
             note = self._note(proot, "notes/idea.md")
             rc = self._run(project, self._payload(note))
             self.assertEqual(rc, 0)
-            self.assertIn("[[projects/demo/notes/idea.md]]", past.read_text())
+            self.assertIn("[[demo/notes/idea.md]]", past.read_text())
             self.assertNotIn("idea", future.read_text())
 
 

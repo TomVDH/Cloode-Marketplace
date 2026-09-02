@@ -231,75 +231,26 @@ PY
   session_dir="$vault_project/sessions"
   session_file="$session_dir/$today.md"
 
-  mkdir -p "$session_dir" 2>/dev/null || true
+  # v3: the session note is created by the first real vault write, not here.
+  # This hook used to create one on every open and append a resume marker on
+  # every reopen, which produced 76 empty notes and 164 markers followed by
+  # nothing. It also stamped a conversation UUID per resume, stacking 18 into
+  # one note. Provenance now rides on the artefacts themselves. The sessions/
+  # directory is not pre-created either: a folder exists when something is in it.
+  if [ -f "$session_file" ]; then
+    printf -- '- Session note: `%s/sessions/%s.md`\n' "$rel_project" "$today"
+  fi
 
-  # Render the session_id block: list with the current UUID if we got one,
-  # empty list otherwise (the next SessionStart will append).
-  local sid_block
+  # --- 4. Intent-line ownership: the vault-log hook creates the placeholder
+  # with the note, the model fills it. The NUDGE lives in the UserPromptSubmit
+  # hook, not here — at SessionStart there is no purpose to record yet, and
+  # this hook re-runs on every resume and compact, so it nagged early and
+  # repeatedly. All that is left here is handing the resolved path forward;
+  # re-deriving it in the per-turn hook would duplicate the zone-aware lookup,
+  # and two copies drift. The pointer is written whether or not the note exists
+  # yet — it usually does not, since v3 creates it on the first real write —
+  # and the per-turn hook already skips a pointer whose target is absent.
   if [ -n "$session_id" ]; then
-    sid_block=$'session_id:\n  - '"$session_id"
-  else
-    sid_block="session_id: []"
-  fi
-
-  # Atomic create via noclobber: two SessionStarts racing on the same day
-  # can't truncate each other — the loser falls through to the resume branch.
-  if ( set -o noclobber; cat > "$session_file" <<EOF
----
-type: session
-date: $today
-started: $ts
-$sid_block
-tags:
-  - session
----
-
-> {One-line intent. Frozen after first write.}
-
-## Log
-
-- $ts · session started
-EOF
-  ) 2>/dev/null; then
-    # Only claim creation when the write actually succeeded — a failed write
-    # (read-only vault, offline iCloud) must not inject a phantom-file claim.
-    printf -- '- Session note created: `%s/sessions/%s.md`\n' "$rel_project" "$today"
-  elif [ -f "$session_file" ]; then
-    local resumed_ok=0
-    case "$start_source" in
-      compact|clear)
-        # No resumed marker for these sources: after a compaction the
-        # precompact hook already wrote a paused tombstone, and a /clear is
-        # not a return to the note. Appending "resumed" was pure churn.
-        if [ -w "$session_file" ]; then resumed_ok=1; fi
-        ;;
-      *)
-        # brace group: silence stderr BEFORE the >> open (left→right redirections)
-        if { printf '\n--- %s session resumed ---\n\n' "$ts" >> "$session_file"; } 2>/dev/null; then
-          resumed_ok=1
-        fi
-        ;;
-    esac
-    if [ "$resumed_ok" = "1" ]; then
-      # Idempotently append this conversation's UUID to the session_id list.
-      if [ -n "$session_id" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] \
-         && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/_session_stamp.py" ] \
-         && command -v python3 >/dev/null 2>&1; then
-        python3 "$CLAUDE_PLUGIN_ROOT/scripts/_session_stamp.py" \
-          session-id "$session_file" "$session_id" >/dev/null 2>&1 || true
-      fi
-      printf -- '- Session note resumed: `%s/sessions/%s.md`\n' "$rel_project" "$today"
-    fi
-  fi
-  # else: write failed and no file exists — stay silent, claim nothing.
-
-  # --- 4. Intent-line ownership: the hook creates the placeholder, the model
-  # fills it. The NUDGE lives in the UserPromptSubmit hook, not here — at
-  # SessionStart there is no purpose to record yet, and this hook re-runs on
-  # every resume and compact, so it nagged early and repeatedly. All that is
-  # left here is handing the resolved path forward; re-deriving it in the
-  # per-turn hook would duplicate the zone-aware lookup, and two copies drift.
-  if [ -n "$session_id" ] && [ -f "$session_file" ]; then
     { printf '%s\n' "$session_file" \
         > "${TMPDIR:-/tmp}/adjudant-session-$session_id"; } 2>/dev/null || true
   fi

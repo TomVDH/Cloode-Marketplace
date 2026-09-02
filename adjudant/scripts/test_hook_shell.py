@@ -3,14 +3,13 @@ user-prompt-reminder.sh).
 
 Cross-machine parity regressions: legacy `key=value` breadcrumbs, `~`-prefixed
 vault paths, and CRLF breadcrumbs must resolve identically to the Python hooks
-(they used to silently no-op or write to phantom `slug\r/` dirs). Context
-claims must be truthful: a failed session-note write must not inject a
-'created' line.
+(they used to silently no-op or write to phantom `slug\r/` dirs). Since v3 the
+SessionStart hook creates nothing, so the resolved path is read off the session
+pointer it hands the per-turn hook.
 """
 
 import json
 import os
-import stat
 import subprocess
 import tempfile
 import time
@@ -185,49 +184,22 @@ class TestSessionStartHook(unittest.TestCase):
     def test_crlf_breadcrumb_creates_no_phantom_cr_dir(self):
         # A CRLF breadcrumb (Windows-side edit / sync round-trip) used to leak
         # \r into the slug, creating a phantom `projects/demo\r/` dir while the
-        # Python hooks wrote to the real `projects/demo/`.
+        # Python hooks wrote to the real `projects/demo/`. v3 creates no note
+        # here, so the resolved path is read off the session pointer instead —
+        # same bug, same shape, new address.
         with tempfile.TemporaryDirectory() as tmp:
             project, home = self._project(
                 Path(tmp), "vault_path: {vault}\r\nslug: demo\r\n")
-            r = _run("session-start.sh", project, home)
+            r = _run("session-start.sh", project, home,
+                     stdin='{"session_id":"sess-crlf","source":"startup"}')
             self.assertEqual(r.returncode, 0)
             self.assertIn("Vault:", r.stdout)
             projects = home / "vault" / "projects"
             self.assertEqual([d.name for d in projects.iterdir()], ["demo"])
-            self.assertTrue(
-                (projects / "demo" / "sessions" / f"{date.today().isoformat()}.md").is_file())
-
-    def test_failed_write_never_claims_creation(self):
-        # Read-only sessions dir: the note can't be written — the context
-        # stream must not claim 'Session note created'.
-        with tempfile.TemporaryDirectory() as tmp:
-            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
-            sessions = home / "vault" / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            sessions.chmod(stat.S_IRUSR | stat.S_IXUSR)  # r-x: no writes
-            try:
-                r = _run("session-start.sh", project, home)
-                self.assertEqual(r.returncode, 0)
-                self.assertIn("Vault:", r.stdout)  # context block still injected
-                self.assertNotIn("Session note created", r.stdout)
-                self.assertNotIn("Session note resumed", r.stdout)
-            finally:
-                sessions.chmod(stat.S_IRWXU)
-
-    def test_second_start_resumes_not_truncates(self):
-        # Same-day second SessionStart must resume (append), never truncate.
-        with tempfile.TemporaryDirectory() as tmp:
-            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
-            r1 = _run("session-start.sh", project, home)
-            self.assertIn("Session note created", r1.stdout)
-            session_file = (home / "vault" / "projects" / "demo" / "sessions"
-                            / f"{date.today().isoformat()}.md")
-            session_file.write_text(session_file.read_text() + "- 10:00 · precious entry\n")
-            r2 = _run("session-start.sh", project, home)
-            self.assertIn("Session note resumed", r2.stdout)
-            content = session_file.read_text()
-            self.assertIn("precious entry", content)      # first note preserved
-            self.assertIn("session resumed", content)
+            self.assertEqual(
+                (home / "adjudant-session-sess-crlf").read_text().strip(),
+                str(projects / "demo" / "sessions"
+                    / f"{date.today().isoformat()}.md"))
 
     def test_stale_path_with_vault_name_falls_back_via_resolver(self):
         # Legacy `=` breadcrumb whose absolute path is from the other machine:
@@ -241,12 +213,14 @@ class TestSessionStartHook(unittest.TestCase):
             (project / ".claude").mkdir(parents=True)
             (project / ".claude" / "adjudant").write_text(
                 "vault_path=/other-machine/vault\nvault_name=MyVault\nslug=demo\n")
-            r = _run("session-start.sh", project, home, plugin_root=True)
+            r = _run("session-start.sh", project, home, plugin_root=True,
+                     stdin='{"session_id":"sess-fb","source":"startup"}')
             self.assertEqual(r.returncode, 0)
             self.assertIn("MyVault", r.stdout)
-            self.assertTrue(
-                (vault / "projects" / "demo" / "sessions"
-                 / f"{date.today().isoformat()}.md").is_file())
+            self.assertEqual(
+                (home / "adjudant-session-sess-fb").read_text().strip(),
+                str(vault / "projects" / "demo" / "sessions"
+                    / f"{date.today().isoformat()}.md"))
 
     def test_ob_vault_override_in_pure_bash_mode(self):
         # Degraded (no plugin root) mode must still honor OB_VAULT — parity
@@ -259,44 +233,6 @@ class TestSessionStartHook(unittest.TestCase):
                      extra_env={"OB_VAULT": str(override)})
             self.assertEqual(r.returncode, 0)
             self.assertIn("override-vault", r.stdout)
-
-    def _existing_note(self, home: Path) -> Path:
-        session_file = (home / "vault" / "projects" / "demo" / "sessions"
-                        / f"{date.today().isoformat()}.md")
-        session_file.parent.mkdir(parents=True, exist_ok=True)
-        session_file.write_text(
-            "---\ntype: session\n---\n\n> {One-line intent. Frozen after first write.}\n\n"
-            "## Log\n\n- 09:00 · session started\n")
-        return session_file
-
-    def test_compact_source_appends_no_resume_marker(self):
-        # SessionStart fires on source=compact too; the precompact hook already
-        # wrote a paused tombstone, so a resumed marker is pure double noise.
-        with tempfile.TemporaryDirectory() as tmp:
-            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
-            note = self._existing_note(home)
-            r = _run("session-start.sh", project, home,
-                     stdin=json.dumps({"session_id": "s1", "source": "compact"}))
-            self.assertEqual(r.returncode, 0)
-            self.assertNotIn("session resumed", note.read_text())
-
-    def test_clear_source_appends_no_resume_marker(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
-            note = self._existing_note(home)
-            r = _run("session-start.sh", project, home,
-                     stdin=json.dumps({"session_id": "s1", "source": "clear"}))
-            self.assertEqual(r.returncode, 0)
-            self.assertNotIn("session resumed", note.read_text())
-
-    def test_resume_source_appends_marker(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
-            note = self._existing_note(home)
-            r = _run("session-start.sh", project, home,
-                     stdin=json.dumps({"session_id": "s1", "source": "resume"}))
-            self.assertEqual(r.returncode, 0)
-            self.assertIn("session resumed", note.read_text())
 
     def test_session_start_no_longer_nags_about_the_intent_line(self):
         # The nag moved to UserPromptSubmit: at SessionStart there is no
@@ -321,6 +257,32 @@ class TestSessionStartHook(unittest.TestCase):
                 pointer.read_text().strip(),
                 str(home / "vault" / "projects" / "demo" / "sessions"
                     / f"{date.today().isoformat()}.md"))
+
+    def test_session_start_creates_no_note(self):
+        # v3: a session that does no vault work leaves no trace. 76 of 261
+        # notes in the real vault were start/end markers and nothing else.
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nvault_name: vault\nslug: demo\n")
+            r = _run("session-start.sh", project, home,
+                     stdin=json.dumps({"session_id": "s1", "source": "startup"}))
+            self.assertEqual(r.returncode, 0)
+            notes = list((home / "vault" / "projects" / "demo" / "sessions").glob("*.md"))
+            self.assertEqual(notes, [], f"session-start created {notes}")
+
+    def test_session_start_appends_no_resume_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nvault_name: vault\nslug: demo\n")
+            sessions = home / "vault" / "projects" / "demo" / "sessions"
+            sessions.mkdir(parents=True, exist_ok=True)
+            note = sessions / f"{date.today().isoformat()}.md"
+            note.write_text("---\ntype: session\n---\n\n## Log\n\n- 09:00 · a.md written\n")
+            before = note.read_text()
+            _run("session-start.sh", project, home,
+                 stdin=json.dumps({"session_id": "s2", "source": "resume"}))
+            self.assertEqual(note.read_text(), before,
+                             "session-start still writes into the note")
 
     # --- ambient board: counts line + suitcase pointer ---
 
@@ -668,18 +630,22 @@ class TestZoneAwareness(unittest.TestCase):
             f"vault_path: {vault}\nslug: demo\nmode: project\n")
         return project, home, proot
 
-    def test_session_start_writes_into_fridge_not_a_ghost(self):
+    def test_session_start_resolves_into_fridge_not_a_ghost(self):
+        # v3 creates no note here, so the resolved path is read off the session
+        # pointer. Both modes: the pure-bash zone walk must agree with the shim.
         for plugin_root in (True, False):
             with self.subTest(python_shim=plugin_root):
                 with tempfile.TemporaryDirectory() as tmp:
                     project, home, proot = self._shelved(Path(tmp))
                     r = _run("session-start.sh", project, home,
-                             plugin_root=plugin_root)
+                             plugin_root=plugin_root,
+                             stdin='{"session_id":"sess-f","source":"startup"}')
                     self.assertEqual(r.returncode, 0, r.stderr)
                     today = date.today().isoformat()
-                    self.assertTrue(
-                        (proot / "sessions" / f"{today}.md").is_file(),
-                        "session note must land in the shelved project")
+                    self.assertEqual(
+                        (home / "adjudant-session-sess-f").read_text().strip(),
+                        str(proot / "sessions" / f"{today}.md"),
+                        "the resolved path must name the shelved project")
                     ghost = home / "vault" / "projects" / "demo"
                     self.assertFalse(ghost.exists(),
                                      "no phantom active-zone project may be created")
@@ -703,10 +669,13 @@ class TestZoneAwareness(unittest.TestCase):
     def test_session_start_archive_zone(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, home, proot = self._shelved(Path(tmp), zone="_archive")
-            r = _run("session-start.sh", project, home, plugin_root=True)
+            r = _run("session-start.sh", project, home, plugin_root=True,
+                     stdin='{"session_id":"sess-a","source":"startup"}')
             self.assertEqual(r.returncode, 0, r.stderr)
             today = date.today().isoformat()
-            self.assertTrue((proot / "sessions" / f"{today}.md").is_file())
+            self.assertEqual(
+                (home / "adjudant-session-sess-a").read_text().strip(),
+                str(proot / "sessions" / f"{today}.md"))
             self.assertFalse((home / "vault" / "projects" / "demo").exists())
 
     def test_session_start_unknown_project_creates_nothing(self):
@@ -743,10 +712,13 @@ class TestZoneAwareness(unittest.TestCase):
             (project / ".claude").mkdir(parents=True)
             (project / ".claude" / "adjudant").write_text(
                 f"vault_path: {vault}\nslug: demo\nmode: project\n")
-            r = _run("session-start.sh", project, home, plugin_root=True)
+            r = _run("session-start.sh", project, home, plugin_root=True,
+                     stdin='{"session_id":"sess-act","source":"startup"}')
             self.assertEqual(r.returncode, 0, r.stderr)
             today = date.today().isoformat()
-            self.assertTrue((proot / "sessions" / f"{today}.md").is_file())
+            self.assertEqual(
+                (home / "adjudant-session-sess-act").read_text().strip(),
+                str(proot / "sessions" / f"{today}.md"))
 
     def test_sessionend_appends_into_fridge(self):
         with tempfile.TemporaryDirectory() as tmp:
