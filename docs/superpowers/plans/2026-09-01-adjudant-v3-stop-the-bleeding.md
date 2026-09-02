@@ -49,6 +49,7 @@ This is first because the twin holds the only copy. Any regeneration before this
 **Files:**
 - Modify: `adjudant/scripts/_vault_walk.py` (insert after `_vault_search_roots`, which ends at line 581)
 - Modify: `adjudant/scripts/connect.py:44-53` (import), `:802-831` (argparse and dispatch)
+- Modify: `adjudant/skills/adjudant/reference/connect.md` (the runbook, 80 lines in main against 98 in the twin)
 - Test: `adjudant/scripts/test__vault_walk.py`, `adjudant/scripts/test_connect.py`
 
 **Interfaces:**
@@ -219,19 +220,53 @@ After the `project_root` existence check (after line 836), add:
             (new_vault / "projects").mkdir(exist_ok=True)
 ```
 
-- [ ] **Step 8: Run the full suite**
+- [ ] **Step 8: Back-port the runbook, not just the code**
+
+The flags alone are inert: nothing tells the model they exist or when to reach
+for them. The twin's `reference/connect.md` carries an 18-line guided-setup
+section that main's does not, and it is the half that makes the feature usable.
+
+Copy the twin's `## No vault yet? Guided location setup` section into
+`adjudant/skills/adjudant/reference/connect.md`, and update the vault-path
+resolution row in its table to end with `→ guided location setup (see below)`.
+
+Source: `furtive-follies/adjudant/skills/adjudant/reference/connect.md`.
+
+Take the section verbatim with two edits: the default vault name stays
+`Claude Vault`, and drop the `cost_warn_tokens: 10000` line, which is the
+twin's forked threshold rather than main's 30000. Plan 5 un-forks that
+constant properly; do not import the fork here.
+
+Verify the section landed:
+
+```bash
+grep -c "No vault yet" adjudant/skills/adjudant/reference/connect.md
+```
+
+Expected: `1`
+
+- [ ] **Step 9: Run the full suite**
 
 Run: `cd adjudant/scripts && python3 -m unittest discover -p 'test_*.py' 2>&1 | tail -3`
 Expected: `OK`, 1238 tests
 
-- [ ] **Step 9: Commit**
+Run: `cd ../.. && python3 adjudant/scripts/validate.py 2>&1 | tail -2`
+Expected: `PASS`. Validator 16 (`reference-doc-links`) checks that every
+relative link inside `reference/*.md` resolves, so a bad path in the copied
+section fails here.
+
+- [ ] **Step 10: Commit**
 
 ```bash
-git add adjudant/scripts/_vault_walk.py adjudant/scripts/connect.py adjudant/scripts/test__vault_walk.py adjudant/scripts/test_connect.py
+git add adjudant/scripts/_vault_walk.py adjudant/scripts/connect.py adjudant/scripts/test__vault_walk.py adjudant/scripts/test_connect.py adjudant/skills/adjudant/reference/connect.md
 git commit -m "feat(adjudant): back-port guided vault setup from the furtive-follies twin
 
 suggest_vault_roots() and --create-vault existed only in the twin and would
 have been lost to any regeneration. Same taxonomy as _vault_search_roots.
+
+The runbook comes with it: the twin's connect.md carries an 18-line guided-setup
+section main lacks, and without it the flags are inert because nothing tells the
+model they exist.
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
