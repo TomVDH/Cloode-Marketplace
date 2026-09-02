@@ -681,19 +681,52 @@ def _score(category: str, entry: dict) -> float:
     return max(0.0, min(1.0, round(base, 2)))
 
 
+# Every category with candidates keeps at least this many slots, before the
+# rest of the cap is filled by score. Without it a low-scoring category is
+# silently starved to zero by a noisier one, and the report looks like that
+# category found nothing rather than like it was outranked.
+CATEGORY_FLOOR = 2
+
+
 def _cap(report: dict, cap: int = CATALOG_CAP) -> dict:
-    """Keep the highest-scoring `cap` candidates across every category.
+    """Keep the highest-scoring `cap` candidates, without starving a category.
+
+    A pure global sort undid the session-link fix. `_score` damps a
+    session-linked unacted decision from 0.5 to 0.35, which ranks it below
+    every staleness candidate at 0.4, so on a real-shaped vault all 47 linked
+    decisions were cut before the cap was reached and the delivered report
+    contained none of them. The detector had stopped excluding them and the
+    cap excluded them instead: same outcome for the reader, by a different
+    route. Found by an adversarial prover; the repo's own test missed it by
+    asserting that the score drops rather than that the entry survives.
+
+    So: each non-empty category takes its best CATEGORY_FLOOR entries first,
+    then the remaining budget goes to whatever scores highest. Damping still
+    orders within a category, which is what it was for.
 
     Non-list keys (`scope`, `meta`, `summary`) pass through untouched: the CLI
-    and the statusline read them, and a cap that dropped them would take both
-    down with it.
+    and the statusline read them.
     """
-    scored = [(cat, e) for cat, entries in report.items()
-              if isinstance(entries, list) for e in entries]
-    scored.sort(key=lambda pair: pair[1].get("confidence", 0.0), reverse=True)
     out = {k: ([] if isinstance(v, list) else v) for k, v in report.items()}
-    for cat, entry in scored[:cap]:
+    ranked: dict[str, list] = {
+        cat: sorted(entries, key=lambda e: e.get("confidence", 0.0), reverse=True)
+        for cat, entries in report.items() if isinstance(entries, list) and entries
+    }
+    taken = 0
+    for cat, entries in ranked.items():
+        for entry in entries[:CATEGORY_FLOOR]:
+            if taken >= cap:
+                break
+            out[cat].append(entry)
+            taken += 1
+    rest = [(cat, e) for cat, entries in ranked.items()
+            for e in entries[CATEGORY_FLOOR:]]
+    rest.sort(key=lambda pair: pair[1].get("confidence", 0.0), reverse=True)
+    for cat, entry in rest:
+        if taken >= cap:
+            break
         out[cat].append(entry)
+        taken += 1
     return out
 
 

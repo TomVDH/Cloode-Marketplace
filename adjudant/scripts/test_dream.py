@@ -818,3 +818,105 @@ class TestPrecisionRebuild(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheCapDoesNotUndoTheFix(unittest.TestCase):
+    """An adversarial prover refuted plan 3's dream claim.
+
+    The detector fix was real: `detect_unacted_decisions` stopped excluding a
+    decision just because a session linked to it. But `_score` damped a linked
+    entry from 0.5 to 0.35, which ranks it BELOW staleness_candidates at 0.4,
+    and `_cap` then cut at twenty before reaching any of them. On a fixture of
+    55 aged decisions with 47 linked, the delivered report contained 0 of the
+    47. The user-visible outcome was identical to the bug the fix removed.
+
+    The repo's own test missed it by asserting the MECHANISM (that the score
+    drops) rather than the OUTCOME (that the entry still reaches the report).
+    These assert the outcome.
+    """
+
+    DAY = dt.date(2026, 9, 1)
+
+    def _fixture(self, root: Path, *, decisions: int, linked: int,
+                 stale_notes: int) -> Path:
+        proj = root / "vault" / "projects" / "demo"
+        for sub in ("decisions", "sessions", "notes"):
+            (proj / sub).mkdir(parents=True, exist_ok=True)
+        names = []
+        for i in range(decisions):
+            n = f"2026-01-{i % 28 + 1:02d}-policy-{i}"
+            names.append(n)
+            _write_file(proj / "decisions" / f"{n}.md",
+                        "---\ntype: decision\nstatus: active\n"
+                        "created: 2026-01-01\nupdated: 2026-01-01\n---\n\n"
+                        f"# Policy {i}\n\n## Why\nReason.\n\n## Consequence\nDo work {i}.\n")
+        # One session linking the first `linked` decisions.
+        body = "\n".join(f"- did [[{n}]]" for n in names[:linked])
+        _write_file(proj / "sessions" / "2026-02-01.md",
+                    "---\ntype: session\ncreated: 2026-02-01\nupdated: 2026-02-01\n---\n\n"
+                    f"Session.\n\n## Log\n{body}\n")
+        # Enough staleness candidates to swamp the cap on score alone.
+        for i in range(stale_notes):
+            _write_file(proj / "notes" / f"old-{i}.md",
+                        "---\ntype: note\ncreated: 2024-01-01\nupdated: 2024-01-01\n---\n\n"
+                        f"# Old {i}\n\nAging prose.\n")
+        return proj
+
+    def _unacted(self, report: dict) -> list:
+        return report.get("unacted_decisions") or []
+
+    def test_a_link_no_longer_excludes_unconditionally(self):
+        # The real regression. The old bug dropped a decision the moment any
+        # session linked it, whatever else was in the vault. With EVERY
+        # decision linked there is nothing else competing for the slots, so if
+        # the report is still empty the link is still an exclusion rather than
+        # a ranking signal.
+        with tempfile.TemporaryDirectory() as t:
+            proj = self._fixture(Path(t), decisions=12, linked=12, stale_notes=0)
+            report = dream.run_dream(proj, proj.parent.parent, today=self.DAY)
+            linked = [e for e in self._unacted(report) if e.get("inbound_session_refs")]
+            self.assertTrue(
+                linked,
+                "every session-linked decision is still absent from the report, "
+                "which is the same outcome as the bug the detector fix removed")
+
+    def test_a_link_ranks_a_decision_lower_without_removing_it(self):
+        # Damping ORDERS within a category; it must not remove. Asserted on the
+        # detector plus the score, because a BINDING cap legitimately cuts the
+        # lowest-scoring entries and that is the ranking doing its job, not the
+        # old bug. The bug was unconditional exclusion, covered by the test
+        # above.
+        with tempfile.TemporaryDirectory() as t:
+            proj = self._fixture(Path(t), decisions=10, linked=5, stale_notes=0)
+            entries = dream.detect_unacted_decisions(
+                list(walk_project(proj)), self.DAY)
+            linked = [e for e in entries if e.get("inbound_session_refs")]
+            plain = [e for e in entries if not e.get("inbound_session_refs")]
+            self.assertEqual(len(linked), 5, "the detector dropped linked ones")
+            self.assertEqual(len(plain), 5)
+            self.assertLess(dream._score("unacted_decisions", linked[0]),
+                            dream._score("unacted_decisions", plain[0]))
+
+    def test_the_cap_says_what_it_dropped(self):
+        # A silent cap reads as "nothing more was found". This one is not
+        # silent, and that must stay true: candidates_found is the pre-cap
+        # total and the CLI prints "N of M candidates" from it.
+        with tempfile.TemporaryDirectory() as t:
+            proj = self._fixture(Path(t), decisions=55, linked=47, stale_notes=40)
+            report = dream.run_dream(proj, proj.parent.parent, today=self.DAY)
+            summary = report.get("summary") or {}
+            shown = sum(len(v) for v in report.values() if isinstance(v, list))
+            self.assertLessEqual(shown, dream.CATALOG_CAP)
+            self.assertEqual(summary.get("candidates"), shown)
+            self.assertGreater(summary.get("candidates_found", 0), shown,
+                               "the pre-cap total is not recorded, so the cap "
+                               "would read as a census")
+
+    def test_no_non_empty_category_is_starved_by_the_cap(self):
+        with tempfile.TemporaryDirectory() as t:
+            proj = self._fixture(Path(t), decisions=55, linked=47, stale_notes=40)
+            report = dream.run_dream(proj, proj.parent.parent, today=self.DAY)
+            # unacted_decisions has 55 candidates before the cap; it must not
+            # come back empty just because another category scores higher.
+            self.assertTrue(self._unacted(report),
+                            "unacted_decisions was starved to zero by the cap")
