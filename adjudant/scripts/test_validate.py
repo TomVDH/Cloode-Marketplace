@@ -251,11 +251,27 @@ class TestTemplateSchemaLoads(_PatchedTree):
         self.assertTrue(any("'memory'" in f for f in r.failures), r.failures)
 
     def test_fails_when_a_template_stops_parsing(self):
+        # Asserts the behaviour, not the wording. An unparseable template no
+        # longer raises out of load_schema (that took the whole schema down and
+        # silently disabled the write gate); it is skipped and recorded, and
+        # THIS is where being skipped gets said out loud.
         self._ship()
         (validate.TEMPLATES / "note.md").write_text("---\ntype:\n---\n\nbody\n")
         r = Result()
         validate.validate_template_schema_loads(r)
-        self.assertTrue(any("do not parse" in f for f in r.failures), r.failures)
+        self.assertTrue(r.failures, "a broken template passed validation")
+        self.assertTrue(any("note.md" in f for f in r.failures),
+                        f"the failure did not name the broken file: {r.failures}")
+
+    def test_fails_when_a_stray_file_cannot_parse(self):
+        # The case that started this: a scratch file dropped into templates/
+        # used to disable enforcement everywhere. Now it costs only itself,
+        # and the validator still refuses to call the tree clean.
+        self._ship()
+        (validate.TEMPLATES / "zz-scratch.md").write_text("---\ntitle: s\n---\n\nx\n")
+        r = Result()
+        validate.validate_template_schema_loads(r)
+        self.assertTrue(any("zz-scratch.md" in f for f in r.failures), r.failures)
 
 
 class TestPluginVersionSet(_PatchedTree):

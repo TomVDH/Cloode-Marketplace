@@ -146,36 +146,71 @@ def _parse_one(path: Path) -> tuple[str, dict[str, Any]]:
     }
 
 
-def load_schema(templates_dir: Path = TEMPLATES_DIR) -> dict[str, dict[str, Any]]:
-    """Parse every template in `templates_dir` into the schema.
+def _load(templates_dir: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Parse `templates_dir`, returning (schema, errors).
 
-    Two files may declare the same kind (home.md and index-project.md are both
-    `type: index`). They must agree on their key sets; disagreeing is a build
-    error, not a silent merge, because a reader of either file would otherwise
-    be reading a rule that is not enforced. Their bodies may differ, and then
-    the kind requires the headings the two shapes share.
+    A file that cannot be parsed costs you that file and nothing else. This is
+    the whole difference between a schema and a single point of failure: an
+    adversarial prover showed that when one unparseable file could raise out of
+    here, `_vault_walk` became unimportable, the PreToolUse gate hit its
+    `except Exception` degrade, and every vault write was allowed, silently,
+    with nothing on stderr. One stray scratch file in a directory the design
+    invites people to edit turned the write gate off.
+
+    Errors are returned rather than swallowed so `check` and the validator can
+    say which file is broken.
     """
     out: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
     for path in sorted(templates_dir.glob("*.md")):
         if not is_note_template(path):
             continue
-        kind, parsed = _parse_one(path)
+        try:
+            kind, parsed = _parse_one(path)
+        except Exception as e:
+            errors.append(str(e))
+            continue
         prior = out.get(kind)
         if prior is None:
             out[kind] = parsed
             continue
         if (prior["required"] != parsed["required"]
                 or prior["optional"] != parsed["optional"]):
-            raise ValueError(
+            errors.append(
                 f"two templates declare kind '{kind}' with different fields: "
                 f"required {sorted(prior['required'])} vs {sorted(parsed['required'])}")
+            continue
         also = set(parsed["headings"])
         merged = dict(prior)
         merged["headings"] = tuple(h for h in prior["headings"] if h in also)
         merged["conditional"] = {**prior["conditional"], **parsed["conditional"]}
         merged["vocab"] = {**prior["vocab"], **parsed["vocab"]}
         out[kind] = merged
+    return out, errors
+
+
+def load_schema(templates_dir: Path = TEMPLATES_DIR) -> dict[str, dict[str, Any]]:
+    """The parsed schema. Raises only when there is no schema at all.
+
+    An EMPTY result is a broken install, not an empty schema, and it must raise
+    rather than return {}. The missing-directory case did not even raise
+    before: `glob` on an absent directory yields nothing, FIELD_SCHEMA became
+    {}, and `_schema_drift_core` returned None for every file because no type
+    was in the schema. The gate then ran "successfully" while enforcing
+    nothing, which is the worst of both worlds.
+    """
+    out, _errors = _load(templates_dir)
+    if not out:
+        raise ValueError(
+            f"no note templates parsed in {templates_dir}: this is a broken "
+            "install, not an empty schema")
     return out
+
+
+def schema_errors(templates_dir: Path = TEMPLATES_DIR) -> list[str]:
+    """Files in `templates_dir` that did not parse. Empty when all are good."""
+    _out, errors = _load(templates_dir)
+    return errors
 
 
 _SCHEMA = load_schema()

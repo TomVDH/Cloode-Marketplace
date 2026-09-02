@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from _template_schema import (
+    schema_errors,
     FIELD_SCHEMA,
     HEADINGS_FOR_TYPE,
     STATUS_VALUES_FOR_TYPE,
@@ -114,13 +115,21 @@ class TestParsing(unittest.TestCase):
             self._write(tmp, "b.md", "---\ntype: index\nx: 2\n---\n\n# B\n\nbody\n")
             load_schema(tmp)   # same key set: fine
 
-    def test_two_files_one_kind_disagreeing_raises(self):
+    def test_two_files_one_kind_disagreeing_is_recorded_not_raised(self):
+        # This used to raise. It must not: raising out of load_schema took the
+        # whole schema down, which took _vault_walk down, which made the write
+        # gate allow everything silently. A disagreement is still never
+        # silently merged, it is reported and the first shape stands.
         with tempfile.TemporaryDirectory() as t:
             tmp = Path(t)
             self._write(tmp, "a.md", "---\ntype: index\nx: 1\n---\n\n# A\n\nbody\n")
             self._write(tmp, "b.md", "---\ntype: index\ny: 2\n---\n\n# B\n\nbody\n")
-            with self.assertRaises(ValueError):
-                load_schema(tmp)
+            self._write(tmp, "c.md", "---\ntype: note\nz: 3\n---\n\n# C\n\nbody\n")
+            schema = load_schema(tmp)
+            self.assertIn("note", schema, "a disagreement took out an unrelated kind")
+            errors = schema_errors(tmp)
+            self.assertTrue(any("different fields" in e for e in errors),
+                            f"the disagreement was silently merged: {errors}")
 
     def test_two_shapes_of_one_kind_keep_only_the_headings_they_share(self):
         """README: a heading belongs to the template, not to the kind.
@@ -217,3 +226,69 @@ class TestShippedSchema(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOneBadFileCannotDisableTheSchema(unittest.TestCase):
+    """An adversarial prover refuted the write gate after plan 2 landed.
+
+    Before the inversion FIELD_SCHEMA was a literal dict and no file could take
+    it out. After it, enforcement depended on all sixteen markdown files
+    parsing, in a directory the design explicitly invites people to edit. A
+    stray scratch file, or one deleted `---`, made load_schema raise at module
+    scope, which made _vault_walk unimportable, which made the PreToolUse gate
+    hit `except Exception: _READY = False` and allow every write, silently,
+    with nothing on stderr.
+
+    Proven by the prover against real payloads: with one stray file in
+    templates/, all four canonical rejects flipped BLOCK to ALLOW.
+
+    A bad file must cost you that file, never the schema.
+    """
+
+    def _real_copy(self, tmp: Path) -> Path:
+        import shutil
+        d = tmp / "templates"
+        d.mkdir()
+        for p in TEMPLATES_DIR.glob("*.md"):
+            shutil.copy2(p, d / p.name)
+        return d
+
+    def test_a_stray_unparseable_file_is_skipped_not_fatal(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = self._real_copy(Path(t))
+            (d / "zz-scratch.md").write_text("---\ntitle: scratch\n---\n\nnotes\n")
+            schema = load_schema(d)          # must not raise
+            self.assertEqual(len(schema), 15,
+                             "a stray file changed the number of kinds")
+            self.assertIn("decision", schema)
+
+    def test_a_broken_fence_costs_only_that_kind(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = self._real_copy(Path(t))
+            broken = d / "decision.md"
+            broken.write_text(broken.read_text().replace("---\n\n# ", "\n\n# ", 1))
+            schema = load_schema(d)          # must not raise
+            self.assertIn("task", schema, "one bad file took out the others")
+
+    def test_parse_failures_are_recorded_not_swallowed(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = self._real_copy(Path(t))
+            (d / "zz-scratch.md").write_text("---\ntitle: scratch\n---\n\nx\n")
+            errors = schema_errors(d)
+            self.assertTrue(any("zz-scratch" in e for e in errors),
+                            f"the failure was silent: {errors}")
+
+    def test_an_empty_directory_raises_rather_than_enforcing_nothing(self):
+        # The missing-directory case did not even raise: glob returned nothing,
+        # FIELD_SCHEMA became {}, and the gate ran "successfully" while
+        # enforcing nothing at all. An empty schema is a broken install.
+        with tempfile.TemporaryDirectory() as t:
+            empty = Path(t) / "gone"
+            empty.mkdir()
+            with self.assertRaises(ValueError):
+                load_schema(empty)
+
+    def test_a_missing_directory_raises(self):
+        with tempfile.TemporaryDirectory() as t:
+            with self.assertRaises(ValueError):
+                load_schema(Path(t) / "does-not-exist")

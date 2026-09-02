@@ -138,8 +138,15 @@ def validate_template_schema_loads(r: Result) -> None:
     try:
         import _template_schema
         schema = _template_schema.load_schema(TEMPLATES)
+        errors = _template_schema.schema_errors(TEMPLATES)
     except Exception as e:
         r.add_fail(name, f"templates do not parse: {e}")
+        return
+    # A file that does not parse no longer raises: it is skipped, so one stray
+    # file cannot take the schema down and silently disable the write gate.
+    # Skipped is not forgiven, though. This is where it gets said out loud.
+    if errors:
+        r.add_fail(name, "template(s) did not parse: " + "; ".join(errors))
         return
     got = set(schema)
     if got != expected:
