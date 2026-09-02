@@ -386,6 +386,41 @@ def derive_project_type(
     return None
 
 
+BRIEF_PURPOSE_PLACEHOLDER = "{One sentence. What this is and who it is for.}"
+
+_WHEN_RE = re.compile(r"^<!--\s*when:\s*([^>]*?)\s*-->\s*$")
+
+
+def apply_when_markers(text: str, project_type: str) -> str:
+    """Resolve `<!-- when: a, b -->` section markers for one project type.
+
+    One brief replaced four variants, so project type now picks which sections
+    get written rather than which file you get. A `##` heading whose next line
+    carries the marker is kept only when `project_type` is listed; the marker
+    line itself never survives into a written file.
+    """
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        m = _WHEN_RE.match(nxt) if line.startswith("## ") else None
+        if not m:
+            out.append(line)
+            i += 1
+            continue
+        wanted = [k.strip() for k in m.group(1).split(",") if k.strip()]
+        j = i + 2
+        while j < len(lines) and not lines[j].startswith("## "):
+            j += 1
+        if project_type in wanted:
+            out.append(line)
+            out.extend(lines[i + 2:j])          # the marker line is dropped
+        i = j
+    return "".join(out).rstrip("\n") + "\n"
+
+
 def scaffold_vault_project(
     vault_path: Path,
     slug: str,
@@ -403,6 +438,10 @@ def scaffold_vault_project(
     to the live-zone path when omitted, matching prior behavior.
 
     Returns dict with 'created' / 'preserved' filenames lists.
+
+    `initial_status` no longer reaches the brief: v3 dropped `status:` from it
+    because the zone folder is the project's state and a second answer can
+    disagree with it. The value still travels into the breadcrumb and receipt.
     """
     if proj_dir is None:
         proj_dir = vault_path / "projects" / slug
@@ -416,18 +455,17 @@ def scaffold_vault_project(
     # brief.md
     brief_path = proj_dir / "brief.md"
     if not brief_path.is_file():
-        template_path = TEMPLATES / f"project-brief-{project_type}.md"
+        template_path = TEMPLATES / "brief.md"
         if not template_path.is_file():
             raise RuntimeError(f"template missing: {template_path}")
-        text = template_path.read_text()
+        text = apply_when_markers(template_path.read_text(), project_type)
         text = (
             text.replace("{kebab-slug}", slug)
                 .replace("{YYYY-MM-DD}", today)
                 .replace("{Project Name}", project_name)
         )
-        text = text.replace("status: active", f"status: {initial_status}", 1)
         if purpose:
-            text = text.replace("## INTRO\n", f"## INTRO\n\n{purpose}\n", 1)
+            text = text.replace(BRIEF_PURPOSE_PLACEHOLDER, purpose, 1)
         brief_path.write_text(text)
         created.append("brief.md")
     else:

@@ -183,5 +183,66 @@ class TestRecordTemplates(unittest.TestCase):
         self.assertIn("verified", names)
 
 
+class TestDocFamily(unittest.TestCase):
+
+    DOC_FAMILY = ("brief", "doc", "spec", "component", "api", "schema", "source")
+
+    def test_every_doc_family_template_has_verified(self):
+        # verified: is what separates a page that claims something about the
+        # world from a note that is just a thought.
+        for name in self.DOC_FAMILY:
+            names = {_field_name(ln) for ln in _frontmatter(TEMPLATES / f"{name}.md")}
+            self.assertIn("verified", names, f"{name}.md has no verified:")
+            self.assertIn("verified_by", names, f"{name}.md has no verified_by:")
+
+    def test_verified_by_vocabulary_is_uniform(self):
+        for name in self.DOC_FAMILY:
+            line = [ln for ln in _frontmatter(TEMPLATES / f"{name}.md")
+                    if _field_name(ln) == "verified_by"][0]
+            for value in ("tested", "read", "docs"):
+                self.assertIn(value, line, f"{name}.md verified_by missing {value}")
+
+    def test_brief_has_no_status_field(self):
+        # The zone folder is the status; a second answer can disagree with it.
+        names = {_field_name(ln) for ln in _frontmatter(TEMPLATES / "brief.md")}
+        self.assertNotIn("status", names)
+        self.assertNotIn("slug", names)
+        self.assertNotIn("aliases", names)
+
+    def test_brief_declares_kind_project_not_its_filename(self):
+        # brief.md is the one template whose filename is not its kind, which
+        # is why the parser reads type: and never the stem.
+        fm = _frontmatter(TEMPLATES / "brief.md")
+        value = [ln for ln in fm if _field_name(ln) == "type"][0]
+        self.assertIn("project", value)
+
+    def test_brief_marks_conditional_sections(self):
+        text = (TEMPLATES / "brief.md").read_text()
+        self.assertIn("<!-- when: coding, plugin -->", text)
+
+    def test_the_four_brief_variants_are_gone(self):
+        for variant in ("coding", "knowledge", "plugin", "tinkerage"):
+            self.assertFalse((TEMPLATES / f"project-brief-{variant}.md").exists(),
+                             f"project-brief-{variant}.md survived")
+
+    def test_spec_has_three_statuses_and_scope_bounds(self):
+        text = (TEMPLATES / "spec.md").read_text()
+        status = [ln for ln in _frontmatter(TEMPLATES / "spec.md")
+                  if _field_name(ln) == "status"][0]
+        for value in ("draft", "agreed", "superseded"):
+            self.assertIn(value, status)
+        self.assertIn("## Out of scope", text,
+                      "the section that makes a spec unambiguous")
+        self.assertIn("## Done when", text)
+
+    def test_component_declares_the_generated_half(self):
+        text = (TEMPLATES / "component.md").read_text()
+        names = {_field_name(ln) for ln in _frontmatter(TEMPLATES / "component.md")}
+        self.assertIn("source", names,
+                      "no way to mark a page a script owns")
+        for heading in ("## Diagram", "## Schema", "## Code"):
+            self.assertIn(heading, text)
+
+
 if __name__ == "__main__":
     unittest.main()

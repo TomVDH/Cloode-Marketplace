@@ -32,7 +32,7 @@ connect never writes the key itself).
 
 1. **Breadcrumb** — write `.claude/adjudant` at project root containing `vault_path`, `vault_name`, `slug`, `mode`, `cost_warn_tokens`, `stale_after_days` (plus `stamp_source_session` when a hand-added opt-in already exists)
 2. **Context files** — provision `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` at project root from the matching templates (skip if files exist)
-3. **Vault scaffold** — create `{vault}/projects/{slug}/` with `brief.md` (from `templates/project-brief-{project_type}.md`), per-`project_type` default subfolders, `_index.md` per subfolder
+3. **Vault scaffold** — create `{vault}/projects/{slug}/` with `brief.md` (from `templates/brief.md`, its `<!-- when: -->` sections resolved for the project type), per-`project_type` default subfolders, `_index.md` per subfolder
 4. **Session note** — create today's `{vault}/projects/{slug}/sessions/{YYYY-MM-DD}.md` from `templates/session.md` with frontmatter filled in
 5. **Gitignore** — append `.claude/adjudant` to project `.gitignore` (create file if missing)
 6. **Base dashboards** — install `templates/bases/dashboard-*.base` into `{project}/bases/` with `{slug}` templated (sessions, decisions, tasks, freshness views). Write-if-absent: an edited dashboard is never clobbered by an idempotent re-run.

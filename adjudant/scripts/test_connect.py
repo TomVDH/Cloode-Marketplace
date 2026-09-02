@@ -238,17 +238,35 @@ class TestScaffoldVaultProject(unittest.TestCase):
             self.assertTrue((vault / "projects" / "p" / "releases").is_dir())
             self.assertTrue((vault / "projects" / "p" / "releases" / "_index.md").is_file())
 
-    def test_brief_has_slug_and_date_substituted(self):
+    def test_brief_has_name_and_date_substituted(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = _make_vault(tmp)
             scaffold_vault_project(vault, "abc", "coding", "Abc Project", "2026-05-27")
             brief = (vault / "projects" / "abc" / "brief.md").read_text()
-            self.assertIn("slug: abc", brief)
             self.assertIn("2026-05-27", brief)
             self.assertIn("# Abc Project", brief)
+            # v3 dropped slug: and aliases: from the brief; the folder is the slug.
+            self.assertNotIn("slug:", brief)
             # No placeholder leftovers
             self.assertNotIn("{kebab-slug}", brief)
             self.assertNotIn("{YYYY-MM-DD}", brief)
+
+    def test_when_markers_pick_sections_by_project_type(self):
+        # One brief replaced four variants: the project type now decides which
+        # sections get written, and the marker never survives into the file.
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = _make_vault(tmp)
+            scaffold_vault_project(vault, "code", "coding", "Code", "2026-05-27")
+            scaffold_vault_project(vault, "know", "knowledge", "Know", "2026-05-27")
+            coding = (vault / "projects" / "code" / "brief.md").read_text()
+            knowledge = (vault / "projects" / "know" / "brief.md").read_text()
+            self.assertIn("## Stack", coding)
+            self.assertIn("## Constraints", coding)
+            self.assertNotIn("## Stack", knowledge)
+            self.assertNotIn("## Constraints", knowledge)
+            for text in (coding, knowledge):
+                self.assertNotIn("<!-- when:", text)
+                self.assertIn("## Where things are", text)
 
     def test_idempotent_preserves_brief(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -659,7 +677,7 @@ class TestApplyContract(unittest.TestCase):
             self._connect(code, vault)
             self.assertIn("cost_warn_tokens: 99000", bc_path.read_text())
 
-    def test_purpose_and_initial_status_land(self):
+    def test_purpose_lands_in_the_brief_and_agents_md(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); vault = root / "vault"
             (vault / "projects").mkdir(parents=True)
@@ -672,7 +690,8 @@ class TestApplyContract(unittest.TestCase):
             self.assertNotIn("{Project Name}", agents)
             self.assertNotIn("{slug}", agents)
             brief = (vault / "projects" / "proj" / "brief.md").read_text()
-            self.assertIn("status: seed", brief)
+            # v3 dropped status: from the brief; the zone folder is the status.
+            self.assertNotIn("status:", brief)
             self.assertIn("Track the garden irrigation build.", brief)
 
     def test_receipt_names_board(self):
@@ -783,28 +802,45 @@ class TestZoneAwareReconnect(unittest.TestCase):
             self.assertTrue((sess_dir / f"{today}.md").is_file())
             self.assertFalse((vault / "projects" / "p" / "sessions").exists())
 
+    def _reconnect_project_type(self, root: Path, vault: Path, brief_text: str) -> str:
+        proj_dir = vault / "projects" / "_fridge" / "p"
+        scaffold_vault_project(
+            vault, "p", "plugin", "P", "2026-05-27",
+            initial_status="fridge", proj_dir=proj_dir)
+        (proj_dir / "brief.md").write_text(brief_text)
+        code = root / "p"; code.mkdir()
+        # A code file makes infer_project_type() say "coding"
+        (code / "main.py").write_text("print('x')")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = connect_cli([
+                "--project-root", str(code), "--vault-path", str(vault),
+                "--slug", "p"])
+        self.assertEqual(rc, 0)
+        return json.loads(buf.getvalue())["project_type"]
+
     def test_zoned_brief_drives_project_type_on_reconnect(self):
-        """A fridged brief declaring project_type plugin must win over
+        """A fridged pre-v3 brief declaring project_type plugin must win over
         re-inference when --project-type is omitted."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             vault = root / "vault"
             (vault / "projects").mkdir(parents=True)
-            proj_dir = vault / "projects" / "_fridge" / "p"
-            scaffold_vault_project(
-                vault, "p", "plugin", "P", "2026-05-27",
-                initial_status="fridge", proj_dir=proj_dir)
-            code = root / "p"; code.mkdir()
-            # A code file would make infer_project_type() say "coding"
-            (code / "main.py").write_text("print('x')")
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-                rc = connect_cli([
-                    "--project-root", str(code), "--vault-path", str(vault),
-                    "--slug", "p"])
-            self.assertEqual(rc, 0)
-            summary = json.loads(buf.getvalue())
-            self.assertEqual(summary["project_type"], "plugin")
+            legacy = ("---\ntype: project\nproject_type: plugin\nslug: p\n"
+                      "status: fridge\ncreated: 2026-05-27\nupdated: 2026-05-27\n"
+                      "---\n\n# P\n")
+            self.assertEqual(self._reconnect_project_type(root, vault, legacy), "plugin")
+
+    def test_a_v3_brief_declares_no_project_type_so_inference_wins(self):
+        """v3 dropped project_type from the brief, so a brief carrying none
+        cannot override re-inference. Pinned rather than discovered later."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            (vault / "projects").mkdir(parents=True)
+            v3 = ("---\ntype: project\ncreated: 2026-05-27\nupdated: 2026-05-27\n"
+                  "verified: 2026-05-27\nverified_by: read\n---\n\n# P\n")
+            self.assertEqual(self._reconnect_project_type(root, vault, v3), "coding")
 
 
 class TestProvisionDashboards(unittest.TestCase):

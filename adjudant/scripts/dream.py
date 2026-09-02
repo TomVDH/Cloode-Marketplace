@@ -61,7 +61,10 @@ from _vault_walk import (
 # File types whose prose dream reads (the content layer)
 CONTENT_TYPES: frozenset[str] = frozenset({"decision", "note", "session", "doc"})
 
-# Required brief body sections per project_type (mirrors templates/project-brief-*.md)
+# Required brief body sections per project_type, for pre-v3 briefs that still
+# carry project_type. The v3 brief is one file whose optional sections are
+# marked `<!-- when: ... -->`, and it declares no project_type, so a brief
+# written by v3 connect matches no key here and reports no section gap.
 REQUIRED_BRIEF_SECTIONS: dict[str, list[str]] = {
     "coding": ["INTRO", "TECHNICAL STACK", "CONSTRAINTS", "WORK NOTES", "MILESTONES"],
     "plugin": ["INTRO", "TECHNICAL STACK", "CONSTRAINTS", "WORK NOTES", "RELEASE NOTES"],

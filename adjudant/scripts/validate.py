@@ -80,13 +80,13 @@ FILE_TYPES_REQUIRING_TEMPLATE = {
     "dream-report": "dream-report.md",
     "task": "task.md",
     "memory": "memory.md",
-    # project has 4 variants
-    "project": [
-        "project-brief-coding.md",
-        "project-brief-knowledge.md",
-        "project-brief-plugin.md",
-        "project-brief-tinkerage.md",
-    ],
+    # brief.md is the template for kind `project`: the filename is not the
+    # kind, and one brief replaced four project-type variants.
+    "project": "brief.md",
+    "spec": "spec.md",
+    "component": "component.md",
+    "api": "api.md",
+    "schema": "schema.md",
     # index has 2 variants
     "index": ["_index-projects.md", "_index-collection.md"],
     # vault-home is special

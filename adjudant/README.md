@@ -60,7 +60,7 @@ dream   as needed  semantic, LLM-judged, you approve every change
 | Command | `/adjudant <verb>` |
 | Skill | one (`adjudant`); verbs dispatch to reference files on demand |
 | Hooks | 11 entries across 10 events, all vault-aware |
-| Templates | 21 file-type scaffolds + `board.html` |
+| Templates | 19 file-type scaffolds + `board.html` |
 | Helpers | stdlib-only Python, one per file-touching verb; no build step |
 | Drift defense | `python3 scripts/validate.py` — 33 validators, run on pre-commit |
 | Tests | 1261; `python3 -m unittest discover -p 'test_*.py'` |
