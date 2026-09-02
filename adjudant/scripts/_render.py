@@ -15,9 +15,9 @@ Two entry points, because two writers own their body:
     render(kind, fields, body)  -> frontmatter + the template's own body
     frontmatter(kind, fields)   -> the fenced block alone
 
-`port` mirrors a legacy brief's prose and the handoff mirror mirrors
-`.remember/`; neither wants the template body, and both used to declare the
-shape inline instead. They take the block and supply their own body.
+The handoff mirror mirrors `.remember/`; it does not want the template
+body, and it used to declare the shape inline instead. It takes the block
+and supplies its own body.
 """
 
 from __future__ import annotations

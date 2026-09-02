@@ -30,9 +30,7 @@ __pycache__/
 # Superpowers working state (brainstorms, sdd scratch)
 .superpowers/
 
-# Adjudant verb working dirs (port + tidy preview/apply state, dream analysis/backup)
-.adjudant-port-preview/
-.adjudant-port-backup/
+# Adjudant verb working dirs (tidy preview/apply state, dream analysis/backup)
 .adjudant-tidy-preview/
 .adjudant-tidy-backup/
 .adjudant-repo-tidy-preview/

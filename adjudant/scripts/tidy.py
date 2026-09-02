@@ -16,7 +16,7 @@ ordinary unknown field: the general mechanism rather than a rule of its own.
 
 Idempotent: a second run with no fresh drift = no changes.
 
-Phases (mirrors port.py):
+Phases:
   detect   — print one of: 'fresh' | 'preview' | 'applied'
   preview  — write the proposed changes to scratch (read-only sweep)
   apply    — backup live files to scratch, then apply preview

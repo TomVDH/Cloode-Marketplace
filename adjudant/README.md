@@ -2,7 +2,7 @@
 
 *Every unit has someone who keeps the records straight. Now your project does too.*
 
-Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with thirteen verbs. Successor to `obsidian-bridge`.
+Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with twelve verbs. Successor to `obsidian-bridge`.
 
 **New here? Read the [walkthrough](GUIDE.md).** This page is the reference.
 
@@ -20,12 +20,11 @@ Then link your project once:
 /adjudant connect
 ```
 
-## The thirteen verbs
+## The twelve verbs
 
 | Verb | What it does |
 |---|---|
 | `/adjudant connect` | Link a project to its vault. Run once per project. |
-| `/adjudant port` | Migrate an existing project (raw, obsidian-bridge, or hand-authored) into adjudant's layout. |
 | `/adjudant sync` | Push project state to the vault: brief, handoff, project index. |
 | `/adjudant check [vault\|repo\|all]` | Read-only health report: project, vault, and schema drift. `repo`/`all` also audit repo structure. |
 | `/adjudant sitrep` | Plain-language orientation after a break. Read-only. |

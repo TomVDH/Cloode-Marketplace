@@ -1033,8 +1033,8 @@ class TestFieldSchema(unittest.TestCase):
                 self.assertIsNone(safe_project_root(vault, bad), bad)
 
     def test_connect_shares_the_slug_rule(self):
-        # port.py calls connect.validate_slug "the single source of the
-        # kebab-case rule"; the hooks and resolve_project_from_cwd gate on
+        # connect.validate_slug is the single source of the kebab-case
+        # rule; the hooks and resolve_project_from_cwd gate on
         # is_safe_slug. Asserted as behavioural agreement rather than shared
         # identity: validate_slug used to match SLUG_RE without the length
         # bound, so connect accepted a 100-char slug that every hook then

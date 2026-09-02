@@ -289,73 +289,7 @@ class TestPluginVersionSet(_PatchedTree):
         self.assertTrue(any("plugin-version-set" in f for f in r.failures))
 
 
-class TestPortPreviewCoherence(_PatchedTree):
-
-    def test_passes_when_no_preview_dir(self):
-        r = Result()
-        validate.validate_port_preview_coherence(r)
-        self.assertEqual(r.failures, [])
-
-    def test_fails_when_preview_incomplete(self):
-        d = self.plugin / ".adjudant-port-preview"
-        d.mkdir()
-        (d / "summary.md").write_text("x")
-        r = Result()
-        validate.validate_port_preview_coherence(r)
-        self.assertTrue(any("port-preview-coherence" in f for f in r.failures))
-
-    def test_passes_when_preview_complete(self):
-        d = self.plugin / ".adjudant-port-preview"
-        d.mkdir()
-        for f in validate.PORT_PREVIEW_REQUIRED:
-            (d / f).write_text("x")
-        r = Result()
-        validate.validate_port_preview_coherence(r)
-        self.assertEqual(r.failures, [])
-
-
-class TestPortBackupIntegrity(_PatchedTree):
-
-    def test_passes_with_legacy_files(self):
-        d = self.plugin / ".adjudant-port-backup" / "20260101T000000Z"
-        d.mkdir(parents=True)
-        (d / "AGENTS.md.legacy").write_text("x")
-        r = Result()
-        validate.validate_port_backup_integrity(r)
-        self.assertEqual(r.failures, [])
-
-    def test_fails_on_non_legacy_only_dir(self):
-        d = self.plugin / ".adjudant-port-backup" / "20260101T000000Z"
-        d.mkdir(parents=True)
-        (d / "stray.md").write_text("x")
-        r = Result()
-        validate.validate_port_backup_integrity(r)
-        self.assertTrue(any("port-backup-integrity" in f for f in r.failures))
-
-
 class TestGitignoreValidators(_PatchedTree):
-
-    def test_port_dirs_require_active_entries(self):
-        (self.plugin / ".adjudant-port-preview").mkdir()
-        # Commented-out entry must NOT satisfy the check (old substring bug)
-        (self.plugin / ".gitignore").write_text("# .adjudant-port-preview/\n")
-        r = Result()
-        validate.validate_gitignore_includes_port_dirs(r)
-        self.assertTrue(any("gitignore-includes-port-dirs" in f for f in r.failures))
-
-    def test_port_dirs_pass_with_entry(self):
-        (self.plugin / ".adjudant-port-preview").mkdir()
-        (self.plugin / ".gitignore").write_text(".adjudant-port-preview/\n")
-        r = Result()
-        validate.validate_gitignore_includes_port_dirs(r)
-        self.assertEqual(r.failures, [])
-
-    def test_port_dirs_fall_back_to_parent_gitignore(self):
-        (self.plugin / ".adjudant-port-preview").mkdir()
-        (self.plugin.parent / ".gitignore").write_text(".adjudant-port-preview/\n")
-        r = Result()
-        validate.validate_gitignore_includes_port_dirs(r)
-        self.assertEqual(r.failures, [])
 
     def test_tidy_dirs_negated_entry_fails(self):
         (self.plugin / ".adjudant-tidy-preview").mkdir()
@@ -924,7 +858,7 @@ class TestSkillSplit(unittest.TestCase):
 
     def test_skill_still_routes_and_points_at_internals(self):
         text = self.SKILL.read_text()
-        for verb in ("connect", "port", "sync", "check", "sitrep", "tidy",
+        for verb in ("connect", "sync", "check", "sitrep", "tidy",
                      "ramasse", "dream", "draw", "board", "shelf"):
             self.assertIn(f"`{verb}`", text)
         self.assertIn("reference/internals.md", text)
@@ -1073,6 +1007,24 @@ class TestParityValidatorsRemoved(unittest.TestCase):
         declared = int(re.search(r"(\d+) validators total", src).group(1))
         listed = len(re.findall(r"^\s*\d+\. [a-z-]+", src, re.M))
         self.assertEqual(declared, listed)
+
+
+class TestPortIsSunset(unittest.TestCase):
+
+    def test_no_port_source_survives(self):
+        scripts = Path(validate.__file__).parent
+        for name in ("port.py", "test_port.py"):
+            self.assertFalse((scripts / name).exists(), f"{name} survived")
+
+    def test_no_port_verb_registered(self):
+        meta = json.loads((Path(validate.__file__).parent / "command-metadata.json").read_text())
+        self.assertNotIn("port", [v["name"] for v in meta["verbs"]])
+
+    def test_port_validators_are_gone(self):
+        src = Path(validate.__file__).read_text()
+        for name in ("port-preview-coherence", "port-backup-integrity",
+                     "gitignore-includes-port-dirs"):
+            self.assertNotIn(name, src, f"{name} validates a deleted verb")
 
 
 if __name__ == "__main__":

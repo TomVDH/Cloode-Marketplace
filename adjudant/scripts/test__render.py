@@ -89,9 +89,8 @@ class TestNoValuelessLines(unittest.TestCase):
 class TestFrontmatterOnly(unittest.TestCase):
     """A writer that supplies its own body still gets its frontmatter here.
 
-    port mirrors a legacy brief's prose and the handoff mirror mirrors
-    `.remember/`; neither wants the template's body, and both used to declare
-    the shape inline instead.
+    The handoff mirror mirrors `.remember/`; it does not want the
+    template's body, and it used to declare the shape inline instead.
     """
 
     def test_frontmatter_is_a_closed_block(self):

@@ -51,7 +51,7 @@ except Exception:  # pragma: no cover - degrade: voice check disabled
     _voice = None
 
 # The gate exists to catch model drift in hand-authored notes. These four are
-# not that vector. brief.md is written by connect and port, _index.md by
+# not that vector. brief.md is written by connect, _index.md by
 # connect and tidy's index rebuilder, _handoff.md by sync and precompact.
 # _iteration.md is the optional index of an iteration folder whose sibling
 # build artefacts carry no frontmatter at all. All four have full FIELD_SCHEMA

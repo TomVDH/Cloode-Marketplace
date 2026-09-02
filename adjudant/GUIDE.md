@@ -101,16 +101,6 @@ Projects don't stay active forever. `shelf` moves them between zones:
 
 A move updates the brief, logs the status change, relocates the folder, and rewrites wikilinks and index rows so nothing dangles.
 
-## 8. Bringing an existing project in
-
-If a project already has notes — raw markdown, an old `obsidian-bridge` layout, or something hand-built — use `port` instead of `connect`:
-
-```
-/adjudant port
-```
-
-It previews the full migration into adjudant's layout, waits, and applies with a backup only when you approve. Idempotent, so a second run is safe.
-
 ## Living with it
 
 - **Two machines.** The breadcrumb stores the vault's name as well as its path, so a project synced to another machine re-finds its vault even when the absolute path differs. Pull before you start; adjudant does the rest.
@@ -124,7 +114,7 @@ It previews the full migration into adjudant's layout, waits, and applies with a
 - **A verb can't find the vault.** The breadcrumb is missing or points nowhere. Re-run `/adjudant connect`.
 - **You want the details.** `/adjudant check` for state, `reference/internals.md` for how the machinery is wired.
 
-## 9. The advisor (opt-in)
+## 8. The advisor (opt-in)
 
 By default adjudant only speaks when spoken to. Turn the advisor on and it
 also *notices* — open loops, missing notes, work that contradicts a decision,
@@ -147,7 +137,7 @@ active. Every session start announces it.
 facts, dangling supersessions, drift between the plan and the work.
 `/adjudant advisor off` removes the flag, the marker, and the behaviour.
 
-## 10. Naming things
+## 9. Naming things
 
 Kebab-case is the vault's naming rule, and most of it is on you to follow.
 `kebab` answers the question you actually have at write time:

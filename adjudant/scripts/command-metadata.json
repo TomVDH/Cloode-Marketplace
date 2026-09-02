@@ -10,13 +10,6 @@
       "weight": "light"
     },
     {
-      "name": "port",
-      "description": "Migrate a legacy project (raw, obsidian-bridge, or hand-authored) into adjudant's layout. Previews first, then applies with a backup. Idempotent.",
-      "argumentHint": "(no args)",
-      "reference": "reference/port.md",
-      "weight": "medium"
-    },
-    {
       "name": "sync",
       "description": "Push project state to the vault: refresh the brief, mirror the handoff, update the project index row.",
       "argumentHint": "(no args)",

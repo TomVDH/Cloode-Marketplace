@@ -9,32 +9,29 @@ Validators:
    3. template-schema-loads  — the templates parse into exactly the fifteen kinds, each vocabulary non-empty
    4. command-metadata-coherence — verbs in command-metadata.json match SKILL.md router
    5. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
-   6. port-preview-coherence  — if preview dir exists, has all required files
-   7. port-backup-integrity   — backup dirs have at least one .legacy file
-   8. gitignore-includes-port-dirs — .gitignore lists port dirs if either exists
-   9. version-consistency     — plugin.json / command-metadata.json / SKILL.md (+ marketplace when present) versions all match
- 10. tidy-preview-coherence  — if tidy preview dir exists, has summary.md + changes.json + files/
- 11. tidy-backup-integrity   — tidy backup dirs have at least one .legacy file
- 12. gitignore-includes-tidy-dirs — .gitignore lists tidy dirs if either exists
- 13. reference-files-exist   — every reference/*.md named in command-metadata.json and the SKILL.md router exists
- 14. verb-surface-parity     — every verb name appears in plugin.json / README.md / marketplace description; spelled-out verb counts match
- 15. reference-doc-links     — every relative markdown link inside reference/*.md resolves on disk
- 16. verb-description-length — command-metadata verb descriptions stay router-line short (≤ 220 chars)
- 17. repo-helper-parity      — repo_walk/repo_scan/repo_tidy each exist with a matching test_*.py
- 18. repo-standards-coverage — reference/repo-standards.md exists and names each detector category
- 19. repo-tidy-preview-coherence — if repo-tidy preview dir exists, it has summary.md + changes.json + files/
- 20. repo-tidy-backup-integrity   — repo-tidy backup subdirs with files carry at least one .legacy
- 21. gitignore-includes-repo-tidy-dirs — .gitignore lists the repo-tidy dirs if either exists
- 22. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
- 23. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
- 24. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
- 25. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
- 26. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
- 27. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
- 28. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
- 29. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
+   6. version-consistency     — plugin.json / command-metadata.json / SKILL.md (+ marketplace when present) versions all match
+   7. tidy-preview-coherence  — if tidy preview dir exists, has summary.md + changes.json + files/
+   8. tidy-backup-integrity   — tidy backup dirs have at least one .legacy file
+   9. gitignore-includes-tidy-dirs — .gitignore lists tidy dirs if either exists
+  10. reference-files-exist   — every reference/*.md named in command-metadata.json and the SKILL.md router exists
+  11. verb-surface-parity     — every verb name appears in plugin.json / README.md / marketplace description; spelled-out verb counts match
+  12. reference-doc-links     — every relative markdown link inside reference/*.md resolves on disk
+  13. verb-description-length — command-metadata verb descriptions stay router-line short (≤ 220 chars)
+  14. repo-helper-parity      — repo_walk/repo_scan/repo_tidy each exist with a matching test_*.py
+  15. repo-standards-coverage — reference/repo-standards.md exists and names each detector category
+  16. repo-tidy-preview-coherence — if repo-tidy preview dir exists, it has summary.md + changes.json + files/
+  17. repo-tidy-backup-integrity   — repo-tidy backup subdirs with files carry at least one .legacy
+  18. gitignore-includes-repo-tidy-dirs — .gitignore lists the repo-tidy dirs if either exists
+  19. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
+  20. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
+  21. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
+  22. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
+  23. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
+  24. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
+  25. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
+  26. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
 
-29 validators total.
+26 validators total.
 """
 
 import ast
@@ -218,40 +215,6 @@ def validate_plugin_version_set(r: Result) -> None:
     r.add_pass(name)
 
 
-PORT_PREVIEW_REQUIRED = ["AGENTS.md.proposed", "CLAUDE.md.proposed", "breadcrumb.proposed", "vault-changes.txt", "summary.md"]
-
-
-def validate_port_preview_coherence(r: Result) -> None:
-    name = "port-preview-coherence"
-    preview = ROOT / ".adjudant-port-preview"
-    if not preview.is_dir():
-        r.add_pass(name)
-        return
-    missing = [f for f in PORT_PREVIEW_REQUIRED if not (preview / f).is_file()]
-    if missing:
-        r.add_fail(name, f"preview dir missing required files: {missing}")
-        return
-    r.add_pass(name)
-
-
-def validate_port_backup_integrity(r: Result) -> None:
-    name = "port-backup-integrity"
-    backup_root = ROOT / ".adjudant-port-backup"
-    if not backup_root.is_dir():
-        r.add_pass(name)
-        return
-    for subdir in backup_root.iterdir():
-        if subdir.is_dir():
-            entries = list(subdir.iterdir())
-            if not entries:
-                continue  # empty backup dir (e.g. fresh X-flavor port) is fine
-            has_legacy = any(f.name.endswith(".legacy") for f in entries)
-            if not has_legacy:
-                r.add_fail(name, f"backup dir {subdir.name} has non-.legacy files but no .legacy: {[f.name for f in entries]}")
-                return
-    r.add_pass(name)
-
-
 def _gitignore_active_entries(gi: Path) -> set[str]:
     """Active .gitignore lines — comments and `!` negations don't count as
     covering an entry (the old substring check was fooled by both)."""
@@ -261,33 +224,6 @@ def _gitignore_active_entries(gi: Path) -> set[str]:
         if s and not s.startswith("#") and not s.startswith("!"):
             entries.add(s)
     return entries
-
-
-def validate_gitignore_includes_port_dirs(r: Result) -> None:
-    name = "gitignore-includes-port-dirs"
-    preview = ROOT / ".adjudant-port-preview"
-    backup = ROOT / ".adjudant-port-backup"
-    if not preview.is_dir() and not backup.is_dir():
-        r.add_pass(name)
-        return
-    gi = ROOT / ".gitignore"
-    if not gi.is_file():
-        # Fall back to the repo-root .gitignore (ROOT is the plugin dir)
-        gi = ROOT.parent / ".gitignore"
-    if not gi.is_file():
-        r.add_fail(name, "port directories exist but .gitignore is missing")
-        return
-    entries = _gitignore_active_entries(gi)
-    required = []
-    if preview.is_dir():
-        required.append(".adjudant-port-preview/")
-    if backup.is_dir():
-        required.append(".adjudant-port-backup/")
-    missing = [e for e in required if e not in entries]
-    if missing:
-        r.add_fail(name, f".gitignore missing entries: {missing}")
-        return
-    r.add_pass(name)
 
 
 TIDY_PREVIEW_REQUIRED = ["summary.md", "changes.json"]
@@ -1057,9 +993,6 @@ def main() -> int:
     validate_template_schema_loads(r)
     validate_command_metadata_coherence(r)
     validate_plugin_version_set(r)
-    validate_port_preview_coherence(r)
-    validate_port_backup_integrity(r)
-    validate_gitignore_includes_port_dirs(r)
     validate_version_consistency(r)
     validate_tidy_preview_coherence(r)
     validate_tidy_backup_integrity(r)

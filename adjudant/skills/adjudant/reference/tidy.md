@@ -1,6 +1,6 @@
 # /adjudant tidy
 
-Mechanical vault sweep. Idempotent — second run with no fresh drift = no changes. **Two-phase preview → apply** (mirrors `/adjudant port`).
+Mechanical vault sweep. Idempotent — second run with no fresh drift = no changes. **Two-phase preview → apply**.
 
 ## Target `[vault|repo|all]`
 
