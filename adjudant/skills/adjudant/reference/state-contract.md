@@ -22,7 +22,6 @@ not read from the breadcrumb.
 | `{vault}/projects/[_fridge/ or _archive/]{slug}/brief.md` | which zone holds the project |
 | `$TMPDIR/adjudant/{slug}/tidy-preview`, directory exists | "tidying" state |
 | `$TMPDIR/adjudant/{repo basename}/repo-tidy-preview`, directory exists | "repo-tidying" state |
-| `{vault}/.adjudant-shelf-preview`, directory exists | "shelving" |
 | `{project}/.adjudant-remise-preview`, directory exists | "remising" (reserved, nothing writes it yet) |
 | `brief.md` frontmatter, `status:` | lifecycle drift, read against the newest session date |
 | newest `sessions/{YYYY-MM-DD}.md`, the filename only | how long the project has been quiet |

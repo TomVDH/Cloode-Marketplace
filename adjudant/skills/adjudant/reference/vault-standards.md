@@ -72,7 +72,7 @@ Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `
 
 A project's state is one of `active` | `stale` | `fridge` | `done` | `dead` | `seed`, and picking between them is judgment. The zone folder carries it; the brief has no `status:` field, because a second answer can disagree with the first. `active`: being worked. `stale`: declared active but quiet past `stale_after_days` (default 30), the only machine-suggested state. `fridge`: deliberately paused, intent to return. `done`: shipped and complete, a success rather than an abandonment. `dead`: abandoned. `seed`: captured idea, not yet started.
 
-Placement follows status: `projects/` holds active, stale and seed; `projects/_fridge/` holds fridge; `projects/_archive/` holds done and dead. Transitions run only through `/adjudant shelf`, which moves the folder and rewrites `[[projects/…]]` prefixes vault-wide, so full-path wikilinks survive a zone move. The `[[{slug}/brief|{slug}]]` index-row form resolves across zones by Obsidian suffix matching and is never rewritten.
+Placement follows status: `projects/` holds active, stale and seed; `projects/_fridge/` holds fridge; `projects/_archive/` holds done and dead. A transition is a folder move, done by hand: no verb performs it. Full-path `[[projects/…]]` wikilinks into a moved project break, which is why the `[[{slug}/brief|{slug}]]` index-row form is preferred - it resolves across zones by Obsidian suffix matching and survives the move untouched.
 
 ## 9. Decision status vocabulary (locked 2026-07-27)
 

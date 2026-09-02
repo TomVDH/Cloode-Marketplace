@@ -2,7 +2,7 @@
 
 *Every unit has someone who keeps the records straight. Now your project does too.*
 
-Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with twelve verbs. Successor to `obsidian-bridge`.
+Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with eleven verbs. Successor to `obsidian-bridge`.
 
 **New here? Read the [walkthrough](GUIDE.md).** This page is the reference.
 
@@ -20,7 +20,7 @@ Then link your project once:
 /adjudant connect
 ```
 
-## The twelve verbs
+## The eleven verbs
 
 | Verb | What it does |
 |---|---|
@@ -33,7 +33,6 @@ Then link your project once:
 | `/adjudant dream` | Semantic refresh: flags stale, contradictory, or orphaned content for you to judge. |
 | `/adjudant draw <canvas\|base\|diagram> <name>` | Create a canvas, base, or mermaid diagram. |
 | `/adjudant board [scaffold\|serve\|status]` | Scaffold a self-hosted kanban seeded from your tasks. |
-| `/adjudant shelf [<slug> <state>]` | Move a project through its lifecycle (active, fridge, archive). |
 | `/adjudant advisor [on\|off\|status\|pulse]` | Toggle the opt-in proactive advisor, or run its context pulse. |
 | `/adjudant kebab <text> \| --scan` | Slugify a title, or scan for filenames that broke the naming rule. |
 

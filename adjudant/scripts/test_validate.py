@@ -859,7 +859,7 @@ class TestSkillSplit(unittest.TestCase):
     def test_skill_still_routes_and_points_at_internals(self):
         text = self.SKILL.read_text()
         for verb in ("connect", "sync", "check", "sitrep", "tidy",
-                     "ramasse", "dream", "draw", "board", "shelf"):
+                     "ramasse", "dream", "draw", "board"):
             self.assertIn(f"`{verb}`", text)
         self.assertIn("reference/internals.md", text)
 
@@ -1025,6 +1025,29 @@ class TestPortIsSunset(unittest.TestCase):
         for name in ("port-preview-coherence", "port-backup-integrity",
                      "gitignore-includes-port-dirs"):
             self.assertNotIn(name, src, f"{name} validates a deleted verb")
+
+
+class TestShelfIsSunset(unittest.TestCase):
+
+    def test_no_shelf_source_survives(self):
+        scripts = Path(validate.__file__).parent
+        for name in ("shelf.py", "test_shelf.py"):
+            self.assertFalse((scripts / name).exists(), f"{name} survived")
+
+    def test_no_vault_wide_link_rewrite_remains(self):
+        # Roughly fifty lines of shelf.py whose only job was repairing the
+        # decision to put the lifecycle folder in every link. Plan 4 takes the
+        # folder out of the links, so the repair has nothing left to repair.
+        # The identifiers are the plan keys the rewrite was built and applied
+        # through, not the name the plan guessed at.
+        scripts = Path(validate.__file__).parent
+        for py in scripts.glob("*.py"):
+            if py.name.startswith("test_"):
+                continue
+            src = py.read_text()
+            for marker in ("old_link_prefix", "new_link_prefix", "link_rewrites"):
+                self.assertNotIn(marker, src,
+                                 f"{py.name} still rewrites links vault-wide")
 
 
 if __name__ == "__main__":

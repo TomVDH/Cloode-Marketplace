@@ -66,13 +66,6 @@
       "weight": "light"
     },
     {
-      "name": "shelf",
-      "description": "Project lifecycle: list status across vault zones, or move a project to a new state (brief, status log, zone move, wikilink and index rewrite).",
-      "argumentHint": "[<slug> <state>] [--reason \"...\"]",
-      "reference": "reference/shelf.md",
-      "weight": "light"
-    },
-    {
       "name": "advisor",
       "description": "Toggle the proactive advisor (visible flag in the breadcrumb + AGENTS.md marker), or run its read-only context pulse.",
       "argumentHint": "[on|off|status|pulse]",

@@ -80,7 +80,7 @@ Rules:
   declared server is down say `dev server down` — it is a fact, not a warning.
   This is the "what is the workbench actually doing" line: it answers the questions
   a coding session opens with, which no amount of vault reading can.
-- OPTIONAL fifth line, only when a status mismatch or nudge exists (this doesn't count against the four labeled lines above): if `status.suggested` is set, "brief says {status.declared}, looks {status.suggested}: {status.reason} → run /adjudant shelf"; else if `status.nudge` is set, render the nudge; else if `status.zone_matches` is false, flag the zone mismatch. Skip the line entirely when none apply.
+- OPTIONAL fifth line, only when a status mismatch or nudge exists (this doesn't count against the four labeled lines above): if `status.suggested` is set, "brief says {status.declared}, looks {status.suggested}: {status.reason}"; else if `status.nudge` is set, render the nudge; else if `status.zone_matches` is false, flag the zone mismatch. Skip the line entirely when none apply.
 
 Adapt phrasing to be conversational; the shape above is the data layout, not a rigid
 template.

@@ -1,7 +1,7 @@
 {
   "name": "adjudant",
   "version": "2.0.0",
-  "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with twelve verbs: connect onboards a project; sync, check, and sitrep report on it; tidy, ramasse, and dream clean it in three escalating tiers; draw builds diagrams and canvases; board runs a self-hosted kanban; shelf moves projects through their lifecycle; and advisor is the opt-in proactive layer — it notices tasks, gaps, gaffes, and stale context while you work, urgent ones inline, the rest to the board or check; and kebab names things, or scans for filenames that broke the naming rule. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify.",
+  "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with eleven verbs: connect onboards a project; sync, check, and sitrep report on it; tidy, ramasse, and dream clean it in three escalating tiers; draw builds diagrams and canvases; board runs a self-hosted kanban; and advisor is the opt-in proactive layer — it notices tasks, gaps, gaffes, and stale context while you work, urgent ones inline, the rest to the board or check; and kebab names things, or scans for filenames that broke the naming rule. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify.",
   "author": {
     "name": "Onnozelaer"
   },

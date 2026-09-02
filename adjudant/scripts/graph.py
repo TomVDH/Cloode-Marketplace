@@ -178,7 +178,7 @@ def relations_graph(
                     labels[k] = f"{k.rsplit('/', 1)[0]}/{lb}"
 
     # Since v3 the session log writes zone-less links — [[{slug}/notes/a.md]],
-    # not [[projects/{slug}/notes/a.md]] — so a shelf move cannot break them.
+    # not [[projects/{slug}/notes/a.md]] — so a zone move cannot break them.
     # The project folder's own name is not part of a project-relative path.
     project_prefix = f"{project_dir.name}/"
 

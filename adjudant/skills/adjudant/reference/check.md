@@ -113,7 +113,7 @@ Adapt phrasing to be conversational; the shape above is the data layout, not a r
 
 Shape (voice.md §Shape): open the rendered block with the most decision-relevant fact
 (status plus freshness beats the title), and close with exactly one next step (the
-pending board reseed, `/adjudant dream`, or `/adjudant shelf`, whichever the data
+pending board reseed or `/adjudant dream`, whichever the data
 points at). Conditional nudges render above that final line, never after it.
 
 Skip the Board line entirely when `board.present` is false. When `board.stale` is true,
@@ -122,7 +122,7 @@ next ambient refresh), no alarm.
 
 ### Status nudges (conditional)
 
-- If `status.suggested` is set, render one line: "brief says {status.declared}, looks {status.suggested}: {status.reason} → run /adjudant shelf".
+- If `status.suggested` is set, render one line: "brief says {status.declared}, looks {status.suggested}: {status.reason}".
 - If `status.nudge` is set, render the nudge as its own line.
 - If `status.zone_matches` is false, flag the mismatch: the declared status doesn't match the vault zone the project actually sits in.
 - If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant tidy (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.

@@ -90,16 +90,13 @@ Hand-author them, or let adjudant generate one from your vault's own data (proje
 
 ## 7. Project lifecycle
 
-Projects don't stay active forever. `shelf` moves them between zones:
+Projects don't stay active forever. The vault carries the state in the folder:
+`projects/` holds the live ones, `projects/_fridge/` the paused ones, and
+`projects/_archive/` the finished and the abandoned.
 
-```
-/adjudant shelf                        # list every project and its state
-/adjudant shelf my-project fridge      # set aside, still around
-/adjudant shelf my-project archive     # done, filed away
-/adjudant shelf my-project active      # bring it back
-```
-
-A move updates the brief, logs the status change, relocates the folder, and rewrites wikilinks and index rows so nothing dangles.
+Moving a project between them is a folder move you make yourself. No verb does
+it. `/adjudant check` reports a project whose declared status and zone disagree,
+so a move you forget still gets noticed.
 
 ## Living with it
 

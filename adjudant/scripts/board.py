@@ -157,7 +157,7 @@ def _iter_task_notes(project_dir: Path):
         # lands in the card ID the damage was not self-healing: re-saving the
         # note as UTF-8 yields a NEW id, and merge_deck's "never deleted"
         # orphan rule then iceboxes the mojibake card forever. Skip the note
-        # and name it, the way sync and shelf handle an undecodable brief.
+        # and name it, the way sync handles an undecodable brief.
         try:
             text = f.read_text(encoding="utf-8")
         except UnicodeDecodeError as e:

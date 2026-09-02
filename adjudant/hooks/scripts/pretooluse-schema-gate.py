@@ -213,7 +213,7 @@ def main() -> int:
         return 0
     # `_legacy/` is non-conformant by design and every other component exempts
     # it: walk_project drops it from the walk unless include_legacy is passed,
-    # and _cost and shelf add it to their own skip sets. Matching walk_project,
+    # and _cost adds it to its own skip set. Matching walk_project,
     # the exemption applies at any depth, not just at the project root.
     if (not rel.parts or rel.name in _SKIP_NAMES
             or rel.parts[0] == "sessions" or "_legacy" in rel.parts):

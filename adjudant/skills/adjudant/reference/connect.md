@@ -14,7 +14,8 @@ connect is three phases; the card in the middle is the only thing the user must 
 2. **Confirm.** Render the contract as ONE card, both halves. Ask the user to approve or
    correct the five fields once. purpose is the one field with no inference: ask for it
    if empty; it becomes the brief's opening line and what sitrep orients from. If
-   `contract.zone` is `_fridge` or `_archive`, add one nudge line: project is shelved; run /adjudant shelf <slug> active.
+   `contract.zone` is `_fridge` or `_archive`, add one nudge line: project is
+   shelved; move its folder back to `projects/` by hand to reactivate it.
 3. **Apply + receipt.** Run connect.py with the confirmed values (`--purpose`,
    `--initial-status`, plus the usual flags). Render `summary.receipt` back as the same
    card with per-artifact marks: created / already-present / updated. A re-run on a

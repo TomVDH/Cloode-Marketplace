@@ -62,7 +62,7 @@ def refresh_brief_updated(brief_path: Path, today: str) -> str:
 
     Strict decode: this text is written straight back at the end, so reading
     with errors="replace" baked a permanent U+FFFD over every undecodable byte
-    (shelf and tidy avoid this same trap). An undecodable brief is reported and
+    (tidy avoids this same trap). An undecodable brief is reported and
     left byte-identical rather than corrupted.
     """
     if not brief_path.is_file():
@@ -220,7 +220,7 @@ def run_sync(project_root: Path) -> dict[str, Any]:
         if isinstance(status, str) and status not in ZONE_FOR_STATUS:
             summary.setdefault("warnings", []).append(
                 f"brief status {status!r} is off-vocabulary "
-                f"({' | '.join(ZONE_FOR_STATUS)}); row written as-is, fix via /adjudant shelf")
+                f"({' | '.join(ZONE_FOR_STATUS)}); row written as-is, fix the brief")
 
     return summary
 

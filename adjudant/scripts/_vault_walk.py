@@ -338,7 +338,6 @@ DEFAULT_SKIP: tuple[str, ...] = (
     ".git", "node_modules", "__pycache__", ".obsidian", ".trash",
     # adjudant's own scratch dirs — never scan a pending preview/backup
     ".adjudant-tidy-preview", ".adjudant-tidy-backup",
-    ".adjudant-shelf-preview", ".adjudant-shelf-backup",
     # a project's junk drawer is not content (finding 31). `_archive` is
     # deliberately NOT here: it names a project ZONE (projects/_archive/) the
     # walkers must still see; remise's `archived-context/` covers the
