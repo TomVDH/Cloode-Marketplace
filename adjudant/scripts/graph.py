@@ -177,6 +177,11 @@ def relations_graph(
                 if not k.startswith("__group__") and "/" in k:
                     labels[k] = f"{k.rsplit('/', 1)[0]}/{lb}"
 
+    # Since v3 the session log writes zone-less links — [[{slug}/notes/a.md]],
+    # not [[projects/{slug}/notes/a.md]] — so a shelf move cannot break them.
+    # The project folder's own name is not part of a project-relative path.
+    project_prefix = f"{project_dir.name}/"
+
     edges: set[tuple[str, str]] = set()
     for vf in files:
         src = node_key(vf)
@@ -186,7 +191,12 @@ def relations_graph(
                 continue
             norm = target.replace("\\", "/").rstrip("/")
             dst = resolve.get(norm)
-            if dst is None:
+            if dst is None and norm.startswith(project_prefix):
+                # Strip the project's own prefix and resolve EXACTLY. Never
+                # fall through to the basename guess below: [[demo/archive/x]]
+                # is as broken here as [[archive/x]] is.
+                dst = resolve.get(norm[len(project_prefix):])
+            elif dst is None:
                 # Basename fallback ONLY for bare targets ([[note]]) and
                 # vault-rooted paths (projects/{slug}/…). A path-qualified
                 # link that doesn't resolve is broken in Obsidian too —

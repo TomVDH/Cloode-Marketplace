@@ -183,6 +183,34 @@ class TestAliasResolution(unittest.TestCase):
             g = relations_graph(root)
             self.assertIn("-->", g)
 
+    def test_project_prefixed_link_resolves_project_relative(self):
+        # Since v3 the session log writes zone-less links: [[{slug}/notes/a.md]]
+        # rather than [[projects/{slug}/notes/a.md]], so a shelf move cannot
+        # break them. The project folder's own name is not part of a
+        # project-relative path — strip it, or every session-log edge vanishes.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "demo"
+            _write(root / "brief.md", "---\ntype: project\n---\n# P\n")
+            _write(root / "sessions" / "2026-09-01.md",
+                   "---\ntype: session\n---\n- 10:00 · Added: [[demo/notes/setup.md]]\n")
+            _write(root / "notes" / "setup.md", "---\ntype: note\n---\n# S\n")
+            g = relations_graph(root)
+            nodes = dict(re.findall(r'(n\d+)\[("[^"]+")\]', g))
+            setup_id = next(k for k, v in nodes.items() if v == '"setup"')
+            group_id = next(k for k, v in nodes.items() if v.startswith('"sessions/'))
+            self.assertIn(f"{group_id} --> {setup_id}", g)
+
+    def test_broken_project_prefixed_link_makes_no_edge(self):
+        # Stripping the project prefix must resolve EXACTLY, never fall through
+        # to the basename guess: [[demo/archive/setup]] has no target.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "demo"
+            _write(root / "brief.md", "---\ntype: project\n---\n[[demo/archive/setup]]\n")
+            _write(root / "notes" / "setup.md", "---\ntype: note\n---\n# S\n")
+            g = relations_graph(root)
+            self.assertNotIn("-->", g)
+
+
 
 class TestBoard(unittest.TestCase):
 
