@@ -488,8 +488,8 @@ class TestApplySafety(unittest.TestCase):
             root = Path(tmp)
             stale = self._dirty(root)
             other = root / "decisions" / "2026-01-02-e.md"
-            _w(other, "---\ntype: decision\nstatus: locked\ndate: 2026-01-02\n"
-                      "tags:\n  - decision\n---\n\nBody.\n")
+            _w(other, "---\ntype: decision\nstatus: locked\n"
+                      "created: 2026-01-02\nupdated: 2026-01-02\n---\n\nBody.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
             stale.write_text(stale.read_text() + "\nfresh edit\n")
@@ -843,7 +843,7 @@ class TestSchemaPrimitives(unittest.TestCase):
 
 _SCHEMA_NOTE_DRIFTED = (
     '---\ntype: note\nproject: "[[projects/t/brief|t]]"\noriginSessionId: abc-123\n'
-    "created: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - note\n---\nN\n")
+    "created: 2026-01-01\nupdated: 2026-01-01\n---\nN\n")
 
 
 class TestSchemaPhase(unittest.TestCase):
@@ -851,7 +851,9 @@ class TestSchemaPhase(unittest.TestCase):
     def _preview(self, root: Path):
         return build_preview(root, build_vault_index(root), "t")
 
-    def test_strip_project_and_migrate_origin_session(self):
+    def test_strip_project_and_drop_origin_session(self):
+        # v3: source_session is not a field on any kind, so the legacy key has
+        # nowhere to migrate to and drops with every other unknown field.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
@@ -859,10 +861,10 @@ class TestSchemaPhase(unittest.TestCase):
             prop = cs["file_proposals"]["notes/n.md"]["proposed_content"]
             self.assertNotIn("project:", prop)
             self.assertNotIn("originSessionId", prop)
-            self.assertIn("source_session: abc-123", prop)
-            self.assertEqual(cs["schema_actions"]["notes/n.md"]["dropped"], ["project"])
-            self.assertIn("originSessionId -> source_session",
-                          cs["schema_actions"]["notes/n.md"]["renamed"])
+            self.assertNotIn("source_session", prop)
+            self.assertEqual(cs["schema_actions"]["notes/n.md"]["dropped"],
+                             ["originSessionId", "project"])
+            self.assertNotIn("renamed", cs["schema_actions"]["notes/n.md"])
 
     def test_uncorroborated_type_is_reported_not_stripped(self):
         # A Claude Code auto-memory file flattened by an external editor lands
@@ -888,13 +890,12 @@ class TestSchemaPhase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "brief.md",
-               "---\ntype: project\nproject_type: coding\nslug: t\n"
-               "aliases:\n  - T\nstatus: active\ncreated: 2026-01-01\n"
-               "updated: 2026-01-02\nbogus: nope\ntags:\n  - project\n---\n\nB\n")
+               "---\ntype: project\ncreated: 2026-01-01\nupdated: 2026-01-02\n"
+               "verified: 2026-01-02\nverified_by: read\nbogus: nope\n---\n\nB\n")
             cs = self._preview(root)
             self.assertEqual(cs["schema_actions"]["brief.md"]["dropped"], ["bogus"])
 
-    def test_origin_session_dropped_when_source_present(self):
+    def test_both_session_stamps_drop_together(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED.replace(
@@ -903,7 +904,7 @@ class TestSchemaPhase(unittest.TestCase):
             cs = self._preview(root)
             prop = cs["file_proposals"]["notes/n.md"]["proposed_content"]
             self.assertNotIn("originSessionId", prop)
-            self.assertIn("source_session: def-456", prop)
+            self.assertNotIn("source_session", prop)
 
     def test_node_type_renamed_when_type_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -928,7 +929,8 @@ class TestSchemaPhase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "decisions" / "2026-01-01-d.md",
-               "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\ntags:\n  - decision\n---\nD\n")
+               "---\ntype: decision\nstatus: accepted\ncreated: 2026-01-01\n"
+               "updated: 2026-01-01\n---\nD\n")
             cs = self._preview(root)
             prop = cs["file_proposals"]["decisions/2026-01-01-d.md"]["proposed_content"]
             self.assertIn("status: active", prop)
@@ -936,7 +938,9 @@ class TestSchemaPhase(unittest.TestCase):
     def test_task_alias_status_left_alone(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _w(root / "tasks" / "t.md", "---\ntype: task\nstatus: wip\ntags:\n  - task\n---\nT\n")
+            _w(root / "tasks" / "t.md",
+               "---\ntype: task\nstatus: wip\ncreated: 2026-01-01\n"
+               "updated: 2026-01-01\n---\nT\n")
             cs = self._preview(root)
             self.assertNotIn("tasks/t.md", cs["file_proposals"])
 
@@ -944,13 +948,13 @@ class TestSchemaPhase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "sessions" / "2026-01-01.md",
-               "---\ntype: session\ndate: 2026-01-01\nstarted: \"09:00\"\n"
-               "session_id: []\nfoo: bar\ntags:\n  - session\n---\nS\n")
+               "---\ntype: session\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+               "foo: bar\n---\nS\n")
             cs = self._preview(root)
             prop = cs["file_proposals"]["sessions/2026-01-01.md"]["proposed_content"]
             self.assertNotIn("foo: bar", prop)
-            self.assertIn("session_id: []", prop)
-            self.assertIn("date: 2026-01-01", prop)
+            self.assertIn("created: 2026-01-01", prop)
+            self.assertIn("updated: 2026-01-01", prop)
 
     def test_parse_error_file_untouched(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -981,18 +985,17 @@ class TestSchemaPhase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "notes" / "n.md", _SCHEMA_NOTE_DRIFTED)
-            # session_id is LEGAL on handoffs (the sync mirror preserves it);
-            # use a genuinely unknown block-list key so this still exercises
-            # multi-file idempotency, and assert session_id survives.
+            # A second file so this exercises multi-file idempotency. The v3
+            # handoff is type/created/updated and nothing else, so the block
+            # key is drift like any other.
             _w(root / "_handoff.md",
-               "---\ntype: handoff\nsession_id:\n  - aaa\nbogus_key:\n  - x\n"
-               "updated: 2026-01-01\nsource: sync\ntags:\n  - handoff\n---\nH\n")
+               "---\ntype: handoff\nbogus_key:\n  - x\n"
+               "created: 2026-01-01\nupdated: 2026-01-01\n---\nH\n")
             cs = self._preview(root)
             self.assertIn("_handoff.md", cs["file_proposals"])
             write_preview_to_disk(root, cs)
             apply_preview(root)
             handoff_after = (root / "_handoff.md").read_text()
-            self.assertIn("session_id:", handoff_after)
             self.assertNotIn("bogus_key", handoff_after)
             cs2 = self._preview(root)
             self.assertEqual(cs2["schema_actions"], {})

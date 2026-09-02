@@ -7,8 +7,8 @@ Five features (locked spec — replaces the old ramasse mechanical surface):
   3. Normalise tags per locked 2026-05-25 schema (drop Bucket D, migrate Bucket B)
   4. Rewrite `[text](path.md)` → `[[path-stem|text]]` when path resolves in vault
   5. Frontmatter schema repair per FIELD_SCHEMA: strip unknown fields, migrate
-     legacy keys (node_type → type, originSessionId → source_session), and
-     normalise decision-status aliases (accepted/locked/current → active).
+     the one legacy key with a live target (node_type → type), and normalise
+     decision-status aliases (accepted/locked/current → active).
      Task-status aliases are accepted input and never rewritten.
 
 Idempotent: a second run with no fresh drift = no changes.
@@ -698,16 +698,14 @@ def build_preview(
                     drops.add("node_type")
                 else:
                     renames.append(("node_type", "type"))
-            if "originSessionId" in fields:
-                if "source_session" in fields:
-                    drops.add("originSessionId")
-                else:
-                    renames.append(("originSessionId", "source_session"))
+            # originSessionId used to migrate to source_session. Since v3 no
+            # template declares source_session, so renaming into it would write
+            # a field the next pass strips: it drops as an unknown field now.
             drift = schema_drift_for_file(f, _TASK_STATUS_ALIASES)
             unverified = _uncorroborated_type(f.file_type, fields) if drift else None
             if drift and not unverified:
                 for k in drift.get("unknown_fields", ()):
-                    if k not in ("node_type", "originSessionId"):
+                    if k != "node_type":
                         drops.add(k)
                 si = drift.get("status_invalid")
                 if si and f.file_type == "decision" and si.get("normalizable"):

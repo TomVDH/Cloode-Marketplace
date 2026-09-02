@@ -32,7 +32,7 @@ from _vault_walk import (
     parse_breadcrumb,
     parse_frontmatter,
     resolve_project_from_cwd,
-    PROJECT_STATUS_VALUES,
+    ZONE_FOR_STATUS,
 )
 from _handoff_freshness import (
     HANDOFF_FRONTMATTER_TEMPLATE,
@@ -217,10 +217,10 @@ def run_sync(project_root: Path) -> dict[str, Any]:
     fm, _ = parse_frontmatter(brief_path.read_text(errors="replace")) if brief_path.is_file() else (None, "")
     if fm is not None:
         status = fm.fields.get("status")
-        if isinstance(status, str) and status not in PROJECT_STATUS_VALUES:
+        if isinstance(status, str) and status not in ZONE_FOR_STATUS:
             summary.setdefault("warnings", []).append(
                 f"brief status {status!r} is off-vocabulary "
-                f"({' | '.join(PROJECT_STATUS_VALUES)}); row written as-is, fix via /adjudant shelf")
+                f"({' | '.join(ZONE_FOR_STATUS)}); row written as-is, fix via /adjudant shelf")
 
     return summary
 

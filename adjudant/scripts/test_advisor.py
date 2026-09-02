@@ -151,19 +151,6 @@ class TestPulse(_Harness):
         text = out.getvalue()
         return rc, (json.loads(text) if text.strip() else {})
 
-    def test_expired_fact_is_flagged_and_breaks_the_quiet(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            proj = self._vault_project(Path(tmp))
-            (proj / "notes").mkdir()
-            (proj / "notes" / "cred.md").write_text(
-                "---\ntype: note\ncreated: 2026-06-01\nupdated: 2026-06-01\n"
-                "freshness: dated\nvalid_until: 2026-07-01\n"
-                "tags:\n  - note\n---\n\nThe staging token rotates monthly.\n")
-            rc, report = self._pulse(proj)
-            self.assertEqual(rc, 0)
-            self.assertEqual(len(report["freshness"]["expired"]), 1)
-            self.assertFalse(report["quiet"])
-
     def test_untouched_milestone_is_a_dangling_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
             proj = self._vault_project(Path(tmp))

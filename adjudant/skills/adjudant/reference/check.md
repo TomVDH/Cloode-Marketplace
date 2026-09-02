@@ -68,16 +68,11 @@ JSON output shape (top-level keys):
   the source is there and has content. Lines are under Status nudges below
 - `status` — declared vs. machine-suggested lifecycle status: `declared`, `declared_valid`,
   `last_session`, `days_quiet`, `suggested`, `reason`, `nudge`, `zone`, `zone_matches`
-- `schema` — frontmatter drift per `FIELD_SCHEMA`: `checked`, `unchecked` (no block /
-  parse error / non-canonical type — those are ramasse territory), `flagged`, `counts`
-  (`missing_required`, `unknown_fields`, `status_invalid`, `type_conflict`,
-  `epistemic_invalid`), `samples` (capped at 20, each with `file`, `type`, and the
-  offending keys/values)
-- `freshness` — what valid epistemic declarations MEAN today (shape problems are
-  `schema`'s): `expired` (`valid_until` past, with `days_expired`),
-  `dangling_supersession` (`superseded_by` target resolves to no file),
-  `dated_unbounded` (`freshness: dated` with no validity window), `counts`
-  (adoption per field). Vault-standards section 10 owns the vocabulary
+- `schema` — frontmatter drift per `FIELD_SCHEMA`, which is the templates: `checked`,
+  `unchecked` (no block / parse error / non-canonical type — those are ramasse
+  territory), `flagged`, `counts` (`missing_required`, `unknown_fields`,
+  `status_invalid`, `type_conflict`), `samples` (capped at 20, each with `file`,
+  `type`, and the offending keys/values)
 - `environment` — capability probes: `obsidian_cli` (official CLI on PATH)
 
 ## Render
@@ -131,7 +126,6 @@ next ambient refresh), no alarm.
 - If `status.nudge` is set, render the nudge as its own line.
 - If `status.zone_matches` is false, flag the mismatch: the declared status doesn't match the vault zone the project actually sits in.
 - If `schema.flagged` > 0, render one line: "{flagged} files off schema → run /adjudant tidy (strip/migrate after preview)". Skip the Schema activity line entirely when flagged is 0 and every file checked out clean.
-- If `freshness.expired` or `freshness.dangling_supersession` is non-empty, render one line: "{n} declared facts need review (expired validity / dangling supersession) → run /adjudant dream". Judgment-heavy by design: expiry review is dream territory, never tidy's.
 - If `remember.present` is false, render one line: "remember: not detected — the handoff is written from session context only".
 - If `remember.present` is true and `remember.empty` is true, render one line: "remember: present but empty — the handoff carries no mirrored body". Neither is an error: the handoff still renders, it just has nothing to mirror into the body. Adjudant read `.remember/` as the source and said nothing when it was missing or empty, so a handoff that was a banner with no body looked the same as one nobody had written yet.
 

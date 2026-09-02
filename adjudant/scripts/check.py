@@ -23,7 +23,7 @@ from typing import Any, Optional
 from _cost import breadcrumb_int, cost_block, read_threshold, stat_walk
 from _handoff_freshness import compute_freshness, latest_session_file, remember_status
 from _vault_walk import (
-    DEFAULT_STALE_DAYS, freshness_report, obsidian_cli_path, parse_frontmatter,
+    DEFAULT_STALE_DAYS, obsidian_cli_path, parse_frontmatter,
     resolve_vault, schema_drift, smart_project_dir, suggest_status,
     walk_project, zone_matches_status, zone_of, VaultUnresolvableError,
 )
@@ -252,8 +252,6 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
     zone = zone_of(project_dir)
     status = {**sug, "zone": zone,
               "zone_matches": zone_matches_status(brief.get("status"), zone)}
-    # One walk feeds both audit sections: schema (shape) and freshness
-    # (what valid declarations mean today).
     files = list(walk_project(project_dir))
     return {
         "project": brief,
@@ -268,7 +266,6 @@ def run_check(project_dir: Path, code_root: Optional[Path] = None,
         "remember": remember_status(code_root or project_dir),
         "status": status,
         "schema": schema_drift(files, _TASK_ALIASES),
-        "freshness": freshness_report(files, today or date.today()),
         "environment": {"obsidian_cli": obsidian_cli_path() is not None},
     }
 

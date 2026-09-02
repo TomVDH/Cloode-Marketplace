@@ -221,7 +221,10 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
 # here (a custom lane you added) is never written back: there is no status
 # that means it.
 CANONICAL_STATUS_FOR_COLUMN = {
-    "backlog": "todo",
+    # v3: the task template declares `backlog`, and `todo` is one of the
+    # aliases STATUS_TO_COLUMN accepts on read. Writing back the alias put a
+    # value on disk that the derived schema does not list.
+    "backlog": "backlog",
     "next": "next",
     "doing": "doing",
     "review": "review",

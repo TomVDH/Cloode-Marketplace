@@ -8,23 +8,23 @@ Each rule states its shape once. Detail enforced mechanically is not restated:
 
 | rule area | enforcer |
 |---|---|
-| frontmatter keys per type | `FIELD_SCHEMA` in `_vault_walk.py`; validator 29; the PreToolUse schema gate; `tidy` feature 5 repairs |
+| frontmatter keys per type | the type's template, parsed by `_template_schema.py` into `FIELD_SCHEMA`; convention in `templates/README.md`; the PreToolUse gate; `tidy` feature 5 repairs |
 | tag buckets A, B, D | `BUCKET_A_TYPES` / `BUCKET_B_MIGRATIONS` / `BUCKET_D_TAG_EXACT`; `tidy.normalize_tags`; validator 2 |
-| status + freshness vocabularies | validators 23 (project), 26 (task aliases), 28 (decision), 31 (freshness) |
+| status vocabularies | the `status:` line's trailing `# a | b | c` comment in each template; validator 26 covers the board's read aliases |
 | wikilink form | `tidy` feature 4 |
 | folder shape, some file naming | `ramasse_scan` detectors |
 
-Validators 2, 23, 26, 28, 29 and 31 are parity checks: they hold this document, the templates and the `_vault_walk.py` constants to each other. They never read a vault file.
+The parity validators are gone. They held this document, the templates and a set of `_vault_walk.py` constants to each other, a question that only exists while a rule is written down twice. The template is the one declaration now.
 
-Caught at write time: a `Write` missing a required field, setting both `type:` and `node_type:`, or carrying a malformed §10 declaration is blocked; an unknown field passes, for `tidy` to strip. The gate ignores `Edit`s and status values; its skip list is internals.md detail. Everything else is reported after the fact or is judgment.
+Caught at write time: a `Write` missing a required field, or setting both `type:` and `node_type:`, is blocked; an unknown field passes, for `tidy` to strip. The gate ignores `Edit`s and status values; its skip list is internals.md detail. Everything else is reported after the fact or is judgment.
 
 ## 1. Frontmatter
 
-Every file has YAML frontmatter, except `Home.md` (`type` + `updated` only). Which keys are legal on which type is `FIELD_SCHEMA`: a required set, an optional set, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink fields such as `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
+Every file has YAML frontmatter. Legal keys are the type's template: no trailing comment means required, `# optional` means optional, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink fields such as `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
 
 Project membership is the folder path (`projects/[zone/]slug/…`), never a frontmatter field: the retired `project:` field (dropped v0.16.0) duplicated the path on every note and drifted whenever a project changed zones. The graph backlink flows through each folder's `_index.md` instead.
 
-`session_id:` (session notes) and `source_session:` (optional, content types) hold Claude Code conversation UUIDs so the conversation behind a write is one hop away. Both are hook-stamped, never hand-written, and `source_session` is off by default since v0.16.0. A stored UUID may dangle (transcripts are ephemeral): it retraces reasoning, never holds the conclusion, so a decision's content must land in the vault.
+`session:` holds the Claude Code conversation id behind a write, optional on the kinds whose template lists it and hook-stamped rather than hand-written. A stored id may dangle (transcripts are ephemeral): it retraces reasoning, never holds the conclusion, so a decision's content must land in the vault. The pre-v3 `session_id:` and `source_session:` are fields on no type; `tidy` strips them.
 
 ## 2. Tag schema (locked 2026-05-25)
 
@@ -34,7 +34,7 @@ Bare tags only, no prefix. Every file carries exactly one file-type tag matching
 
 ## 3. File-type schemas
 
-A template's kind is its `type:`, not its filename: `brief.md` is `project`; `home.md` and `index-project.md` are both `index`. Body shape is not machine-checked. Decision: `## Why` / `## Consequence`. Session: a closing summary line, then `## Log`. Doc: purpose sentence + `## {Section}`. Source: `## Key points` / `## Why it matters`. Release: `## Changes`. Task: `## Done when` / `## Notes`. Index: `# {Collection Name}`, one-line description, then `## Entries` of wikilinks, chronological where filenames carry dates and alphabetical otherwise. Iteration: a **folder** of build artefacts (HTML tryouts, experiments) whose optional `_iteration.md` indexes it. Note is free-form; the brief writes `## Stack` / `## Constraints` for coding and plugin only. handoff, dream and index are machine-written.
+A template's kind is its `type:`, not its filename: `brief.md` is `project`; `home.md` and `index-project.md` are both `index`. Body shape is not machine-checked. Decision: `## Why` / `## Consequence`. Session: a closing summary line, then `## Log`. Doc: purpose sentence + `## {Section}`. Source: `## Key points` / `## Why it matters`. Release: `## Changes`. Task: `## Done when` / `## Notes`. Index: `# {Collection Name}`, one-line description, then `## Entries` of wikilinks, chronological where filenames carry dates and alphabetical otherwise. Note is free-form; the brief writes `## Stack` / `## Constraints` for coding and plugin only. handoff, dream and index are machine-written.
 
 Doc vs decision, the common mix-up. A decision has a date-prefixed filename, lives in `decisions/`, says "we picked X over Y because Z", and is append-only history of a moment. A doc lives at project root or in `docs/`, says "what is true now / how X works", and gets rewritten as understanding evolves.
 
@@ -71,14 +71,14 @@ Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `
 
 ## 8. Project status and zones (locked 2026-07-16)
 
-`status:` on a brief takes exactly one of `active` | `stale` | `fridge` | `done` | `dead` | `seed`, and picking between them is judgment. `active`: being worked. `stale`: declared active but quiet past `stale_after_days` (default 30), the only machine-suggested state. `fridge`: deliberately paused, intent to return. `done`: shipped and complete, a success rather than an abandonment. `dead`: abandoned. `seed`: captured idea, not yet started.
+A project's state is one of `active` | `stale` | `fridge` | `done` | `dead` | `seed`, and picking between them is judgment. The zone folder carries it; the brief has no `status:` field, because a second answer can disagree with the first. `active`: being worked. `stale`: declared active but quiet past `stale_after_days` (default 30), the only machine-suggested state. `fridge`: deliberately paused, intent to return. `done`: shipped and complete, a success rather than an abandonment. `dead`: abandoned. `seed`: captured idea, not yet started.
 
 Placement follows status: `projects/` holds active, stale and seed; `projects/_fridge/` holds fridge; `projects/_archive/` holds done and dead. Transitions run only through `/adjudant shelf`, which moves the folder and rewrites `[[projects/…]]` prefixes vault-wide, so full-path wikilinks survive a zone move. The `[[{slug}/brief|{slug}]]` index-row form resolves across zones by Obsidian suffix matching and is never rewritten.
 
 ## 9. Decision status vocabulary (locked 2026-07-27)
 
-`status:` on a decision note takes exactly one of `active` | `superseded` | `reversed` | `implemented` | `deferred`. `active`: in force, guiding work. `superseded`: replaced by a newer decision, named in `supersedes:` on the successor. `reversed`: undone without a replacement. `implemented`: the decided work has shipped, the record is historical. `deferred`: parked with intent to revisit, neither in force nor rejected. Historical values (`accepted`, `locked`, `current`) are synonyms of `active`: `check` reports them off-vocabulary, `tidy` migrates them after preview.
+`status:` on a decision note takes exactly one of `active` | `superseded` | `reversed`, one axis: whether the decision is in force. `active`: guiding work. `superseded`: replaced by a newer decision. `reversed`: undone without a replacement. Whether the decided work has shipped is a card's business, not the decision's. Historical values (`accepted`, `locked`, `current`) are synonyms of `active`: `check` reports them off-vocabulary, `tidy` migrates them after preview.
 
-## 10. Epistemic freshness (locked 2026-07-31)
+## 10. Verification
 
-Optional on content types (`decision`, `note`, `doc`, `source`) only: `freshness:` = `timeless` | `dated` | `pointer`; `certainty:` 1-5; `validity_context:`; `valid_from:`/`valid_until:` dates. Malformed declarations are drift the write gate blocks; `check` reports the semantics. Declared signals outrank heuristics in every tier.
+The doc family (`project`, `doc`, `spec`, `component`, `api`, `schema`, `source`) carries `verified:` (a date) and `verified_by:` = `tested` | `read` | `docs`. A live probe and a skim of vendor docs are both verification and are not the same claim, so the page says which. It replaced a five-field epistemic block serving two read-only reporters.

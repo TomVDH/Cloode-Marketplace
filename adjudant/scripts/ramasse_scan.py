@@ -35,8 +35,8 @@ from _cost import cost_block, read_threshold, stat_walk
 from _vault_walk import (
     AUTO_CREATED_FOLDERS,
     BUCKET_A_TYPES,
-    BUCKET_A_TYPES_PLUS_HOME,
     BUCKET_B_MIGRATIONS,
+    FIELD_SCHEMA,
     DEFAULT_SKIP,
     INDEX_EXEMPT_FOLDERS,
     PROJECT_TYPE_DEFAULT_FOLDERS,
@@ -215,14 +215,18 @@ def detect_tag_drift(files: list[VaultFile], project_slug: Optional[str]) -> dic
 
 
 def detect_type_drift(files: list[VaultFile]) -> dict[str, Any]:
-    """Files with non-canonical `type:` values."""
+    """Files with a `type:` no template declares.
+
+    The canonical set is the schema's own key set, so a kind stops being
+    canonical the moment its template is deleted, with nothing here to edit.
+    """
     counter: Counter[str] = Counter()
     examples: dict[str, list[str]] = defaultdict(list)
     for f in files:
         t = f.file_type
         if not t:
             continue
-        if t not in BUCKET_A_TYPES_PLUS_HOME:
+        if t not in FIELD_SCHEMA:
             counter[t] += 1
             if len(examples[t]) < 3:
                 examples[t].append(str(f.rel_path))

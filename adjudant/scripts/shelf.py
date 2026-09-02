@@ -31,7 +31,6 @@ from _cost import breadcrumb_int
 from _vault_walk import (
     DEFAULT_SKIP,
     DEFAULT_STALE_DAYS,
-    PROJECT_STATUS_VALUES,
     ZONE_FOR_STATUS,
     VaultUnresolvableError,
     enumerate_projects_all_zones,
@@ -130,9 +129,9 @@ def append_status_log(text: str, from_state: Optional[str], to_state: str,
 def plan_transition(vault: Path, slug: str, to_state: str,
                     reason: Optional[str], today_str: str) -> dict[str, Any]:
     """Read-only plan: zones, folder move, vault-wide wikilink rewrites."""
-    if to_state not in PROJECT_STATUS_VALUES:
+    if to_state not in ZONE_FOR_STATUS:
         raise ValueError(
-            f"invalid state {to_state!r}; one of: {', '.join(PROJECT_STATUS_VALUES)}")
+            f"invalid state {to_state!r}; one of: {', '.join(ZONE_FOR_STATUS)}")
     pdir = find_project_dir(vault, slug)
     if pdir is None or not (pdir / "brief.md").is_file():
         raise ValueError(

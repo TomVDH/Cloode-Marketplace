@@ -227,7 +227,9 @@ class TestDetectTypeDrift(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_file(root / "a.md", "---\ntype: api-ref\n---\n")
-            _write_file(root / "b.md", "---\ntype: dream\n---\n")  # should be dream-report
+            # `dream-report` was a kind until v3 retired its template; the
+            # canonical set is now whatever the templates declare.
+            _write_file(root / "b.md", "---\ntype: dream-report\n---\n")
             _write_file(root / "c.md", "---\ntype: api-ref\n---\n")
             files = list(walk_project(root))
             drift = detect_type_drift(files)

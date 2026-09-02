@@ -50,11 +50,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _voice  # noqa: E402
-from _vault_walk import (  # noqa: E402
-    FIELD_SCHEMA,
-    FRESHNESS_VALUES,
-    PROJECT_STATUS_VALUES,
-)
+import _vault_walk  # noqa: E402
+from _vault_walk import FIELD_SCHEMA  # noqa: E402
+
+# Both constants were deleted in v3, when the templates became the schema.
+# Validators 23 and 29 exist only to check that a constant, the prose and the
+# templates agree; with the constant gone there is nothing left to compare, so
+# they report the absence rather than crashing the run. Both are deleted next.
+FRESHNESS_VALUES = getattr(_vault_walk, "FRESHNESS_VALUES", None)
+PROJECT_STATUS_VALUES = getattr(_vault_walk, "PROJECT_STATUS_VALUES", None)
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL = ROOT / "skills" / "adjudant"

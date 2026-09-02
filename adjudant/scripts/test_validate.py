@@ -570,15 +570,6 @@ class TestGitignoreIncludesRepoTidyDirs(_PatchedTree):
         self.assertTrue(any("gitignore-includes-repo-tidy-dirs" in f for f in r.failures))
 
 
-class TestStatusVocabulary(unittest.TestCase):
-
-    def test_validator_passes_on_repo(self):
-        r = validate.Result()
-        validate.validate_status_vocabulary(r)
-        self.assertEqual(r.failures, [], r.failures)
-        self.assertIn("status-vocabulary", r.passes)
-
-
 class TestVoiceLexicon(unittest.TestCase):
 
     def test_parse_voice_lists(self):

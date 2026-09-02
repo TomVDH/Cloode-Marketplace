@@ -25,7 +25,11 @@ Public API:
     schema_drift_for_text(text, rel_path, aliases=None) -> Optional[dict]
     schema_drift(files, aliases=None) -> dict
 
-Schema constants (single source of truth, imported by dream + tidy):
+Note schema, re-exported from _template_schema (the templates ARE the schema;
+nothing here declares a second copy):
+    FIELD_SCHEMA, STATUS_VALUES_FOR_TYPE, HEADINGS_FOR_TYPE
+
+Tag + folder constants (imported by dream + tidy):
     BUCKET_A_TYPES, BUCKET_B_MIGRATIONS, BUCKET_D_TAG_PREFIXES,
     BUCKET_D_TAG_EXACT, VAGUE_TOPICAL_TAGS, CREW_NAMES,
     PROJECT_TYPE_DEFAULT_FOLDERS, AUTO_CREATED_FOLDERS, INDEX_EXEMPT_FOLDERS
@@ -50,6 +54,14 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
+
+# The schema is parsed out of the shipped templates rather than declared
+# here; see the DERIVED block further down for what that replaced.
+from _template_schema import (
+    FIELD_SCHEMA,
+    HEADINGS_FOR_TYPE,
+    STATUS_VALUES_FOR_TYPE,
+)
 
 
 # ============================================================
@@ -956,10 +968,13 @@ INDEX_EXEMPT_FOLDERS: frozenset[str] = frozenset({
 # Project status lifecycle + zones (locked 2026-07-16)
 # ============================================================
 
-PROJECT_STATUS_VALUES: tuple[str, ...] = ("active", "stale", "fridge", "done", "dead", "seed")
+# The six project states, and the zone folder each one lives in. This map is
+# the vocabulary: `status in ZONE_FOR_STATUS` is the membership test, and
+# `' | '.join(ZONE_FOR_STATUS)` is how the words are shown to a person. It was
+# a second tuple until v3, kept in step by a validator.
 ZONE_FOR_STATUS: dict[str, str] = {
-    "active": "", "stale": "", "seed": "",
-    "fridge": "_fridge", "done": "_archive", "dead": "_archive",
+    "active": "", "stale": "", "fridge": "_fridge",
+    "done": "_archive", "dead": "_archive", "seed": "",
 }
 PROJECT_ZONES: tuple[str, ...] = ("", "_fridge", "_archive")
 DEFAULT_STALE_DAYS = 30
@@ -967,134 +982,25 @@ FRIDGE_NUDGE_DAYS = 180
 
 
 # ============================================================
-# Note-level frontmatter schema (locked 2026-07-27)
+# Note-level schema — DERIVED, not declared (v3)
 # ============================================================
-
-DECISION_STATUS_VALUES: tuple[str, ...] = (
-    "active", "superseded", "reversed", "implemented", "deferred")
-TASK_STATUS_VALUES: tuple[str, ...] = (
-    "todo", "next", "doing", "review", "blocked", "done", "icebox")
-ITERATION_STATUS_VALUES: tuple[str, ...] = (
-    "drafting", "on-shelf", "picked", "parked", "rejected", "superseded")
-
-# Types whose `status:` value is an enum. Everything else has no status field.
-STATUS_VALUES_FOR_TYPE: dict[str, tuple[str, ...]] = {
-    "decision": DECISION_STATUS_VALUES,
-    "task": TASK_STATUS_VALUES,
-    "project": PROJECT_STATUS_VALUES,
-    "iteration": ITERATION_STATUS_VALUES,
-}
-
-# Per Bucket-A type: required keys must be present; required | optional is the
-# full legal key set — any other key is an unknown field (drift). `project` is
-# deliberately absent everywhere: membership is the path. `source_session` is
-# optional wherever the stamp hook could historically write it, so old stamps
-# never read as drift.
-# Descriptive fields legal on every content type (not on system shapes:
-# session, handoff, vault-home). Widened 2026-07-27 so tidy never strips
-# real-world metadata Tom actually writes. `cssclasses` joined 2026-07-29:
-# vault-standards.md section 2 documents it as an Obsidian CSS class that
-# "tag normalization leaves alone", but it was absent from every
-# FIELD_SCHEMA optional set, so tidy feature 5 (the schema strip) flagged it
-# as unknown and stripped it out from under the human who set it. `project`
-# and `index` also get it directly below, since a brief or an index is
-# equally a rendered note a human may style.
-_CONTENT_OPTIONAL: frozenset[str] = frozenset({
-    "related", "title", "name", "description", "cssclasses",
-})
-
-# Epistemic freshness (v0.22.0, locked 2026-07-31): per-fact truth-lifetime
-# metadata, legal ONLY on the four content types (decision, note, doc,
-# source) — never on system shapes. Every stored fact is timeless, dated, or
-# a pointer; declared signals outrank heuristics in every tier.
-FRESHNESS_VALUES: tuple[str, ...] = ("timeless", "dated", "pointer")
-_EPISTEMIC_OPTIONAL: frozenset[str] = frozenset({
-    "freshness", "certainty", "validity_context", "valid_from", "valid_until",
-})
-
-# MEMORY.md heading starter set (remise promotion targets). Unknown headings
-# are legal - the escape hatch - but these four are what the analysis pass
-# reaches for first, and validator 36 holds them to template + reference.
-MEMORY_HEADINGS: tuple[str, ...] = (
-    "Decisions that held", "Preferences", "Gotchas", "Domain facts",
-)
-
-FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {
-    "decision": {
-        "required": frozenset({"type", "status", "date", "tags"}),
-        "optional": frozenset({"supersedes", "superseded_by",
-                               "implemented_verified", "source_session"})
-                    | _CONTENT_OPTIONAL | _EPISTEMIC_OPTIONAL,
-    },
-    "session": {
-        "required": frozenset({"type", "date", "started", "session_id", "tags"}),
-        "optional": frozenset(),
-    },
-    "note": {
-        "required": frozenset({"type", "created", "updated", "tags"}),
-        "optional": frozenset({"superseded_by", "source_session"})
-                    | _CONTENT_OPTIONAL | _EPISTEMIC_OPTIONAL,
-    },
-    "doc": {
-        "required": frozenset({"type", "title", "updated", "tags"}),
-        "optional": frozenset({"superseded_by", "source_session"})
-                    | (_CONTENT_OPTIONAL - {"title"}) | _EPISTEMIC_OPTIONAL,
-    },
-    "handoff": {
-        # session_id and future custom keys are legal here: the sync mirror
-        # (_handoff_freshness.preserved_frontmatter) contractually preserves
-        # them, so tidy must not stage them for stripping.
-        "required": frozenset({"type", "updated", "source", "tags"}),
-        "optional": frozenset({"created", "session_id"}),
-    },
-    "task": {
-        # `id` is card identity: board.py reads it (cards_from_tasks) and a
-        # reseed re-keys the card to the file stem if it disappears, losing
-        # the user's dragged column. Never strippable.
-        "required": frozenset({"type", "status", "tags"}),
-        "optional": frozenset({"category", "code", "id", "note", "source_session"})
-                    | _CONTENT_OPTIONAL,
-    },
-    "release": {
-        "required": frozenset({"type", "version", "date", "tags"}),
-        "optional": frozenset({"source_session"}) | _CONTENT_OPTIONAL,
-    },
-    "source": {
-        "required": frozenset({"type", "title", "tags"}),
-        "optional": frozenset({"author", "url", "medium", "year", "source_session"})
-                    | (_CONTENT_OPTIONAL - {"title"}) | _EPISTEMIC_OPTIONAL,
-    },
-    "iteration": {
-        "required": frozenset({"type", "identifier", "status", "date", "tags"}),
-        "optional": frozenset({"track", "register", "supersedes", "builds_on",
-                               "artefacts", "source_session"}) | _CONTENT_OPTIONAL,
-    },
-    "dream-report": {
-        "required": frozenset({"type", "date", "tags"}),
-        "optional": frozenset({"source_session"}) | _CONTENT_OPTIONAL,
-    },
-    "project": {
-        "required": frozenset({"type", "project_type", "slug", "aliases",
-                               "status", "created", "updated", "tags"}),
-        "optional": frozenset({"repo", "stack", "marketplace", "extra_folders",
-                               "relations", "codename", "cssclasses"}),
-    },
-    "memory": {
-        # Per-project perma-memory (remise promotion target). Timeless by
-        # construction: epistemic fields are deliberately absent - declaring
-        # freshness on the file that never stales would be a contradiction.
-        "required": frozenset({"type", "updated", "tags"}),
-        "optional": frozenset({"source_session"}) | _CONTENT_OPTIONAL,
-    },
-    "index": {
-        "required": frozenset({"type", "tags"}),
-        "optional": frozenset({"updated", "cssclasses"}),
-    },
-    "vault-home": {
-        "required": frozenset({"type", "updated"}),
-        "optional": frozenset(),
-    },
-}
+# The templates are the schema. Editing a template changes what check accepts;
+# there is no constant here to fall out of step with it. FIELD_SCHEMA,
+# STATUS_VALUES_FOR_TYPE and HEADINGS_FOR_TYPE are imported at the top of this
+# module from _template_schema, which parses skills/adjudant/templates/ at
+# import time. See templates/README.md for the comment convention a template
+# uses to say which of its fields are required.
+#
+# Gone with the constants: the epistemic block (freshness / certainty /
+# validity_context / valid_from / valid_until), five optional fields serving
+# two read-only reporters, whose malformed values were the strictest thing the
+# write gate blocked on. The `memory`, `iteration`, `dream-report` and
+# `vault-home` kinds went with their templates in the tasks before this one.
+#
+# The project lifecycle vocabulary is now read off ZONE_FOR_STATUS above: the
+# brief carries no `status:` field, so a project's state is the zone folder,
+# and the map from state to folder is the only place the six words need to be
+# written down.
 
 # ============================================================
 #  Durable writes: atomicity + advisory locking
@@ -1266,45 +1172,6 @@ DECISION_STATUS_ALIASES: dict[str, str] = {
 }
 
 
-def _validate_epistemic(fields: dict) -> list[dict]:
-    """Malformed epistemic declarations, as [{field, value, reason}].
-
-    Presence is legal (the optional sets say where); this checks SHAPE:
-    freshness in enum, certainty an integer 1-5, valid_from/valid_until real
-    calendar dates, and the window not inverted. Semantics (expiry, dangling
-    supersession) live in freshness_report — drift is for what the write
-    gate should refuse."""
-    bad: list[dict] = []
-    if "freshness" in fields:
-        v = fields["freshness"]
-        if not (isinstance(v, str) and v.strip() in FRESHNESS_VALUES):
-            bad.append({"field": "freshness", "value": v,
-                        "reason": f"must be one of {', '.join(FRESHNESS_VALUES)}"})
-    if "certainty" in fields:
-        v = fields["certainty"]
-        ok = isinstance(v, str) and v.strip().isdigit() and 1 <= int(v.strip()) <= 5
-        if not ok:
-            bad.append({"field": "certainty", "value": v,
-                        "reason": "must be an integer 1-5"})
-    window: dict[str, str] = {}
-    for key in ("valid_from", "valid_until"):
-        if key not in fields:
-            continue
-        v = fields[key]
-        try:
-            if not isinstance(v, str):
-                raise ValueError
-            datetime.strptime(v.strip(), "%Y-%m-%d")
-            window[key] = v.strip()
-        except ValueError:
-            bad.append({"field": key, "value": v,
-                        "reason": "must be a real YYYY-MM-DD date"})
-    if len(window) == 2 and window["valid_from"] > window["valid_until"]:
-        bad.append({"field": "valid_until", "value": window["valid_until"],
-                    "reason": "valid_from is after valid_until"})
-    return bad
-
-
 def obsidian_cli_path() -> Optional[str]:
     """Absolute path of the official Obsidian CLI, or None. A capability
     probe only - adjudant prefers app-level operations when the CLI exists
@@ -1322,46 +1189,6 @@ def _wikilink_stem(value: Any) -> Optional[str]:
     s = s.split("|", 1)[0].strip()
     stem = s.rsplit("/", 1)[-1].strip()
     return stem or None
-
-
-def freshness_report(files: list["VaultFile"], today: date) -> dict[str, Any]:
-    """Read-only truth-lifetime semantics over VALID epistemic declarations.
-
-    Shape problems are schema drift (the gate refuses them); this reports
-    what valid declarations MEAN today: expired validity windows, dangling
-    supersession pointers, dated facts with no clock attached, and adoption
-    counts. Content types only.
-    """
-    expired: list[dict] = []
-    dangling: list[dict] = []
-    unbounded: list[dict] = []
-    counts: dict[str, int] = {k: 0 for k in sorted(_EPISTEMIC_OPTIONAL)}
-    stems = {vf.path.stem for vf in files}
-    today_s = today.strftime("%Y-%m-%d")
-    for vf in files:
-        fields = vf.frontmatter.fields
-        if fields.get("type") not in ("decision", "note", "doc", "source"):
-            continue
-        if _validate_epistemic(fields):
-            continue  # malformed declarations are drift's finding, not semantics'
-        for k in counts:
-            if k in fields:
-                counts[k] += 1
-        vu = fields.get("valid_until")
-        if isinstance(vu, str) and vu.strip() and vu.strip() < today_s:
-            days = (today - datetime.strptime(vu.strip(), "%Y-%m-%d").date()).days
-            expired.append({"file": str(vf.rel_path),
-                            "valid_until": vu.strip(), "days_expired": days})
-        if fields.get("superseded_by") is not None:
-            target = _wikilink_stem(fields.get("superseded_by"))
-            if target is not None and target not in stems:
-                dangling.append({"file": str(vf.rel_path), "target": target})
-        fr = fields.get("freshness")
-        if (isinstance(fr, str) and fr.strip() == "dated"
-                and not fields.get("valid_from") and not fields.get("valid_until")):
-            unbounded.append({"file": str(vf.rel_path)})
-    return {"expired": expired, "dangling_supersession": dangling,
-            "dated_unbounded": unbounded, "counts": counts}
 
 
 def _schema_drift_core(fields: dict, has_block: bool, parse_error: Optional[str],
@@ -1397,10 +1224,6 @@ def _schema_drift_core(fields: dict, has_block: bool, parse_error: Optional[str]
             out["status_invalid"] = {"value": status, "normalizable": False}
     if "node_type" in keys and "type" in keys:
         out["type_conflict"] = True
-    if ftype in ("decision", "note", "doc", "source"):
-        epistemic = _validate_epistemic(fields)
-        if epistemic:
-            out["epistemic_invalid"] = epistemic
     if not out:
         return None
     out["file"] = rel
@@ -1459,7 +1282,6 @@ def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dic
             "unknown_fields": sum(1 for d in flagged if "unknown_fields" in d),
             "status_invalid": sum(1 for d in flagged if "status_invalid" in d),
             "type_conflict": sum(1 for d in flagged if "type_conflict" in d),
-            "epistemic_invalid": sum(1 for d in flagged if "epistemic_invalid" in d),
         },
         "samples": flagged[:20],
     }
@@ -1515,7 +1337,7 @@ def suggest_status(
             days_quiet = (today - datetime.strptime(last, "%Y-%m-%d").date()).days
         except ValueError:
             days_quiet = None
-    valid = declared in PROJECT_STATUS_VALUES
+    valid = declared in ZONE_FOR_STATUS
     effective = declared if valid else "active"
     out: dict[str, Any] = {
         "declared": declared,
@@ -1564,7 +1386,7 @@ def zone_matches_status(status: Optional[str], zone: str) -> bool:
     Unknown status values return True: the vocabulary problem is reported
     separately (declared_valid), not double-counted as a zone mismatch.
     """
-    if status not in PROJECT_STATUS_VALUES:
+    if status not in ZONE_FOR_STATUS:
         return True
     return ZONE_FOR_STATUS[status] == zone
 
@@ -1693,7 +1515,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         if type_counter:
             print(f"\ntype inventory:")
             for t, n in type_counter.most_common():
-                marker = " " if t in BUCKET_A_TYPES_PLUS_HOME else "*"
+                marker = " " if t in FIELD_SCHEMA else "*"
                 print(f"  {marker} {n:4}  {t}")
         if tag_counter:
             print(f"\ntop 30 tags:")

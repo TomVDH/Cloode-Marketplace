@@ -121,11 +121,8 @@ def read_breadcrumb(project_dir: Path) -> dict:
 
 _SESSION_NOTE = """---
 type: session
-date: %(today)s
-started: %(ts)s
-session_id: []
-tags:
-  - session
+created: %(today)s
+updated: %(today)s
 ---
 
 > {One-line intent. Frozen after first write.}
@@ -135,7 +132,7 @@ tags:
 """
 
 
-def ensure_session_note(sessions_dir: Path, today: str, ts: str = "") -> Path:
+def ensure_session_note(sessions_dir: Path, today: str) -> Path:
     """Today's session note, created if this is the first real write.
 
     v3 moved creation here from SessionStart: a note that exists only because
@@ -143,10 +140,14 @@ def ensure_session_note(sessions_dir: Path, today: str, ts: str = "") -> Path:
     that. Created with noclobber semantics so two async hooks racing on the
     first write of the day cannot truncate each other.
 
-    The frontmatter is the locked `session` shape (_vault_walk.FIELD_SCHEMA and
-    templates/session.md), not a new one — nothing here migrates the schema, so
-    a note this hook writes must still validate. The intent placeholder stays:
-    the UserPromptSubmit nudge greps for it.
+    The frontmatter is the `session` shape templates/session.md declares, which
+    since v3 is the schema itself — `type`, `created`, `updated`, and nothing
+    else. A note this hook writes must validate against the same derived
+    FIELD_SCHEMA the write gate applies, so the three pre-v3 fields (`date`,
+    `started`, `session_id`) and the bare `session` tag are gone with the
+    template that used to declare them. The intent placeholder stays: the
+    UserPromptSubmit nudge greps for it, and the template's own first line is
+    written at session end rather than at creation.
     """
     note = sessions_dir / f"{today}.md"
     if note.exists():
@@ -160,10 +161,7 @@ def ensure_session_note(sessions_dir: Path, today: str, ts: str = "") -> Path:
         return note                      # read-only vault: caller's append no-ops
     try:
         with os.fdopen(fd, "w") as f:
-            f.write(_SESSION_NOTE % {
-                "today": today,
-                "ts": ts or datetime.now().strftime("%H:%M"),
-            })
+            f.write(_SESSION_NOTE % {"today": today})
     except OSError:
         pass
     return note
@@ -302,7 +300,7 @@ def main() -> int:
     if not session_file.exists():
         # No note for today and none to straddle into: this write is the first
         # real work of the day, so the note is born here.
-        session_file = ensure_session_note(project_root / "sessions", today, ts)
+        session_file = ensure_session_note(project_root / "sessions", today)
     try:
         with session_file.open("a") as f:
             f.write(f"- {ts} · {label}: {link}\n")

@@ -36,7 +36,6 @@ from _vault_walk import (  # noqa: E402
     VaultUnresolvableError,
     atomic_write_text,
     file_lock,
-    freshness_report,
     smart_project_dir,
     walk_project,
 )
@@ -129,17 +128,20 @@ def _unstamp_agents(project_dir: Path) -> None:
 
 def run_pulse(project_dir: Path, today: _dt.date) -> dict[str, Any]:
     """Does the working context still hold? Read-only, composed from sensors
-    that already exist: freshness_report (declared truth-lifetimes), the
-    handoff NEXT, and dream's dangling-scope detector. Adds nothing clever -
-    the pulse's one original contribution is the `quiet` verdict, because the
-    advisor's contract is silence when nothing is flagged, and a pulse that
-    always finds something to say trains the user to skip it."""
+    that already exist: the handoff NEXT and dream's dangling-scope detector.
+    Adds nothing clever - the pulse's one original contribution is the `quiet`
+    verdict, because the advisor's contract is silence when nothing is
+    flagged, and a pulse that always finds something to say trains the user to
+    skip it.
+
+    The declared truth-lifetime sensor is gone with the epistemic fields it
+    read: no template declares them, so no file legally carries one.
+    """
     # Local import: dream pulls its full detector suite in; the toggle path
     # (on/off/status) must not pay for it.
     from dream import detect_dangling_scopes
 
     files = list(walk_project(project_dir))
-    fresh = freshness_report(files, today)
     dangling = detect_dangling_scopes(files, today)
 
     next_step: Optional[str] = None
@@ -161,13 +163,10 @@ def run_pulse(project_dir: Path, today: _dt.date) -> dict[str, Any]:
                          if ln.strip() and not ln.strip().startswith("#")), "")[:160],
     } for f in decisions]
 
-    quiet = not (fresh["expired"] or fresh["dangling_supersession"]
-                 or fresh["dated_unbounded"] or dangling)
     return {
         "today": str(today),
-        "quiet": quiet,
+        "quiet": not dangling,
         "next_step": next_step,
-        "freshness": fresh,
         "dangling_scopes": dangling,
         "recent_decisions": recent,
     }

@@ -297,10 +297,11 @@ class TestSuitcaseStatus(unittest.TestCase):
 
 
 _CLEAN_BRIEF = (
-    "---\ntype: project\nproject_type: coding\nslug: t\naliases: [t]\n"
-    "status: active\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - project\n---\n\n# T\n")
+    "---\ntype: project\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+    "verified: 2026-01-01\nverified_by: read\n---\n\n# T\n")
 _CLEAN_DECISION = (
-    "---\ntype: decision\nstatus: active\ndate: 2026-07-27\ntags:\n  - decision\n---\n\nD\n")
+    "---\ntype: decision\nstatus: active\ncreated: 2026-07-27\n"
+    "updated: 2026-07-27\n---\n\nD\n")
 
 
 class TestSchemaSection(unittest.TestCase):
@@ -321,7 +322,7 @@ class TestSchemaSection(unittest.TestCase):
             _write(root / "brief.md", _CLEAN_BRIEF)
             _write(root / "notes" / "n.md",
                    "---\ntype: note\nproject: \"[[projects/t/brief|t]]\"\n"
-                   "created: 2026-01-01\nupdated: 2026-01-01\ntags:\n  - note\n---\nN\n")
+                   "created: 2026-01-01\nupdated: 2026-01-01\n---\nN\n")
             _write(root / "decisions" / "2026-07-27-a.md",
                    _CLEAN_DECISION.replace("status: active", "status: accepted"))
             report = run_check(root)
@@ -375,23 +376,6 @@ class TestRememberSection(unittest.TestCase):
             self.assertTrue(report["remember"]["present"])
             self.assertTrue(report["remember"]["empty"])
 
-
-class TestFreshnessSection(unittest.TestCase):
-    """v0.22.0: run_check carries the freshness report (single walk shared
-    with the schema section)."""
-
-    def test_run_check_reports_freshness(self):
-        from datetime import date
-        with tempfile.TemporaryDirectory() as tmp:
-            proot = Path(tmp)
-            (proot / "notes").mkdir(parents=True)
-            (proot / "notes" / "old.md").write_text(
-                "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
-                "tags:\n  - note\nvalid_until: 2026-01-15\n---\nbody\n")
-            out = run_check(proot, today=date(2026, 7, 30))
-            self.assertIn("freshness", out)
-            self.assertEqual(len(out["freshness"]["expired"]), 1)
-            self.assertEqual(out["freshness"]["counts"]["valid_until"], 1)
 
 
 if __name__ == "__main__":

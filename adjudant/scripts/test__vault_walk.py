@@ -859,7 +859,6 @@ from datetime import date
 
 from _vault_walk import (
     DEFAULT_STALE_DAYS,
-    PROJECT_STATUS_VALUES,
     PROJECT_ZONES,
     ZONE_FOR_STATUS,
     enumerate_projects_all_zones,
@@ -888,11 +887,12 @@ def _mk_project(vault: Path, slug: str, zone: str = "", status: str = "active",
 class TestStatusVocabulary(unittest.TestCase):
 
     def test_locked_values(self):
-        self.assertEqual(PROJECT_STATUS_VALUES,
+        # v3: ZONE_FOR_STATUS is the vocabulary. It was a second tuple until
+        # the templates became the schema and the brief lost its status field.
+        self.assertEqual(tuple(ZONE_FOR_STATUS),
                          ("active", "stale", "fridge", "done", "dead", "seed"))
 
     def test_zone_map_total(self):
-        self.assertEqual(set(ZONE_FOR_STATUS), set(PROJECT_STATUS_VALUES))
         self.assertEqual(ZONE_FOR_STATUS["fridge"], "_fridge")
         self.assertEqual(ZONE_FOR_STATUS["done"], "_archive")
         self.assertEqual(ZONE_FOR_STATUS["dead"], "_archive")
@@ -1028,48 +1028,26 @@ class TestZones(unittest.TestCase):
 
 
 from _vault_walk import (
-    BUCKET_A_TYPES,
-    DECISION_STATUS_VALUES,
     FIELD_SCHEMA,
-    ITERATION_STATUS_VALUES,
     STATUS_VALUES_FOR_TYPE,
-    TASK_STATUS_VALUES,
 )
 
 
 class TestFieldSchema(unittest.TestCase):
-
-    def test_decision_status_values_locked(self):
-        self.assertEqual(DECISION_STATUS_VALUES,
-                         ("active", "superseded", "reversed", "implemented", "deferred"))
-
-    def test_task_status_values_locked(self):
-        # v1.0.0: `next` joined the vocabulary so every board lane has a
-        # status that means it - the write-back has nothing to write
-        # otherwise, and the Next lane would diverge silently forever.
-        self.assertEqual(TASK_STATUS_VALUES,
-                         ("todo", "next", "doing", "review", "blocked",
-                          "done", "icebox"))
 
     def test_every_board_lane_has_a_canonical_status(self):
         from board import CANONICAL_STATUS_FOR_COLUMN, DEFAULT_COLUMNS
         for col in DEFAULT_COLUMNS:
             status = CANONICAL_STATUS_FOR_COLUMN.get(col["id"])
             self.assertIsNotNone(status, f"lane {col['id']} has no status")
-            self.assertIn(status, TASK_STATUS_VALUES)
-
-    def test_iteration_status_values_locked(self):
-        self.assertEqual(ITERATION_STATUS_VALUES,
-                         ("drafting", "on-shelf", "picked", "parked", "rejected", "superseded"))
+            self.assertIn(status, STATUS_VALUES_FOR_TYPE["task"])
 
     def test_status_values_for_type_keys(self):
+        # Derived: a kind has a status vocabulary exactly when its template
+        # writes one as a trailing `# a | b | c` comment. project lost its
+        # status with the brief; spec gained one.
         self.assertEqual(set(STATUS_VALUES_FOR_TYPE),
-                         {"decision", "task", "project", "iteration"})
-        self.assertIs(STATUS_VALUES_FOR_TYPE["decision"], DECISION_STATUS_VALUES)
-        self.assertIs(STATUS_VALUES_FOR_TYPE["project"], PROJECT_STATUS_VALUES)
-
-    def test_schema_covers_every_bucket_a_type_plus_home(self):
-        self.assertEqual(set(FIELD_SCHEMA), set(BUCKET_A_TYPES) | {"vault-home"})
+                         {"decision", "task", "spec"})
 
     def test_every_entry_has_required_and_optional_frozensets(self):
         for ftype, spec in FIELD_SCHEMA.items():
@@ -1086,17 +1064,6 @@ class TestFieldSchema(unittest.TestCase):
         for ftype, spec in FIELD_SCHEMA.items():
             self.assertNotIn("project", spec["required"], ftype)
             self.assertNotIn("project", spec["optional"], ftype)
-
-    def test_decision_shape(self):
-        self.assertEqual(FIELD_SCHEMA["decision"]["required"],
-                         frozenset({"type", "status", "date", "tags"}))
-        # v0.22.0: the epistemic freshness set joined every content type.
-        self.assertEqual(FIELD_SCHEMA["decision"]["optional"],
-                         frozenset({"supersedes", "superseded_by", "implemented_verified",
-                                    "source_session", "related", "title", "name",
-                                    "description", "cssclasses",
-                                    "freshness", "certainty", "validity_context",
-                                    "valid_from", "valid_until"}))
 
     def test_is_safe_slug_accepts_kebab(self):
         from _vault_walk import is_safe_slug
@@ -1142,117 +1109,6 @@ class TestFieldSchema(unittest.TestCase):
             self.assertEqual(connect.validate_slug(value) is None,
                              is_safe_slug(value), repr(value))
 
-    def test_board_read_fields_never_strippable(self):
-        # Regression, audit 2026-07-27: board.py cards_from_tasks reads
-        # `code`/`id` for card identity and `title` for the label. If tidy
-        # strips them the next reseed re-keys the card to the file stem and
-        # the user's dragged column is lost.
-        from board import STATUS_TO_COLUMN  # noqa: F401 - import parity w/ tidy
-        task_opt = FIELD_SCHEMA["task"]["optional"]
-        for key in ("id", "code", "title"):
-            self.assertIn(key, task_opt, key)
-        vf = _vf("---\ntype: task\nstatus: doing\nid: LOGIN-7\n"
-                 "title: Fix login\ntags:\n  - task\n---\n")
-        self.assertIsNone(schema_drift_for_file(vf, set(STATUS_TO_COLUMN)))
-
-    def test_handoff_preserved_keys_never_strippable(self):
-        # Regression, audit 2026-07-27: _handoff_freshness.preserved_frontmatter
-        # contractually preserves session_id on handoffs; tidy must agree.
-        self.assertIn("session_id", FIELD_SCHEMA["handoff"]["optional"])
-        vf = _vf("---\ntype: handoff\nupdated: 2026-01-01\nsource: remember\n"
-                 "session_id:\n  - abc\ntags:\n  - handoff\n---\n")
-        self.assertIsNone(schema_drift_for_file(vf))
-
-    def test_cssclasses_never_strippable(self):
-        # Regression: vault-standards.md section 2 documents `cssclasses:` as
-        # an Obsidian CSS class that "tag normalization leaves alone" - legal
-        # on any note a human authors. It was in no FIELD_SCHEMA optional
-        # set, so tidy feature 5 (the schema strip) flagged it as unknown and
-        # stripped it, breaking the document's own promise. A brief and an
-        # index are equally human-styled notes, so they get it too; session,
-        # handoff and vault-home stay narrow since they are machine-written.
-        for ftype in ("note", "decision", "project", "index"):
-            self.assertIn("cssclasses", FIELD_SCHEMA[ftype]["optional"], ftype)
-        for ftype in ("session", "handoff", "vault-home"):
-            self.assertNotIn("cssclasses", FIELD_SCHEMA[ftype]["optional"], ftype)
-        note = ("---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
-                "cssclasses: wide-page\ntags:\n  - note\n---\n")
-        self.assertIsNone(schema_drift_for_file(_vf(note)))
-        decision = ("---\ntype: decision\nstatus: active\ndate: 2026-07-27\n"
-                    "cssclasses: wide-page\ntags:\n  - decision\n---\n")
-        self.assertIsNone(schema_drift_for_file(_vf(decision)))
-        project = ("---\ntype: project\nproject_type: coding\nslug: demo\n"
-                   "aliases:\n  - demo\nstatus: active\ncreated: 2026-01-01\n"
-                   "updated: 2026-01-01\ncssclasses: wide-page\ntags:\n"
-                   "  - project\n---\n")
-        self.assertIsNone(schema_drift_for_file(_vf(project, rel="projects/demo/brief.md")))
-        index = "---\ntype: index\ncssclasses: wide-page\ntags:\n  - index\n---\n"
-        self.assertIsNone(schema_drift_for_file(_vf(index, rel="notes/_index.md")))
-
-    def test_content_docs_do_not_prescribe_stripped_keys(self):
-        # Third instance of a bug class this branch fixed twice: a reference
-        # doc tells a model to write a key FIELD_SCHEMA rejects, and tidy
-        # feature 5 deletes it on the next pass. content-clipper.md prescribed
-        # `created:` on a `source` and never mentioned the REQUIRED `title:`;
-        # content-markdown.md prescribed `aliases:` on notes. Both documents
-        # now say so, and these assertions are what makes that saying true.
-        ref = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "reference"
-        source = FIELD_SCHEMA["source"]
-        self.assertNotIn("created", source["required"] | source["optional"],
-                         "content-clipper.md tells the reader tidy strips "
-                         "created: from a source")
-        self.assertIn("title", source["required"],
-                      "content-clipper.md names title: as required on a source")
-        note = FIELD_SCHEMA["note"]
-        self.assertNotIn("aliases", note["required"] | note["optional"],
-                         "content-markdown.md tells the reader tidy strips "
-                         "aliases: from a note")
-        self.assertIn("aliases", FIELD_SCHEMA["project"]["required"],
-                      "content-markdown.md sends aliases: to brief.md instead")
-        for ftype, spec in FIELD_SCHEMA.items():
-            self.assertNotIn("project", spec["required"] | spec["optional"],
-                             f"{ftype}: membership is the folder path, and both "
-                             "content docs say never to write project:")
-        clipper = (ref / "content-clipper.md").read_text()
-        self.assertIn("`title:`", clipper)
-        self.assertNotIn("ISO `created:` date", clipper)
-        markdown = (ref / "content-markdown.md").read_text()
-        self.assertIn("`aliases:` is not", markdown)
-        self.assertNotIn("piped wikilink `project:` fields", markdown)
-
-    def test_content_optional_widening(self):
-        # 2026-07-27: related/title/name/description legal on every content
-        # type; superseded_by on decision/doc/note; implemented_verified on
-        # decision only. System shapes stay narrow.
-        for ftype in ("decision", "note", "task", "release", "source",
-                      "iteration", "dream-report", "doc"):
-            for key in ("related", "name", "description"):
-                self.assertIn(key, FIELD_SCHEMA[ftype]["optional"], (ftype, key))
-        # title is REQUIRED on doc/source, optional elsewhere - never both
-        for ftype in ("decision", "note", "task", "release", "iteration", "dream-report"):
-            self.assertIn("title", FIELD_SCHEMA[ftype]["optional"], ftype)
-        for ftype in ("doc", "source"):
-            self.assertIn("title", FIELD_SCHEMA[ftype]["required"], ftype)
-            self.assertNotIn("title", FIELD_SCHEMA[ftype]["optional"], ftype)
-        for ftype in ("decision", "doc", "note"):
-            self.assertIn("superseded_by", FIELD_SCHEMA[ftype]["optional"], ftype)
-        self.assertIn("implemented_verified", FIELD_SCHEMA["decision"]["optional"])
-        self.assertNotIn("implemented_verified", FIELD_SCHEMA["note"]["optional"])
-        for ftype in ("session", "handoff", "index", "project", "vault-home"):
-            self.assertNotIn("related", FIELD_SCHEMA[ftype]["optional"], ftype)
-
-    def test_session_requires_session_id(self):
-        self.assertIn("session_id", FIELD_SCHEMA["session"]["required"])
-        self.assertEqual(FIELD_SCHEMA["session"]["optional"], frozenset())
-
-    def test_project_brief_shape(self):
-        self.assertEqual(FIELD_SCHEMA["project"]["required"],
-                         frozenset({"type", "project_type", "slug", "aliases",
-                                    "status", "created", "updated", "tags"}))
-        self.assertIn("codename", FIELD_SCHEMA["project"]["optional"])
-        self.assertIn("marketplace", FIELD_SCHEMA["project"]["optional"])
-
-
 from _vault_walk import (
     DECISION_STATUS_ALIASES,
     VaultFile,
@@ -1269,7 +1125,8 @@ def _vf(text: str, rel: str = "notes/x.md") -> VaultFile:
 
 
 _CLEAN_DECISION = (
-    "---\ntype: decision\nstatus: active\ndate: 2026-07-27\ntags:\n  - decision\n---\n\nBody\n")
+    "---\ntype: decision\nstatus: active\ncreated: 2026-07-27\n"
+    "updated: 2026-07-27\n---\n\nBody\n")
 
 
 class TestSchemaDrift(unittest.TestCase):
@@ -1278,8 +1135,8 @@ class TestSchemaDrift(unittest.TestCase):
         self.assertIsNone(schema_drift_for_file(_vf(_CLEAN_DECISION)))
 
     def test_missing_required_flagged(self):
-        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace("date: 2026-07-27\n", "")))
-        self.assertEqual(d["missing_required"], ["date"])
+        d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace("created: 2026-07-27\n", "")))
+        self.assertEqual(d["missing_required"], ["created"])
 
     def test_project_field_is_unknown(self):
         d = schema_drift_for_file(_vf(_CLEAN_DECISION.replace(
@@ -1310,15 +1167,20 @@ class TestSchemaDrift(unittest.TestCase):
         # Aliases are accepted input (vault-standards section 4): with the
         # alias set supplied a wip task is clean; without it, flagged but
         # never normalizable (tidy must not rewrite lane information).
-        task = "---\ntype: task\nstatus: wip\ntags:\n  - task\n---\n"
+        task = ("---\ntype: task\nstatus: wip\ncreated: 2026-07-27\n"
+                "updated: 2026-07-27\n---\n")
         self.assertIsNone(schema_drift_for_file(_vf(task), aliases={"wip", "parked"}))
         d = schema_drift_for_file(_vf(task))
         self.assertFalse(d["status_invalid"]["normalizable"])
 
-    def test_session_with_empty_id_list_clean(self):
-        s = ("---\ntype: session\ndate: 2026-07-27\nstarted: \"09:00\"\n"
-             "session_id: []\ntags:\n  - session\n---\n")
+    def test_session_is_three_fields_and_nothing_else(self):
+        # v3 dropped date, started, session_id and the bare tag: one note had
+        # stacked eighteen conversation UUIDs into session_id.
+        s = "---\ntype: session\ncreated: 2026-07-27\nupdated: 2026-07-27\n---\n"
         self.assertIsNone(schema_drift_for_file(_vf(s)))
+        d = schema_drift_for_file(_vf(s.replace(
+            "updated: 2026-07-27\n", "updated: 2026-07-27\nsession_id: []\n")))
+        self.assertEqual(d["unknown_fields"], ["session_id"])
 
     def test_decision_alias_map_locked(self):
         self.assertEqual(DECISION_STATUS_ALIASES,
@@ -1327,7 +1189,7 @@ class TestSchemaDrift(unittest.TestCase):
     def test_aggregate_counts_and_skips(self):
         files = [
             _vf(_CLEAN_DECISION),                                     # clean
-            _vf(_CLEAN_DECISION.replace("date: 2026-07-27\n", "")),   # flagged
+            _vf(_CLEAN_DECISION.replace("created: 2026-07-27\n", "")),  # flagged
             _vf("no frontmatter at all\n"),                           # unchecked
             _vf("---\ntype: tasks\n---\n"),                           # non-canonical type
             _vf("---\ntype: decision\nbroken"),                       # parse error
@@ -1342,8 +1204,8 @@ class TestSchemaDrift(unittest.TestCase):
 
     def test_schema_drift_for_text_matches_file_variant(self):
         from _vault_walk import schema_drift_for_text
-        text = ("---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
-                "tags:\n  - decision\n---\n\nBody.\n")
+        text = ("---\ntype: decision\nstatus: accepted\ncreated: 2026-01-01\n"
+                "updated: 2026-01-01\n---\n\nBody.\n")
         by_text = schema_drift_for_text(text, "decisions/d.md")
         by_file = schema_drift_for_file(_vf(text, rel="decisions/d.md"))
         self.assertEqual(by_text, by_file)
@@ -1357,8 +1219,7 @@ class TestSchemaDrift(unittest.TestCase):
 
     def test_schema_drift_for_text_clean_returns_none(self):
         from _vault_walk import schema_drift_for_text
-        text = ("---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
-                "tags:\n  - note\n---\n\nB\n")
+        text = "---\ntype: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n\nB\n"
         self.assertIsNone(schema_drift_for_text(text, "notes/n.md"))
 
     def test_schema_drift_for_text_ignores_unjudgeable(self):
@@ -1565,151 +1426,12 @@ class TestFileLock(unittest.TestCase):
             self.assertTrue(lock_path_for(target).exists())
 
 
-class TestEpistemicFields(unittest.TestCase):
-    """v0.22.0 tranche 1: per-fact truth-lifetime frontmatter. Fields are
-    optional on content types, illegal on system shapes, and malformed
-    declarations are schema drift the write gate refuses."""
+class TestWalkSkipsWorkingDirs(unittest.TestCase):
+    """archived-context/ and the remise working dirs are never walked.
 
-    def _drift_note(self, extra: str):
-        from _vault_walk import schema_drift_for_text
-        text = ("---\ntype: note\ncreated: 2026-07-01\nupdated: 2026-07-01\n"
-                "tags:\n  - note\n" + extra + "---\nbody\n")
-        return schema_drift_for_text(text, "notes/x.md")
-
-    def test_all_five_fields_legal_on_note(self):
-        self.assertIsNone(self._drift_note(
-            "freshness: dated\ncertainty: 4\n"
-            "validity_context: while OneDrive hosts the git store\n"
-            "valid_from: 2026-07-01\nvalid_until: 2026-12-31\n"))
-
-    def test_fields_illegal_on_session(self):
-        from _vault_walk import schema_drift_for_text
-        text = ("---\ntype: session\ndate: 2026-07-01\nstarted: 09:00\n"
-                "session_id: []\ntags:\n  - session\ncertainty: 3\n---\n")
-        d = schema_drift_for_text(text, "sessions/2026-07-01.md")
-        self.assertIsNotNone(d)
-        self.assertIn("certainty", d.get("unknown_fields", []))
-
-    def test_bad_freshness_value_is_drift(self):
-        d = self._drift_note("freshness: eternal\n")
-        self.assertIsNotNone(d)
-        fields = [e["field"] for e in d.get("epistemic_invalid", [])]
-        self.assertIn("freshness", fields)
-
-    def test_certainty_out_of_range_and_shape(self):
-        for bad in ("certainty: 7\n", "certainty: high\n", "certainty: 3.5\n",
-                    "certainty:\n  - 3\n"):
-            d = self._drift_note(bad)
-            self.assertIsNotNone(d, bad)
-            fields = [e["field"] for e in d.get("epistemic_invalid", [])]
-            self.assertIn("certainty", fields, bad)
-        self.assertIsNone(self._drift_note("certainty: 1\n"))
-        self.assertIsNone(self._drift_note("certainty: 5\n"))
-
-    def test_impossible_and_malformed_dates_are_drift(self):
-        for bad in ("valid_until: 2026-99-99\n", "valid_from: soon\n"):
-            d = self._drift_note(bad)
-            self.assertIsNotNone(d, bad)
-            self.assertTrue(d.get("epistemic_invalid"), bad)
-
-    def test_inverted_validity_window_is_drift(self):
-        d = self._drift_note("valid_from: 2026-12-31\nvalid_until: 2026-01-01\n")
-        self.assertIsNotNone(d)
-        reasons = " ".join(e.get("reason", "") for e in d.get("epistemic_invalid", []))
-        self.assertIn("valid_from", reasons)
-
-
-class TestFreshnessReport(unittest.TestCase):
-    """v0.22.0 tranche 1: read-only semantics over VALID epistemic
-    declarations - expiry, dangling supersession, dated-without-bounds."""
-
-    def _report(self, tmp: Path):
-        from datetime import date
-        from _vault_walk import freshness_report, walk_project
-        return freshness_report(list(walk_project(tmp)), date(2026, 7, 30))
-
-    def _note(self, tmp: Path, name: str, extra: str) -> None:
-        p = tmp / "notes" / name
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("---\ntype: note\ncreated: 2026-07-01\n"
-                     "updated: 2026-07-01\ntags:\n  - note\n" + extra
-                     + "---\nbody\n")
-
-    def test_expired_validity_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmpp = Path(tmp)
-            self._note(tmpp, "old.md", "valid_until: 2026-01-01\n")
-            self._note(tmpp, "current.md", "valid_until: 2026-12-31\n")
-            rep = self._report(tmpp)
-            self.assertEqual(len(rep["expired"]), 1)
-            e = rep["expired"][0]
-            self.assertIn("old.md", str(e["file"]))
-            self.assertEqual(e["days_expired"], 210)
-
-    def test_dangling_supersession_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmpp = Path(tmp)
-            self._note(tmpp, "a.md", 'superseded_by: "[[notes/gone|the new one]]"\n')
-            self._note(tmpp, "b.md", 'superseded_by: "[[notes/target]]"\n')
-            self._note(tmpp, "target.md", "")
-            rep = self._report(tmpp)
-            self.assertEqual(len(rep["dangling_supersession"]), 1)
-            d = rep["dangling_supersession"][0]
-            self.assertIn("a.md", str(d["file"]))
-            self.assertEqual(d["target"], "gone")
-
-    def test_dated_without_bounds_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmpp = Path(tmp)
-            self._note(tmpp, "vague.md", "freshness: dated\n")
-            self._note(tmpp, "bounded.md",
-                       "freshness: dated\nvalid_until: 2026-12-31\n")
-            self._note(tmpp, "forever.md", "freshness: timeless\n")
-            rep = self._report(tmpp)
-            self.assertEqual(len(rep["dated_unbounded"]), 1)
-            self.assertIn("vague.md", str(rep["dated_unbounded"][0]["file"]))
-
-    def test_adoption_counts_and_clean_vault(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmpp = Path(tmp)
-            self._note(tmpp, "one.md", "freshness: timeless\ncertainty: 5\n")
-            self._note(tmpp, "plain.md", "")
-            rep = self._report(tmpp)
-            self.assertEqual(rep["counts"]["freshness"], 1)
-            self.assertEqual(rep["counts"]["certainty"], 1)
-            self.assertEqual(rep["expired"], [])
-            self.assertEqual(rep["dangling_supersession"], [])
-
-
-class TestMemoryType(unittest.TestCase):
-    """remise groundwork: MEMORY.md is a schema type that never stales,
-    never carries epistemic fields, and never gets walked into archives."""
-
-    def test_memory_schema_shape(self):
-        self.assertIn("memory", FIELD_SCHEMA)
-        self.assertEqual(FIELD_SCHEMA["memory"]["required"],
-                         frozenset({"type", "updated", "tags"}))
-        from _vault_walk import _EPISTEMIC_OPTIONAL
-        self.assertFalse(_EPISTEMIC_OPTIONAL & FIELD_SCHEMA["memory"]["optional"],
-                         "memory is timeless by construction; epistemic fields are contradictory")
-
-    def test_memory_headings_constant(self):
-        from _vault_walk import MEMORY_HEADINGS
-        self.assertEqual(MEMORY_HEADINGS,
-                         ("Decisions that held", "Preferences",
-                          "Gotchas", "Domain facts"))
-
-    def test_memory_exempt_from_freshness_and_staleness(self):
-        from datetime import date
-        from _vault_walk import freshness_report, walk_project
-        with tempfile.TemporaryDirectory() as tmp:
-            proot = Path(tmp)
-            (proot / "MEMORY.md").write_text(
-                "---\ntype: memory\nupdated: 2020-01-01\ntags:\n  - memory\n---\n\n"
-                "## Gotchas\n\n- 2020-01-01 · old but never stale\n")
-            files = list(walk_project(proot))
-            rep = freshness_report(files, date(2026, 8, 1))
-            self.assertEqual(rep["counts"], {k: 0 for k in rep["counts"]})
+    Was TestMemoryType, whose other three tests asserted the `memory` kind's
+    schema shape; the kind went with its template in v3.
+    """
 
     def test_archived_context_and_remise_dirs_skipped(self):
         from _vault_walk import walk_project
@@ -1783,7 +1505,7 @@ class TestSchemaDriftStatusShape(unittest.TestCase):
     def _drift(self, status_block: str):
         from _vault_walk import schema_drift_for_text
         text = ("---\ntype: decision\n" + status_block +
-                "date: 2026-01-01\ntags:\n  - decision\n---\nbody\n")
+                "created: 2026-01-01\nupdated: 2026-01-01\n---\nbody\n")
         return schema_drift_for_text(text, "decisions/x.md")
 
     def test_blank_status_is_flagged(self):
@@ -2023,6 +1745,45 @@ class TestSuggestVaultRoots(unittest.TestCase):
             if entry["path"] == home:
                 self.assertFalse(entry["recommended"])
                 self.assertEqual(entry["kind"], "local")
+
+
+class TestSchemaIsDerived(unittest.TestCase):
+    """The templates are the schema; this module only re-exports it.
+
+    Before v3 a kind's shape was declared twice, as a Python constant here and
+    as the template file a writer copies, and validators existed to check the
+    two agreed. One declaration cannot disagree with itself.
+    """
+
+    def test_vault_walk_reexports_the_template_schema(self):
+        import _template_schema
+        import _vault_walk
+        self.assertIs(_vault_walk.FIELD_SCHEMA, _template_schema.FIELD_SCHEMA)
+        self.assertIs(_vault_walk.STATUS_VALUES_FOR_TYPE,
+                      _template_schema.STATUS_VALUES_FOR_TYPE)
+
+    def test_no_hand_written_field_schema_remains(self):
+        # A literal FIELD_SCHEMA dict in this file would be the second
+        # declaration this plan exists to remove.
+        import _vault_walk
+        src = Path(_vault_walk.__file__).read_text()
+        self.assertNotIn("FIELD_SCHEMA: dict[str, dict[str, frozenset[str]]] = {", src)
+        for gone in ("DECISION_STATUS_VALUES", "TASK_STATUS_VALUES",
+                     "ITERATION_STATUS_VALUES", "_EPISTEMIC_OPTIONAL",
+                     "FRESHNESS_VALUES", "MEMORY_HEADINGS",
+                     "PROJECT_STATUS_VALUES"):
+            self.assertNotIn(f"{gone}:", src, f"{gone} survived")
+
+    def test_the_retired_kinds_are_absent(self):
+        import _vault_walk
+        for gone in ("memory", "iteration", "dream-report", "vault-home"):
+            self.assertNotIn(gone, _vault_walk.FIELD_SCHEMA)
+
+    def test_headings_are_re_exported_too(self):
+        import _template_schema
+        import _vault_walk
+        self.assertIs(_vault_walk.HEADINGS_FOR_TYPE,
+                      _template_schema.HEADINGS_FOR_TYPE)
 
 
 if __name__ == "__main__":
