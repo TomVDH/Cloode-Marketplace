@@ -27,12 +27,16 @@ from typing import Any, Iterator, Optional
 from _vault_walk import (
     ALIAS_SEP_RE as _ALIAS_SEP_RE,
     FIELD_SCHEMA,
+    STATUS_VALUES_FOR_TYPE,
     VaultFile,
     build_vault_index,
     is_checkable_wikilink,
     is_unowned,
+    newest_dated_stem,
+    parse_frontmatter,
     resolve_wikilink,
     walk_project,
+    zone_of,
 )
 
 # Ordered by the cost of being wrong. "wrong-now" is a statement the vault
@@ -361,6 +365,95 @@ def _check_decision_consequence_uncarded(ctx: _Ctx) -> Iterator[Finding]:
 
 
 # ============================================================
+# Band: wrong-now — records that disagree
+# ============================================================
+
+# `blocked` stays an alias of `review`, and is the only alias truth accepts.
+# An alias is a second name for a state, and a second name is how `obsolete`
+# got silently refiled as backlog.
+_STATUS_ALIASES: dict = {"task": frozenset({"blocked"})}
+
+_DATED_STEM_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+_VERSION_STEM_RE = re.compile(r"^v?(\d+\.\d+\.\d+)$")
+
+
+def _check_superseded_without_target(ctx: _Ctx) -> Iterator[Finding]:
+    """`status: superseded` with no `superseded_by`.
+
+    The field is written only when true, so its absence beside a superseded
+    status is a record that contradicts itself. Every shape the parser can
+    hand back for "unfilled" — absent, empty string, empty list — reads the
+    same, and the unquoted `[[…]]` spelling still counts as a target.
+    """
+    for vf in ctx.files:
+        fields = ctx.fields(vf)
+        if str(fields.get("status", "")).strip() != "superseded":
+            continue
+        if _wikilink_target(fields.get("superseded_by")):
+            continue
+        yield Finding("wrong-now", "superseded-without-target", ctx.rel(vf),
+                      "status is superseded and nothing says what replaced it")
+
+
+def _check_status_off_vocabulary(ctx: _Ctx) -> Iterator[Finding]:
+    """A `status:` outside its type's vocabulary. Reported, never coerced."""
+    for vf in ctx.files:
+        ftype = vf.file_type or ""
+        legal = STATUS_VALUES_FOR_TYPE.get(ftype)
+        if not legal:
+            continue
+        raw = ctx.fields(vf).get("status")
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value in legal or value in _STATUS_ALIASES.get(ftype, frozenset()):
+            continue
+        yield Finding("wrong-now", "status-off-vocabulary", ctx.rel(vf),
+                      f"status {value!r} is not one of "
+                      f"{' | '.join(legal)} for a {ftype}")
+
+
+def _check_created_filename_mismatch(ctx: _Ctx) -> Iterator[Finding]:
+    """A `created:` date disagreeing with the date in its own filename.
+
+    Where the filename carries a date, `created:` is derived from it at write
+    time, so the two cannot disagree unless one was edited by hand.
+    """
+    for vf in ctx.files:
+        m = _DATED_STEM_PREFIX_RE.match(vf.path.stem)
+        if not m:
+            continue
+        raw = ctx.fields(vf).get("created")
+        if raw is None:
+            continue
+        value = str(raw).strip().strip('"').strip("'")
+        if value == m.group(1):
+            continue
+        yield Finding("wrong-now", "created-filename-mismatch", ctx.rel(vf),
+                      f"created: {value} against a filename dated {m.group(1)}")
+
+
+def _check_version_filename_mismatch(ctx: _Ctx) -> Iterator[Finding]:
+    """A release note's `version:` disagreeing with its filename.
+
+    `version:` is derived from the filename and machine-written, by the same
+    rule as dates. A leading `v` on either side is not a disagreement.
+    """
+    for vf in ctx.by_type.get("release", []):
+        m = _VERSION_STEM_RE.match(vf.path.stem)
+        if not m:
+            continue
+        raw = ctx.fields(vf).get("version")
+        if raw is None:
+            continue
+        value = str(raw).strip().strip('"').strip("'").lstrip("v")
+        if value == m.group(1):
+            continue
+        yield Finding("wrong-now", "version-filename-mismatch", ctx.rel(vf),
+                      f"version: {raw} against a filename naming {m.group(1)}")
+
+
+# ============================================================
 # Band: going-stale — nobody has checked it lately
 # ============================================================
 
@@ -445,6 +538,123 @@ def _check_verified_docs_only(ctx: _Ctx) -> Iterator[Finding]:
                       "verified_by: docs — a vendor's word, never a live probe")
 
 
+# ============================================================
+# Band: going-stale — went stale quietly
+# ============================================================
+
+# A brief this old, while sessions kept landing, describes a project that has
+# moved on without it.
+BRIEF_STALE_DAYS = 90
+
+# The interval after which a project in active/ is offered a move. This is the
+# prompt that makes lifecycle triage happen instead of never happening.
+ZONE_DRIFT_DAYS = 30
+
+
+def _newest_session(ctx: _Ctx) -> Optional[str]:
+    return newest_dated_stem(ctx.project_dir / "sessions",
+                             not_after=ctx.today.strftime("%Y-%m-%d"))
+
+
+def _check_brief_stale(ctx: _Ctx) -> Iterator[Finding]:
+    """A brief untouched for 90 days while sessions kept landing."""
+    newest = _newest_session(ctx)
+    if newest is None:
+        return
+    last = datetime.strptime(newest, "%Y-%m-%d").date()
+    if (ctx.today - last).days >= BRIEF_STALE_DAYS:
+        return                      # the project is quiet; that is triage's finding
+    brief = ctx.project_dir / "brief.md"
+    try:
+        fm, _body = parse_frontmatter(brief.read_text(errors="replace"))
+    except OSError:
+        return
+    updated = _as_date(fm.fields.get("updated"))
+    if updated is None:
+        return
+    age = (ctx.today - updated).days
+    if age < BRIEF_STALE_DAYS:
+        return
+    yield Finding("going-stale", "brief-stale", "brief.md",
+                  f"brief last updated {updated.isoformat()} ({age} days) "
+                  f"while sessions kept landing, newest {newest}")
+
+
+def _check_handoff_behind_session(ctx: _Ctx) -> Iterator[Finding]:
+    """A handoff older than the newest session.
+
+    The handoff is written once, at session end. One older than the newest
+    session note is describing a session that has since been superseded.
+    """
+    newest = _newest_session(ctx)
+    if newest is None:
+        return
+    handoff = ctx.project_dir / "_handoff.md"
+    try:
+        fm, _body = parse_frontmatter(handoff.read_text(errors="replace"))
+    except OSError:
+        return
+    updated = _as_date(fm.fields.get("updated"))
+    if updated is None or updated.isoformat() >= newest:
+        return
+    yield Finding("going-stale", "handoff-behind-session", "_handoff.md",
+                  f"handoff dated {updated.isoformat()}, newest session {newest}")
+
+
+def _check_generated_page_stale(ctx: _Ctx) -> Iterator[Finding]:
+    """A generated page older than the script named in its `source:`.
+
+    This is the one detector that looks at generated files, because it is
+    about them. A `source:` that names a system rather than a path
+    (`confluence`) resolves to nothing and is skipped: it is provenance, not
+    a generator.
+    """
+    for vf in ctx.all_owned:
+        raw = vf.frontmatter.fields.get("source")
+        if raw is None:
+            continue
+        value = str(raw).strip().strip('"').strip("'")
+        if not value or "://" in value:
+            continue
+        script: Optional[Path] = None
+        for base in (ctx.code_root, ctx.project_dir):
+            if base is None:
+                continue
+            cand = (base / value).expanduser()
+            if cand.is_file():
+                script = cand
+                break
+        if script is None:
+            continue
+        try:
+            if vf.path.stat().st_mtime >= script.stat().st_mtime:
+                continue
+        except OSError:
+            continue
+        yield Finding("going-stale", "generated-page-stale", str(vf.rel_path),
+                      f"older than {value}, the script that writes it")
+
+
+# ============================================================
+# Band: worth-a-look — a project in the wrong folder
+# ============================================================
+
+
+def _check_project_zone_drift(ctx: _Ctx) -> Iterator[Finding]:
+    """A project in `active/` with no session for 30 days."""
+    if zone_of(ctx.project_dir) != "active":
+        return
+    newest = _newest_session(ctx)
+    if newest is None:
+        return
+    days = (ctx.today - datetime.strptime(newest, "%Y-%m-%d").date()).days
+    if days < ZONE_DRIFT_DAYS:
+        return
+    yield Finding("worth-a-look", "project-zone-drift", "",
+                  f"in active/ with no session for {days} days; "
+                  f"`/adjudant status --move {ctx.slug} paused` moves it")
+
+
 # Tasks 11 to 14 append to this tuple. Order inside a band is the order
 # findings are reported in, so keep the most concrete first.
 #
@@ -462,9 +672,17 @@ _DETECTORS: tuple = (
     _check_bug_entry_uncited,
     _check_spec_agreed_unbuilt,
     _check_decision_consequence_uncarded,
+    _check_superseded_without_target,
+    _check_status_off_vocabulary,
+    _check_created_filename_mismatch,
+    _check_version_filename_mismatch,
     _check_verified_stale,
     _check_verified_missing,
     _check_verified_docs_only,
+    _check_brief_stale,
+    _check_handoff_behind_session,
+    _check_generated_page_stale,
+    _check_project_zone_drift,
 )
 
 

@@ -82,6 +82,7 @@ from _vault_walk import (  # noqa: E402
     zone_of,
 )
 from board_bridge import kebab as _bridge_kebab  # noqa: E402
+from truth import truth_report  # noqa: E402
 
 # Task-status alias set for schema_drift's normalizable flag. Defensive:
 # status must render even if board.py is mid-edit.
@@ -1105,6 +1106,16 @@ def run(
         advisor["pulse"] = None
         advisor["pulse_error"] = str(e)
 
+    # The vault the project sits in. `vault_dir` is the caller's answer when
+    # there is one; without it, derive from the path, which covers both the
+    # four-folder shape (`projects/{zone}/{slug}`) and the pre-v3
+    # `projects/{slug}`.
+    vault_root = vault_dir
+    if vault_root is None:
+        vault_root = (project_dir.parent.parent.parent
+                      if project_dir.parent.parent.name == "projects"
+                      else project_dir.parent.parent)
+
     report = {
         "project_dir": str(project_dir),
         "vault_path": str(vault_dir) if vault_dir else None,
@@ -1115,6 +1126,8 @@ def run(
         "compliance": comp,
         "naming": naming,
         "advisor": advisor,
+        "truth": truth_report(project_dir, vault=vault_root,
+                              code_root=code_root, today=today_date),
     }
     report.update(_bands(comp, orient, naming, advisor.get("pulse")))
     return report

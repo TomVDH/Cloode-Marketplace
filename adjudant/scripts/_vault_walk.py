@@ -1275,9 +1275,12 @@ def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dic
         "unchecked": unchecked,
         "exempt": exempt,
         "flagged": len(flagged),
+        # No unknown_fields tally. With five field names an unknown one is a
+        # typo or a real need, and neither is news across a whole vault. The
+        # per-file check stays: schema_drift_for_text still refuses one on a
+        # proposed write, and the sample still names the key.
         "counts": {
             "missing_required": sum(1 for d in flagged if "missing_required" in d),
-            "unknown_fields": sum(1 for d in flagged if "unknown_fields" in d),
             "status_invalid": sum(1 for d in flagged if "status_invalid" in d),
             "type_conflict": sum(1 for d in flagged if "type_conflict" in d),
         },

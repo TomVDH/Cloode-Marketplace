@@ -200,9 +200,13 @@ class TestNamesSomethingThatIsNotThere(unittest.TestCase):
             root = Path(tmp)
             pdir = _project(root)
             for i, value in enumerate(("", " []", ' ""', " '  '")):
-                _w(pdir / "decisions" / f"2026-08-0{i + 1}-d.md",
-                   f"---\ntype: decision\ncreated: 2026-08-01\n"
-                   f"updated: 2026-08-01\nstatus: active\n"
+                # `created:` tracks each filename: a dated stem and a created
+                # date that disagree are their own finding, and this fixture
+                # is about the link field alone.
+                day = f"2026-08-0{i + 1}"
+                _w(pdir / "decisions" / f"{day}-d.md",
+                   f"---\ntype: decision\ncreated: {day}\n"
+                   f"updated: {day}\nstatus: active\n"
                    f"superseded_by:{value}\n---\n\n# D\n")
             report = truth_report(pdir, vault=root / "vault", today=date(2026, 9, 1))
             self.assertEqual(report["findings"], [])
@@ -509,6 +513,244 @@ class TestWorkNobodyCanSee(unittest.TestCase):
                     if f["kind"] == "decision-consequence-uncarded"]
             self.assertEqual([h["file"] for h in hits],
                              ["decisions/2026-09-01-uncarded.md"])
+
+
+class TestRecordsThatDisagree(unittest.TestCase):
+
+    def test_superseded_with_no_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "decisions" / "2026-08-01-a.md",
+               "---\ntype: decision\ncreated: 2026-08-01\nupdated: 2026-08-01\n"
+               "status: superseded\n---\n\n# A\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "superseded-without-target"]
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0]["band"], "wrong-now")
+
+    def test_an_empty_superseded_by_is_the_same_finding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "decisions" / "2026-08-01-a.md",
+               "---\ntype: decision\ncreated: 2026-08-01\nupdated: 2026-08-01\n"
+               "status: superseded\nsuperseded_by: \"\"\n---\n\n# A\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertIn("superseded-without-target", _kinds(report))
+
+    def test_an_empty_list_superseded_by_is_the_same_finding(self):
+        # The template ships the field present and empty; an editor
+        # round-trips that as `superseded_by: []`, which is still nothing
+        # saying what replaced it.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "decisions" / "2026-08-01-a.md",
+               "---\ntype: decision\ncreated: 2026-08-01\nupdated: 2026-08-01\n"
+               "status: superseded\nsuperseded_by: []\n---\n\n# A\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertIn("superseded-without-target", _kinds(report))
+
+    def test_an_unquoted_superseded_by_is_a_target(self):
+        # `superseded_by: [[demo/decisions/x]]` reaches the parser as a
+        # one-item list. Read as "no target", a decision that says exactly
+        # what replaced it gets a wrong-now finding for saying nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "decisions" / "2026-08-01-a.md",
+               "---\ntype: decision\ncreated: 2026-08-01\nupdated: 2026-08-01\n"
+               "status: active\n---\n\n# A\n")
+            _w(pdir / "decisions" / "2026-08-02-b.md",
+               "---\ntype: decision\ncreated: 2026-08-02\nupdated: 2026-08-02\n"
+               "status: superseded\n"
+               "superseded_by: [[demo/decisions/2026-08-01-a]]\n---\n\n# B\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("superseded-without-target", _kinds(report))
+
+    def test_an_off_vocabulary_status_is_reported_never_coerced(self):
+        # board.py silently refiled anything unrecognised as backlog, which is
+        # how `obsolete` became invisible work.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "tasks" / "odd.md",
+               "---\ntype: task\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "status: obsolete\n---\n\n# Odd\n")
+            _w(pdir / "tasks" / "blocked.md",
+               "---\ntype: task\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "status: blocked\n---\n\n# Blocked\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "status-off-vocabulary"]
+            self.assertEqual([h["file"] for h in hits], ["tasks/odd.md"])
+            self.assertIn("obsolete", hits[0]["detail"])
+
+    def test_a_created_date_disagreeing_with_its_own_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "decisions" / "2026-08-01-a.md",
+               "---\ntype: decision\ncreated: 2026-07-14\nupdated: 2026-08-01\n"
+               "status: active\n---\n\n# A\n")
+            _w(pdir / "decisions" / "2026-08-02-b.md",
+               "---\ntype: decision\ncreated: 2026-08-02\nupdated: 2026-08-02\n"
+               "status: active\n---\n\n# B\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "created-filename-mismatch"]
+            self.assertEqual([h["file"] for h in hits], ["decisions/2026-08-01-a.md"])
+            self.assertIn("2026-07-14", hits[0]["detail"])
+
+    def test_a_release_version_disagreeing_with_its_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "releases" / "v2.1.0.md",
+               "---\ntype: release\nversion: 2.0.9\ncreated: 2026-09-01\n"
+               "updated: 2026-09-01\n---\n\n# v2.1.0\n")
+            _w(pdir / "releases" / "v2.2.0.md",
+               "---\ntype: release\nversion: v2.2.0\ncreated: 2026-09-01\n"
+               "updated: 2026-09-01\n---\n\n# v2.2.0\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "version-filename-mismatch"]
+            self.assertEqual([h["file"] for h in hits], ["releases/v2.1.0.md"])
+
+
+class TestWentStaleQuietly(unittest.TestCase):
+
+    def test_a_brief_untouched_while_sessions_kept_landing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "brief.md",
+               "---\ntype: project\nupdated: 2026-01-01\nverified: 2026-09-01\n"
+               "---\n\n# Demo\n\nWhat this project is.\n\n"
+               "## Where things are\n| | |\n|---|---|\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"] if f["kind"] == "brief-stale"]
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0]["band"], "going-stale")
+            self.assertIn("2026-09-01", hits[0]["detail"])
+
+    def test_a_quiet_project_with_an_old_brief_is_not_a_brief_finding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            (pdir / "sessions" / "2026-09-01.md").unlink()
+            _w(pdir / "sessions" / "2025-01-01.md", "---\ntype: session\n---\n")
+            _w(pdir / "brief.md",
+               "---\ntype: project\nupdated: 2026-01-01\nverified: 2026-09-01\n"
+               "---\n\n# Demo\n\nWhat this project is.\n\n"
+               "## Where things are\n| | |\n|---|---|\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("brief-stale", _kinds(report))
+
+    def test_a_handoff_older_than_the_newest_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "_handoff.md",
+               "---\ntype: handoff\nupdated: 2026-08-01\n---\n\n# Handoff\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "handoff-behind-session"]
+            self.assertEqual(len(hits), 1)
+            self.assertIn("2026-09-01", hits[0]["detail"])
+
+    def test_a_current_handoff_is_not_a_finding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            _w(pdir / "_handoff.md",
+               "---\ntype: handoff\nupdated: 2026-09-01\n---\n\n# Handoff\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("handoff-behind-session", _kinds(report))
+
+    def test_a_generated_page_older_than_its_own_script(self):
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = _project(root)
+            code = root / "code"
+            script = _w(code / "build-module-inventory.py", "print('x')\n")
+            page = _w(pdir / "components" / "gen.md",
+                      "---\ntype: component\nupdated: 2026-09-01\n"
+                      "source: build-module-inventory.py\n---\n\n# gen\n")
+            old = time.time() - 86400
+            os.utime(page, (old, old))
+            report = truth_report(pdir, vault=root / "vault", code_root=code,
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "generated-page-stale"]
+            self.assertEqual([h["file"] for h in hits], ["components/gen.md"])
+            self.assertIn("build-module-inventory.py", hits[0]["detail"])
+            self.assertEqual(script.name, "build-module-inventory.py")
+
+    def test_a_regenerated_page_is_not_a_finding(self):
+        # The other direction: once the script has been rerun the page is
+        # newer than it, and saying otherwise would nag about the good case.
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = _project(root)
+            code = root / "code"
+            script = _w(code / "build-module-inventory.py", "print('x')\n")
+            old = time.time() - 86400
+            os.utime(script, (old, old))
+            _w(pdir / "components" / "gen.md",
+               "---\ntype: component\nupdated: 2026-09-01\n"
+               "source: build-module-inventory.py\n---\n\n# gen\n")
+            report = truth_report(pdir, vault=root / "vault", code_root=code,
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("generated-page-stale", _kinds(report))
+
+    def test_a_source_naming_a_system_is_not_a_stale_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = _project(root)
+            _w(pdir / "sources" / "wiki.md",
+               "---\ntype: source\nupdated: 2026-09-01\nverified: 2026-08-30\n"
+               "source: confluence\n---\n\n# Wiki\n")
+            report = truth_report(pdir, vault=root / "vault",
+                                  code_root=root / "code",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("generated-page-stale", _kinds(report))
+
+
+class TestWrongFolder(unittest.TestCase):
+
+    def test_active_with_no_session_for_thirty_days(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            (pdir / "sessions" / "2026-09-01.md").unlink()
+            _w(pdir / "sessions" / "2026-07-01.md", "---\ntype: session\n---\n")
+            report = truth_report(pdir, vault=Path(tmp) / "vault",
+                                  today=date(2026, 9, 1))
+            hits = [f for f in report["findings"]
+                    if f["kind"] == "project-zone-drift"]
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0]["band"], "worth-a-look")
+            self.assertEqual(hits[0]["file"], "")
+            self.assertIn("62 days", hits[0]["detail"])
+
+    def test_a_paused_project_is_quiet_on_purpose(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = root / "vault" / "projects" / "paused" / "demo"
+            _w(pdir / "brief.md",
+               "---\ntype: project\nupdated: 2026-09-01\nverified: 2026-09-01\n"
+               "---\n\n# Demo\n\nWhat this project is.\n\n"
+               "## Where things are\n| | |\n|---|---|\n")
+            _w(pdir / "sessions" / "2025-01-01.md", "---\ntype: session\n---\n")
+            report = truth_report(pdir, vault=root / "vault",
+                                  today=date(2026, 9, 1))
+            self.assertNotIn("project-zone-drift", _kinds(report))
 
 
 if __name__ == "__main__":

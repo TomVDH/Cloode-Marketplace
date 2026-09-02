@@ -14,7 +14,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import status
@@ -808,7 +808,8 @@ class TestSchemaSection(unittest.TestCase):
                    _CLEAN_DECISION.replace("status: active", "status: accepted"))
             report = run_check(root)
             self.assertEqual(report["schema"]["flagged"], 2)
-            self.assertEqual(report["schema"]["counts"]["unknown_fields"], 1)
+            # No unknown_fields tally any more; the file is still flagged and
+            # still sampled below, which is what a reader acts on.
             self.assertEqual(report["schema"]["counts"]["status_invalid"], 1)
             files = [s["file"] for s in report["schema"]["samples"]]
             self.assertIn("notes/n.md", files)
@@ -1635,3 +1636,78 @@ class TestTriageCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTruthSection(unittest.TestCase):
+    """The truth report reaches the operator, not just the module.
+
+    `run_status` in the plan is `status.run` here: the top-level entry point
+    `cli_main` dumps, so a key it does not carry is a check nobody sees. The
+    schema block lives one level down, under `compliance`.
+    """
+
+    def _project(self, tmp: Path) -> Path:
+        pdir = tmp / "vault" / "projects" / "active" / "demo"
+        _write(pdir / "brief.md",
+               "---\ntype: project\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+               "verified: 2026-09-01\nverified_by: read\n---\n\n# Demo\n\n"
+               "What this project is.\n\n"
+               "## Where things are\n| | |\n|---|---|\n")
+        _write(pdir / "sessions" / "2026-09-01.md",
+               "---\ntype: session\ncreated: 2026-09-01\nupdated: 2026-09-01\n---\n")
+        return pdir
+
+    def test_run_carries_a_truth_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            _write(pdir / "decisions" / "2026-08-01-a.md",
+                   "---\ntype: decision\ncreated: 2026-08-01\nupdated: 2026-08-01\n"
+                   "status: superseded\n---\n\n# A\n")
+            report = status.run(pdir, Path(tmp) / "vault", today="2026-09-01")
+            self.assertIn("truth", report)
+            kinds = [f["kind"] for f in report["truth"]["findings"]]
+            self.assertIn("superseded-without-target", kinds)
+            self.assertEqual(set(report["truth"]["counts"]),
+                             {"wrong-now", "going-stale", "worth-a-look"})
+
+    def test_the_truth_section_survives_the_json_dump(self):
+        # cli_main serialises the whole report; a finding that cannot be
+        # dumped is a finding nobody reads.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            report = status.run(pdir, Path(tmp) / "vault", today="2026-09-01")
+            self.assertIn("truth", _json.loads(_json.dumps(report, default=str)))
+
+    def test_the_schema_section_no_longer_counts_unknown_fields(self):
+        # With five field names, an unknown one is a typo or a real need.
+        # Reporting it produced noise and taught nobody anything. The file is
+        # still flagged and still sampled; only the tally line is gone.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            _write(pdir / "notes" / "n.md",
+                   "---\ntype: note\nproject: \"[[demo/brief|demo]]\"\n"
+                   "created: 2026-09-01\nupdated: 2026-09-01\n---\n\nN\n")
+            report = status.run(pdir, Path(tmp) / "vault", today="2026-09-01")
+            schema = report["compliance"]["schema"]
+            self.assertNotIn("unknown_fields", schema["counts"])
+            self.assertEqual(schema["flagged"], 1)
+            self.assertIn("notes/n.md", [s["file"] for s in schema["samples"]])
+
+    def test_the_write_gate_still_refuses_an_unknown_field(self):
+        # Not worth a tally across a whole vault; still worth refusing on a
+        # proposed write, which is the check that stops one landing.
+        from _vault_walk import schema_drift_for_text
+        drift = schema_drift_for_text(
+            "---\ntype: note\nproject: x\ncreated: 2026-09-01\n"
+            "updated: 2026-09-01\n---\n\nN\n", "notes/n.md")
+        self.assertEqual(drift["unknown_fields"], ["project"])
+
+    def test_the_truth_report_writes_nothing(self):
+        # status makes derived state current before reporting, so it may write.
+        # The truth report itself never does, and that is what is asserted.
+        from truth import truth_report
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            before = sorted(str(p) for p in pdir.rglob("*"))
+            truth_report(pdir, vault=Path(tmp) / "vault", today=date(2026, 9, 1))
+            self.assertEqual(sorted(str(p) for p in pdir.rglob("*")), before)
