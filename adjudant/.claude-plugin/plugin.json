@@ -1,6 +1,6 @@
 {
   "name": "adjudant",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Operate an Obsidian vault from your code project. One command, /adjudant, with six verbs: connect onboards a project; status makes derived state current and then reports what is wrong now, going stale, or worth a look; clean and dream sweep it in two escalating tiers, and clean can rewrite and remove but never create; draw builds diagrams and canvases; board runs a self-hosted kanban. Schema-locked vault writes, cost-gated heavy verbs, and ambient hooks that keep session notes, handoffs, and the board current. Stdlib-only Python helpers, no build step. Pairs with hookify.",
   "author": {
     "name": "Onnozelaer"
