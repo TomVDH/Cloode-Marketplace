@@ -864,7 +864,8 @@ parsed out of it at load time and never written a second time in Python.
 
 ### Phase 3: the verb surface
 
-- Sunset `port`: script, tests, reference, metadata entry, four validators.
+- Sunset `port`: script, tests, reference, metadata entry, three validators
+  (7 `port-preview-coherence`, 8 `port-backup-integrity`, 9 `gitignore-includes-port-dirs`).
 - Merge `tidy` and `ramasse` into `clean`. Net-subtractive in code: it may
   delete, merge and rewrite in place, and may not create a vault file.
 - Fold `sync`, `sitrep`, `check`, `kebab --scan` and `advisor pulse` into

@@ -37,7 +37,7 @@
 
 ## Task 1: Sunset `port`
 
-Its migration is done. It is 965 lines, 63 tests and four validators for a one-shot job.
+Its migration is done. It is 965 lines, 63 tests and three validators for a one-shot job.
 
 **Files:**
 - Delete: `adjudant/scripts/port.py`, `adjudant/scripts/test_port.py`, `adjudant/skills/adjudant/reference/port.md`
@@ -202,7 +202,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Consumes: `scratch_dir`, `prune_backups` from `_scratch` (plan 1 Task 2).
 - Produces:
   - `_vault_write.VaultWriteGuard` — a context manager. Inside it, `guard.rewrite(path, text)` and `guard.remove(path)` are allowed; `guard.create(path, text)` raises `VaultCreateRefused`. Every `clean` write goes through it.
-  - `clean.build_preview(project_dir, deep: bool = False) -> dict` — `deep=True` adds the structural detectors that were `ramasse`'s.
+  - `clean.build_preview(project_dir, vault_index, project_slug, deep: bool = False) -> dict` — the first three parameters are `tidy.build_preview`'s existing signature, unchanged. `deep=True` adds the structural detectors that were `ramasse`'s.
   - `clean.apply_preview(project_dir) -> Path` — returns the backup directory.
 
 - [ ] **Step 1: Write the failing test for the guard**
@@ -363,7 +363,7 @@ In `clean.py`:
 
 - Rename `PREVIEW_KIND` / `BACKUP_KIND` values to `"clean-preview"` and `"clean-backup"`, and the helper functions to `preview_dir` and `backup_root` (plan 1 already introduced both).
 - Import `VaultWriteGuard` and route every live write in `apply_preview` through it. The index-creation feature (`tidy.py:598-647` before the rename) must now go through `guard.rewrite`, which refuses to create a new `_index.md`. That is correct: plan 4 generates the two surviving index surfaces, and `clean` stops generating any.
-- Fold in `ramasse_scan.py`'s structural detectors behind a `deep: bool = False` parameter on `build_preview`. They are read-only detectors and need no guard.
+- Fold in `ramasse_scan.py`'s structural detectors behind a `deep: bool = False` parameter **appended** to `build_preview`'s existing `(project_dir, vault_index, project_slug)` signature. Do not change the first three: `cli_main` and eleven tests already call it positionally. The detectors are read-only and need no guard.
 - Delete the tag feature if plan 2 Task 9 has not already removed it.
 
 ```bash
@@ -846,11 +846,19 @@ class TestCleanIsNetSubtractive(unittest.TestCase):
         files = [p for p in root.rglob("*") if p.is_file()]
         return len(files), sum(p.stat().st_size for p in files)
 
+    def _preview(self, project: Path, deep: bool = False) -> dict:
+        # build_preview keeps tidy's signature: (project_dir, vault_index,
+        # project_slug). The vault root is two levels up from the project.
+        from _vault_walk import build_vault_index
+        vault = project.parent.parent
+        return clean.build_preview(project, build_vault_index(vault),
+                                   project.name, deep=deep)
+
     def test_file_count_and_bytes_do_not_grow(self):
         with tempfile.TemporaryDirectory() as t:
             project = self._project(Path(t))
             before_n, before_b = self._count(project)
-            clean.write_preview_to_disk(project, clean.build_preview(project))
+            clean.write_preview_to_disk(project, self._preview(project))
             clean.apply_preview(project)
             after_n, after_b = self._count(project)
             self.assertLessEqual(after_n, before_n,
@@ -862,7 +870,7 @@ class TestCleanIsNetSubtractive(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             project = self._project(Path(t))
             before = {p.relative_to(project) for p in project.rglob("*")}
-            clean.write_preview_to_disk(project, clean.build_preview(project))
+            clean.write_preview_to_disk(project, self._preview(project))
             clean.apply_preview(project)
             after = {p.relative_to(project) for p in project.rglob("*")}
             self.assertEqual(after - before, set(),
@@ -872,7 +880,7 @@ class TestCleanIsNetSubtractive(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             project = self._project(Path(t))
             before_n, _ = self._count(project)
-            clean.write_preview_to_disk(project, clean.build_preview(project, deep=True))
+            clean.write_preview_to_disk(project, self._preview(project, deep=True))
             clean.apply_preview(project)
             after_n, _ = self._count(project)
             self.assertLessEqual(after_n, before_n)
