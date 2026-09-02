@@ -921,6 +921,54 @@ parsed out of it at load time and never written a second time in Python.
 - Both `onnozelaer-claude-plugins/` and `onnozelaer-claude-marketplace/` exist.
 - Repo `AGENTS.md` says eleven verbs. Nothing checks it.
 
+## The drift canary — settled (Tom, 2026-09-01)
+
+Every other check in this spec asks whether a *file* is still true. This one
+asks whether the *agent* is still following instructions, which is the failure
+that produces untrue files in the first place.
+
+At session start adjudant picks a codeword and states one rule: end every
+message with it. The model prints it. When it stops printing it, the model has
+stopped honouring a standing instruction it was given minutes ago, and nothing
+else in the session is trustworthy either. That is the moment to stop and start
+fresh, and today nothing tells you it has arrived.
+
+**Three facts from the hook surface shape it.**
+
+The `Stop` hook receives `last_assistant_message`, the full text of the reply,
+so the lapse is detected automatically rather than by eye. `SessionStart` and
+`UserPromptSubmit` can inject context; `PostCompact` cannot, its output is
+discarded. And a `Stop` hook may block, but Claude Code overrides it after
+eight consecutive blocks.
+
+**The rule is stated exactly once.** If the per-turn hook re-asserts the
+codeword, the model keeps printing it and the canary measures nothing. This is
+counterintuitive enough that a well-meaning implementer will break it, so it is
+written here: inject at `SessionStart`, never again.
+
+That compaction cannot re-inject is correct rather than unfortunate. Losing the
+instruction to a compaction *is* the degradation being measured.
+
+**Block once, then report.** The first miss in a session blocks and tells the
+model to re-read its instructions. Every later miss is reported and never
+blocked, because coercing compliance past that point would manufacture the
+appearance of health.
+
+**A miss is recorded even when the block works.** Otherwise recovery under
+coercion erases the evidence, and the counter reads clean through exactly the
+degradation it exists to catch.
+
+**Silent while healthy.** The per-turn hook says nothing until a miss occurs.
+A signal that never varies carries no information, which is the same rule the
+statusline applies to its own segments.
+
+**The word list avoids anything that occurs in technical prose.** `ELLIPSIS`
+appears in a discussion about writing and would mask a real lapse. The list is
+rare nouns that do not: `GRAMERCY`, `QUINCUNX`, `SPANDREL`, `COLOPHON`,
+`TREBUCHET`, `PALIMPSEST`, `ORRERY`, `CLEPSYDRA` and similar.
+
+Implemented as Task 11 of plan 1, which already owns the hook surface.
+
 ## The plans
 
 This spec is executed by five plans in `docs/superpowers/plans/`. Each produces
