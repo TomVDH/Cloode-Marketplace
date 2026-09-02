@@ -97,3 +97,39 @@ class TestPruneBackups(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTwoProjectsNamedTheSameDoNotShareScratch(unittest.TestCase):
+    """scratch_dir keyed only on project_dir.name, so every project called
+    `demo` shared one tree under $TMPDIR/adjudant/demo/.
+
+    In tests that showed up as pollution across runs: a leftover directory from
+    an earlier run made test_creates_nothing fail with a clean tree and no code
+    change. In production it is worse. Two vaults each holding a project named
+    `demo` would share a preview and a backup root, so one project's apply
+    could read the other's preview, and one project's rotation could delete the
+    other's only pre-change backup.
+    """
+
+    def test_same_name_different_paths_get_different_scratch(self):
+        with tempfile.TemporaryDirectory() as t:
+            a = Path(t) / "vault-a" / "projects" / "demo"
+            b = Path(t) / "vault-b" / "projects" / "demo"
+            a.mkdir(parents=True); b.mkdir(parents=True)
+            self.assertNotEqual(scratch_dir(a, "clean-preview"),
+                                scratch_dir(b, "clean-preview"),
+                                "two different projects share one scratch tree")
+
+    def test_the_same_project_is_stable_across_calls(self):
+        with tempfile.TemporaryDirectory() as t:
+            p = Path(t) / "vault" / "projects" / "demo"
+            p.mkdir(parents=True)
+            self.assertEqual(scratch_dir(p, "clean-preview"),
+                             scratch_dir(p, "clean-preview"))
+
+    def test_the_readable_name_survives_in_the_path(self):
+        # Whoever finds this directory should be able to tell whose it is.
+        with tempfile.TemporaryDirectory() as t:
+            p = Path(t) / "vault" / "projects" / "hubspot-nightly"
+            p.mkdir(parents=True)
+            self.assertIn("hubspot-nightly", str(scratch_dir(p, "clean-preview")))

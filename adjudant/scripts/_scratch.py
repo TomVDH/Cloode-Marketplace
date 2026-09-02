@@ -17,6 +17,7 @@ so a read-only run leaves no trace at all.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -44,9 +45,21 @@ def scratch_dir(project_dir: Path, kind: str) -> Path:
     `kind` is a short slug such as "clean-preview" or "clean-backup". The result
     is never inside `project_dir`, which is the entire point of this module.
     """
-    key = _UNSAFE.sub("-", project_dir.name).strip("-") or "project"
+    name = _UNSAFE.sub("-", project_dir.name).strip("-") or "project"
+    # The NAME alone is not unique: two vaults each holding a project called
+    # `demo` shared one tree, so one project's apply could read the other's
+    # preview and one project's rotation could delete the other's only
+    # pre-change backup. It also made tests fail from a previous run's
+    # leftovers, with a clean tree and no code change. The digest of the
+    # resolved path disambiguates; the name stays so a human finding the
+    # directory can tell whose it is.
+    try:
+        resolved = str(project_dir.resolve())
+    except OSError:
+        resolved = str(project_dir)
+    digest = hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:8]
     safe_kind = _UNSAFE.sub("-", kind).strip("-") or "scratch"
-    return _tmp_root() / "adjudant" / key / safe_kind
+    return _tmp_root() / "adjudant" / f"{name}-{digest}" / safe_kind
 
 
 def prune_backups(backup_root: Path, keep: int = BACKUP_KEEP) -> None:

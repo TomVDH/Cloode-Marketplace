@@ -20,8 +20,8 @@ not read from the breadcrumb.
 | `{repo}/.claude/adjudant`, `vault_path:` and `slug:` | vault location, project name |
 | `{repo}/.claude/adjudant`, `stale_after_days:` | the threshold for both the lifecycle hint and the dream age (30 when absent or non-numeric) |
 | `{vault}/projects/[_fridge/ or _archive/]{slug}/brief.md` | which zone holds the project |
-| `$TMPDIR/adjudant/{slug}/clean-preview`, directory exists | "cleaning" state |
-| `$TMPDIR/adjudant/{repo basename}/repo-tidy-preview`, directory exists | "repo-tidying" state |
+| `$TMPDIR/adjudant/{slug}-{digest}/clean-preview`, directory exists | "cleaning" state |
+| `$TMPDIR/adjudant/{repo basename}-{digest}/repo-tidy-preview`, directory exists | "repo-tidying" state |
 | `{project}/.adjudant-remise-preview`, directory exists | "remising" (reserved, nothing writes it yet) |
 | `brief.md` frontmatter, `status:` | lifecycle drift, read against the newest session date |
 | newest `sessions/{YYYY-MM-DD}.md`, the filename only | how long the project has been quiet |
@@ -34,6 +34,16 @@ not read from the breadcrumb.
 | `$TMPDIR/adjudant-task-ledger-{session_id}.jsonl`, `.id` and `.status` per line | in-flight task count |
 
 ## Rules
+
+0. The scratch key is `{name}-{digest}`, where digest is the first eight hex
+   characters of a SHA-256 of the project's RESOLVED path. The name alone was
+   not unique: two vaults each holding a project called `demo` shared one
+   preview and one backup root, so one project's apply could read the other's
+   preview and one project's rotation could delete the other's only pre-change
+   backup. The statusline globs the suffix rather than recomputing the hash,
+   because a subshell per render for a directory that is usually absent is not
+   worth it. Changing how the key is built breaks that glob.
+
 
 1. The handoff traffic-light line keeps its exact format. It is the one surface
    where an emoji carries meaning rather than decoration, and the statusline
