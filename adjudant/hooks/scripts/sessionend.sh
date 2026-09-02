@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # sessionend.sh — SessionEnd hook for adjudant
-# 1. Append session-ended marker to today's session log
-# 2. Run handoff sync via precompact.py (same logic)
+# 1. Run handoff sync via precompact.py (same logic)
+# 2. Reseed an existing board so the session's last task edits reach it
+#
+# It writes no session-log marker: since v3 a session note records work, and
+# ending a session is not work.
 #
 # Resolution parity: same chain as session-start.sh — Python resolve_vault
 # when reachable, OB_VAULT + local vault_path in pure-bash degraded mode.
@@ -85,40 +88,17 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
   [ -z "$vault_path" ] && return 0
   [ ! -d "$vault_path" ] && return 0  # stale breadcrumb: never write to a phantom path
 
-  local today ts session_dir session_file vault_project
+  local vault_project
   # Zone-aware: shelf moves projects to _fridge/ and _archive/ without touching
   # the breadcrumb; hardcoding projects/$slug appended to a phantom twin.
   vault_project=$(zone_project_dir "$vault_path" "$slug") || return 0
-  # Single clock read so date and time can't straddle midnight between calls.
-  read -r today ts <<< "$(date '+%Y-%m-%d %H:%M')"
-  session_dir="$vault_project/sessions"
-  session_file="$session_dir/$today.md"
 
-  # Midnight straddle: a session started 23:40 and ended 00:10 targets the new
-  # day's note, which doesn't exist yet — fall back to the latest daily note
-  # so the end marker isn't silently dropped. Digit classes, not ?: a stray
-  # abcd-ef-gh.md must never lexically outrank a real date.
-  if [ ! -f "$session_file" ]; then
-    session_file=$(ls "$session_dir"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md 2>/dev/null | tail -n1 || true)
-  fi
+  # v3: no end marker. Together with the start, resume and pause markers this
+  # produced 164 "session resumed" lines followed by nothing, and a guard that
+  # suppressed exactly one of the four when the tail was already a marker.
+  # A session note records work, and the absence of a note records its absence.
 
-  if [ -n "$session_file" ] && [ -f "$session_file" ]; then
-    # Skip the marker when nothing was logged since the last hook marker: a
-    # bare started/resumed/paused/ended tail means the pair would be pure
-    # churn (quick open/close sessions used to stack noise lines daily).
-    local last_line
-    last_line=$(grep -v '^[[:space:]]*$' "$session_file" 2>/dev/null | tail -n 1 || true)
-    case "$last_line" in
-      *"· session started"*|*"session resumed ---"*|*"· session ended"*|*"paused (compaction)"*)
-        : ;;
-      *)
-        # brace group so stderr is silenced BEFORE the >> open (redirections
-        # are processed left→right; a read-only vault must stay noiseless)
-        { printf -- '- %s · session ended\n' "$ts" >> "$session_file"; } 2>/dev/null || true ;;
-    esac
-  fi
-
-  # Run handoff sync only — no pause marker (best effort, never block)
+  # Handoff sync (best effort, never block)
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/hooks/scripts/precompact.py" ] \
      && command -v python3 >/dev/null 2>&1; then
     python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/precompact.py" --sync-only 2>/dev/null || true

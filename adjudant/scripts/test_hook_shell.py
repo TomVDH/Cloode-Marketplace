@@ -5,7 +5,8 @@ Cross-machine parity regressions: legacy `key=value` breadcrumbs, `~`-prefixed
 vault paths, and CRLF breadcrumbs must resolve identically to the Python hooks
 (they used to silently no-op or write to phantom `slug\r/` dirs). Since v3 the
 SessionStart hook creates nothing, so the resolved path is read off the session
-pointer it hands the per-turn hook.
+pointer it hands the per-turn hook, and SessionEnd appends no marker, so its
+vault-touching lane is the board reseed.
 """
 
 import json
@@ -393,64 +394,28 @@ class TestSessionEndHook(unittest.TestCase):
             self.assertEqual(r.returncode, 0)
             self.assertFalse((Path(tmp) / "gone").exists())
 
-    def test_tilde_vault_appends_session_marker(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            sessions = home / "vault" / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            session_file = sessions / f"{date.today().isoformat()}.md"
-            session_file.write_text("## Log\n")
-            project = Path(tmp) / "code"
-            (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "adjudant").write_text("vault_path: ~/vault\nslug: demo\n")
-            r = _run("sessionend.sh", project, home)
-            self.assertEqual(r.returncode, 0)
-            self.assertIn("session ended", session_file.read_text())
-
-    def test_no_ended_marker_when_nothing_logged_since_start(self):
-        # A quick open/close session must not stack "session ended" under a
-        # bare "session started": the pair is pure churn.
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            sessions = home / "vault" / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            session_file = sessions / f"{date.today().isoformat()}.md"
-            session_file.write_text("## Log\n\n- 10:00 · session started\n")
-            project = Path(tmp) / "code"
-            (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "adjudant").write_text("vault_path: ~/vault\nslug: demo\n")
-            r = _run("sessionend.sh", project, home)
-            self.assertEqual(r.returncode, 0)
-            self.assertNotIn("session ended", session_file.read_text())
-
-    def test_ended_marker_lands_after_real_content(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            sessions = home / "vault" / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            session_file = sessions / f"{date.today().isoformat()}.md"
-            session_file.write_text(
-                "## Log\n\n- 10:00 · session started\n- 10:20 · Added: [[x]]\n")
-            project = Path(tmp) / "code"
-            (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "adjudant").write_text("vault_path: ~/vault\nslug: demo\n")
-            r = _run("sessionend.sh", project, home)
-            self.assertEqual(r.returncode, 0)
-            self.assertIn("session ended", session_file.read_text())
-
-    def test_no_double_ended_marker(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            sessions = home / "vault" / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            session_file = sessions / f"{date.today().isoformat()}.md"
-            session_file.write_text("## Log\n\n- 10:20 · Added: [[x]]\n- 10:30 · session ended\n")
-            project = Path(tmp) / "code"
-            (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "adjudant").write_text("vault_path: ~/vault\nslug: demo\n")
-            r = _run("sessionend.sh", project, home)
-            self.assertEqual(r.returncode, 0)
-            self.assertEqual(session_file.read_text().count("session ended"), 1)
+    def test_session_end_appends_no_marker(self):
+        # v3: the end marker is gone, and with it the guard that suppressed
+        # exactly one of started/resumed/paused/ended when the tail was
+        # already a marker. A session note records work; session end is not
+        # work, so the note comes out byte-identical either way.
+        for seed in ("## Log\n\n- 09:00 · a.md written\n",
+                     "## Log\n\n- 10:00 · session started\n"):
+            with self.subTest(seed=seed):
+                with tempfile.TemporaryDirectory() as tmp:
+                    home = Path(tmp) / "home"
+                    sessions = home / "vault" / "projects" / "demo" / "sessions"
+                    sessions.mkdir(parents=True)
+                    note = sessions / f"{date.today().isoformat()}.md"
+                    note.write_text(seed)
+                    project = Path(tmp) / "code"
+                    (project / ".claude").mkdir(parents=True)
+                    (project / ".claude" / "adjudant").write_text(
+                        "vault_path: ~/vault\nslug: demo\n")
+                    r = _run("sessionend.sh", project, home,
+                             stdin=json.dumps({"session_id": "s1"}))
+                    self.assertEqual(r.returncode, 0)
+                    self.assertEqual(note.read_text(), seed)
 
     # --- ambient board: session-end reseed ---
 
@@ -506,29 +471,6 @@ class TestSessionEndHook(unittest.TestCase):
                                        "hook_event_name": "SessionEnd"}))
             self.assertEqual(r.returncode, 0)
             self.assertFalse((vault_project / "board").exists())
-
-    def test_midnight_straddle_appends_to_latest_note(self):
-        # No note exists for *today* (session started before midnight): the
-        # end marker must land in the latest existing daily note, not vanish.
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            sessions = home / "vault" / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            older = sessions / "2020-01-01.md"
-            newer = sessions / "2020-01-02.md"
-            decoy = sessions / "abcd-ef-gh.md"  # 4-2-2 shape, not a date
-            older.write_text("## Log\n")
-            newer.write_text("## Log\n")
-            decoy.write_text("## Not a session\n")
-            project = Path(tmp) / "code"
-            (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "adjudant").write_text("vault_path: ~/vault\nslug: demo\n")
-            r = _run("sessionend.sh", project, home)
-            self.assertEqual(r.returncode, 0)
-            self.assertIn("session ended", newer.read_text())
-            self.assertNotIn("session ended", older.read_text())
-            self.assertNotIn("session ended", decoy.read_text())  # digit glob
-
 
 class TestUserPromptReminder(unittest.TestCase):
 
@@ -694,16 +636,28 @@ class TestZoneAwareness(unittest.TestCase):
                 (home / "adjudant-session-sess-act").read_text().strip(),
                 str(proot / "sessions" / f"{today}.md"))
 
-    def test_sessionend_appends_into_fridge(self):
+    def test_sessionend_reseeds_the_board_in_the_fridge(self):
+        # v3 sessionend writes no marker, so the ghost-twin guard rides on the
+        # lane that still reaches the vault: the board reseed.
         with tempfile.TemporaryDirectory() as tmp:
             project, home, proot = self._shelved(Path(tmp))
-            today = date.today().isoformat()
-            note = proot / "sessions" / f"{today}.md"
-            note.write_text("## Log\n")
+            (proot / "tasks").mkdir()
+            (proot / "tasks" / "one-task.md").write_text(
+                "---\ntype: task\nstatus: todo\n---\n\n## Task\n")
+            board = proot / "board"
+            board.mkdir()
+            (board / "board-data.json").write_text(json.dumps({
+                "version": 1, "boardId": "demo", "title": "Demo",
+                "subtitle": "Work-order board", "updated": "2020-01-01",
+                "columns": [{"id": c, "name": c.title()} for c in
+                            ("backlog", "next", "doing", "review", "done", "icebox")],
+                "categories": ["build"], "cards": [],
+            }))
             r = _run("sessionend.sh", project, home, plugin_root=True,
                      stdin=json.dumps({"reason": "clear"}))
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("session ended", note.read_text())
+            deck = json.loads((board / "board-data.json").read_text())
+            self.assertIn("one-task", [c["id"] for c in deck["cards"]])
             self.assertFalse((home / "vault" / "projects" / "demo").exists())
 
 

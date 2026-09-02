@@ -2,14 +2,14 @@
 """PreCompact hook for adjudant.
 
 MECHANICAL ONLY — no model calls. Must finish well inside the 5s hook budget.
-Two lanes, both cheap on-disk reads:
+One lane, cheap on-disk reads: mirror `.remember/remember.md` (or `now.md`) →
+vault `_handoff.md`, with a freshness header (traffic light · age · NEXT ·
+stale flag).
 
-  1. Append an enriched pause tombstone to today's vault session log:
-       `- HH:MM · paused (compaction) · next: <NEXT line>`
-  2. Mirror `.remember/remember.md` (or `now.md`) → vault `_handoff.md`, with a
-     freshness header (traffic light · age · NEXT · stale flag).
-
-SessionEnd reuses this with `--sync-only` (no pause marker).
+Until v3 it also appended a `paused (compaction)` tombstone to the session log.
+That marker, with started, resumed and ended, produced 164 lines followed by
+nothing. SessionEnd still invokes this script with `--sync-only`; the flag now
+names the only behaviour there is.
 
 Freshness logic is shared with `/adjudant sync` via `scripts/_handoff_freshness.py`
 (single source of truth). The import is best-effort: if it ever fails, the hook
@@ -38,7 +38,6 @@ try:
         compute_freshness,
         freshness_header,
         latest_session_file,
-        parse_next_line,
         preserved_frontmatter,
         render_handoff,
     )
@@ -52,9 +51,6 @@ except Exception:  # pragma: no cover - degrade: mechanical work without freshne
         "  - handoff\n"
         "---\n\n"
     )
-
-    def parse_next_line(_text):  # type: ignore
-        return None
 
     def compute_freshness(*_a, **_k):  # type: ignore
         return ("", "", None, False)
@@ -185,26 +181,6 @@ def sync_handoff(project_dir: Path, project_root: Path, slug: str, today: str, t
         return
 
 
-def append_pause_marker(project_dir: Path, session_file: Path, ts: str) -> None:
-    """Append the enriched `paused (compaction)` tombstone. Fails closed."""
-    next_line = None
-    source = find_remember_source(project_dir)
-    if source is not None:
-        try:
-            next_line = parse_next_line(source.read_text(errors="replace"))
-        except OSError:
-            next_line = None
-    marker = f"- {ts} · paused (compaction)"
-    if next_line:
-        marker += f" · next: {next_line}"
-    try:
-        if session_file.exists():
-            with session_file.open("a") as f:
-                f.write(marker + "\n")
-    except Exception:  # hook must never crash compaction, whatever the cause
-        return
-
-
 def main() -> int:
     # Drain stdin before anything can exit (finding 22): the PreCompact
     # payload is unbounded and an unread payload EPIPEs the harness writer
@@ -257,20 +233,12 @@ def main() -> int:
     today = now.strftime("%Y-%m-%d")
     ts = now.strftime("%H:%M")
 
-    # SessionEnd reuses this script with --sync-only: skip the pause marker
-    # (the session ended; it did not pause for compaction).
-    sync_only = "--sync-only" in sys.argv[1:]
-
     # Zone-aware: shelf moves projects to _fridge/ and _archive/ without
     # touching the breadcrumb. Hardcoding projects/<slug> rewrote a phantom
     # _handoff.md in the active zone on EVERY compaction (write_text clobbers).
     project_root = find_project_dir(vault, slug)
     if project_root is None:
         return 0  # project exists in no zone: never materialize it
-
-    if not sync_only:
-        session_file = latest_session_file(project_root / "sessions", today)
-        append_pause_marker(project_dir, session_file, ts)
 
     sync_handoff(project_dir, project_root, slug, today, ts, now)
     return 0

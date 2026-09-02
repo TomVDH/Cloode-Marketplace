@@ -1,5 +1,9 @@
 """Tests for hooks/scripts/precompact.py — the PreCompact/SessionEnd hook.
 
+Since v3 the hook has one lane: mirror the remember source into `_handoff.md`.
+The `paused (compaction)` tombstone it also appended is gone, so a compaction
+leaves the session note exactly as the work left it.
+
 Regression focus: the hook must fail closed on a stale/cross-machine breadcrumb
 instead of materializing a phantom vault directory chain via mkdir(parents=True);
 resolution must use the same resolve_vault chain as the verbs; and a broken or
@@ -145,37 +149,6 @@ class TestFailClosedOnStaleVault(_EnvHygiene):
             self.assertTrue(handoff.is_file(), "handoff mirror must be written for a real vault")
             self.assertIn("NEXT: keep going", handoff.read_text())
 
-    def test_midnight_straddle_pause_marker_lands_in_latest_note(self):
-        # No note for today (session started before midnight): the pause
-        # tombstone must land in the latest existing daily note.
-        with tempfile.TemporaryDirectory() as tmp:
-            project = Path(tmp) / "code"
-            vault = Path(tmp) / "vault"
-            sessions = vault / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            latest = sessions / "2020-01-02.md"
-            latest.write_text("## Log\n")
-            (sessions / "2020-01-01.md").write_text("## Log\n")
-            decoy = sessions / "abcd-ef-gh.md"  # 4-2-2 shape, not a date
-            decoy.write_text("## Not a session\n")
-            self._breadcrumb(project, str(vault))
-            (project / ".remember").mkdir()
-            (project / ".remember" / "remember.md").write_text("NEXT: resume x\n")
-
-            os.environ["CLAUDE_PROJECT_DIR"] = str(project)
-            argv_before = sys.argv
-            sys.argv = ["precompact.py"]
-            try:
-                rc = precompact.main()
-            finally:
-                sys.argv = argv_before
-                del os.environ["CLAUDE_PROJECT_DIR"]
-
-            self.assertEqual(rc, 0)
-            self.assertIn("paused (compaction)", latest.read_text())
-            self.assertNotIn("paused", decoy.read_text())  # digit glob, not ?
-
-
 class TestEmptySourceGuard(_EnvHygiene):
     """A blank .remember source must never wipe a populated handoff. The
     remember plugin rotates now.md to empty at session start; every quick
@@ -230,38 +203,6 @@ class TestEmptySourceGuard(_EnvHygiene):
             self.assertIn("fresh state", handoff.read_text())
 
 
-class TestPauseMarkerVoice(_EnvHygiene):
-
-    def test_pause_tombstone_uses_middle_dot_next_separator(self):
-        # voice.md bans em dashes in vault writes; the tombstone carried one.
-        with tempfile.TemporaryDirectory() as tmp:
-            project = Path(tmp) / "code"
-            vault = Path(tmp) / "vault"
-            sessions = vault / "projects" / "demo" / "sessions"
-            sessions.mkdir(parents=True)
-            note = sessions / "2026-06-01.md"
-            note.write_text("## Log\n")
-            (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "adjudant").write_text(
-                f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
-            (project / ".remember").mkdir()
-            (project / ".remember" / "remember.md").write_text("NEXT: ship it\n")
-
-            os.environ["CLAUDE_PROJECT_DIR"] = str(project)
-            argv_before = sys.argv
-            sys.argv = ["precompact.py"]
-            try:
-                rc = precompact.main()
-            finally:
-                sys.argv = argv_before
-                del os.environ["CLAUDE_PROJECT_DIR"]
-
-            self.assertEqual(rc, 0)
-            text = note.read_text()
-            self.assertIn("paused (compaction) · next: ship it", text)
-            self.assertNotIn("—", text)
-
-
 class TestZoneAwareness(_EnvHygiene):
     """Audit 2026-07-27: the hook hardcoded projects/<slug> while shelf moves
     projects to _fridge/ and _archive/ without touching the breadcrumb.
@@ -297,15 +238,15 @@ class TestZoneAwareness(_EnvHygiene):
             sys.argv = argv_before
             del os.environ["CLAUDE_PROJECT_DIR"]
 
-    def test_pause_marker_and_handoff_land_in_the_shelved_project(self):
+    def test_handoff_lands_in_the_shelved_project(self):
         for zone in ("_fridge", "_archive"):
             with self.subTest(zone=zone):
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
                     project, proot, note = self._shelved(root, zone)
                     self.assertEqual(self._run(project), 0)
-                    self.assertIn("paused (compaction) · next: thaw it",
-                                  note.read_text())
+                    self.assertEqual(note.read_text(), "## Log\n",
+                                     "v3: compaction appends no marker")
                     handoff = proot / "_handoff.md"
                     self.assertTrue(handoff.is_file(),
                                     "the handoff must mirror into the shelved project")
@@ -319,7 +260,7 @@ class TestZoneAwareness(_EnvHygiene):
             project, proot, note = self._shelved(root, "_fridge")
             self.assertEqual(self._run(project, "--sync-only"), 0)
             self.assertTrue((proot / "_handoff.md").is_file())
-            self.assertNotIn("paused", note.read_text())  # SessionEnd, not a pause
+            self.assertNotIn("paused", note.read_text())  # v3: no marker, either mode
             self.assertFalse((root / "vault" / "projects" / "demo").exists())
 
     def test_unknown_project_is_noop(self):
@@ -421,9 +362,6 @@ class TestSlugGuard(_EnvHygiene):
             text = (decoy / "_handoff.md").read_text()
             self.assertIn("NEXT: overwrite something", text)
             self.assertNotIn("someone else's work", text)
-            self.assertIn("paused (compaction)",
-                          (decoy / "sessions" /
-                           f"{datetime.now():%Y-%m-%d}.md").read_text())
 
 
 class TestImportDegradation(_EnvHygiene):
