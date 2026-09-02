@@ -39,11 +39,16 @@ Repo ops use `--project-dir` as the repo root directly (no breadcrumb).
 - After `/adjudant dream` flags fixable items
 - After importing or merging vault content
 
-## The 4 surface features
+## The surface features (numbered 2-4)
 
-1. **Rebuild an existing `_index.md`** in every project subfolder with ≥2 same-type siblings. Reverse-chronological for date-prefixed filenames, alphabetical otherwise. Skips `sessions/`, `images/`, `assets/`, `previews/`, `iterations/`, `_archive/`. A **curated alias is carried forward**: `- [[note|Something a human wrote]]` keeps its text, because a filename cannot reconstruct it. Entries with no existing alias get the generated one; an alias for an entry that no longer exists is dropped with it.
+Feature 1 was rebuilding an existing folder-level `_index.md`. It is gone:
+plan 4's `_index_gen` owns the only two index surfaces left (`Home.md`,
+`{slug}/_index.md`), both generated whole from the filesystem. A folder with
+no index is still reported as a gap, never filled — `VaultWriteGuard` refuses
+the create either way — under `## Index gaps` in the preview. The numbers
+below stay 2-4 on purpose: `vault-standards.md` and `internals.md` both cite
+"clean feature 3" and "clean feature 4" by number.
 
-   **A folder with no `_index.md` is reported, not filled.** Generating one was the single write that made the old verb add more than it removed, and the guard now refuses it. The preview lists those folders under `## Index gaps`; index generation belongs to the generator that owns index surfaces.
 2. **Bump `updated:` frontmatter** on touched files where applicable (`doc`, `project`, `note` types). Never adds the field if absent.
 3. **Fix wikilink form** — rewrite `[text](path.md)` to `[[stem|text]]` when `path` resolves to a vault `.md`. Leaves external links and non-vault paths alone.
 4. **Repair frontmatter schema** per `FIELD_SCHEMA` (vault-standards §1/§9) — strip unknown fields (`tags:`, `project:`, stray keys), migrate the one legacy key with a live target (`node_type` → `type`; rename when `type:` is absent, drop when both exist, and `originSessionId` drops as an ordinary unknown field because no template declares `source_session`), normalise decision-status aliases (`accepted`/`locked`/`current` → `active`). Never touches required keys, parse-error files, non-canonical types, or task-status aliases (accepted input; the board normalizes lanes on read). The preview's `summary.md` lists every strip and migrate under `## Schema`.
@@ -117,7 +122,7 @@ both now land under `$TMPDIR` and the backups rotate.
 
 ## Stale-preview guard (locked)
 
-`apply` re-checks every proposal, index rebuilds included, against the state
+`apply` re-checks every proposal against the state
 recorded at preview time. Anything that no longer matches is **left alone**,
 listed in `{backup}/SKIPPED-STALE.txt`, and reported on stderr plus the
 `skipped_stale` JSON key (`[{"path": …, "reason": …}]`). Four reasons:

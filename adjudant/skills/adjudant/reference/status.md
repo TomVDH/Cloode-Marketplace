@@ -60,8 +60,11 @@ The one part that writes, and it writes exactly what `sync` wrote:
    byte-identical handoffs. A blank source is never mirrored. Needs the CODE
    root; without one there is nothing to mirror, which is a state, not a
    failure.
-3. **Project-row refresh** — update this project's row in
-   `{vault}/projects/_index.md`.
+
+There used to be a third step here, refreshing this project's row in
+`projects/_index.md`. That surface is retired: Home groups every project by
+lifecycle folder and is generated whole instead, so a hand-upserted row could
+only disagree with it.
 
 Results land under `synced.steps`; anything the phase could not do lands in
 `synced.warnings`. Report both.
@@ -121,7 +124,7 @@ Last session {whats_done.last_session} · {counts summary} · NEXT: {next_step}
 
 {one line per entry, or skip the section entirely when empty}
 
-Made current: brief {steps.brief_refresh} · handoff {steps.handoff_mirror} · row {steps.projects_index_row}
+Made current: brief {steps.brief_refresh} · handoff {steps.handoff_mirror}
 ```
 
 Adapt phrasing to be conversational; the shape above is the data layout, not a

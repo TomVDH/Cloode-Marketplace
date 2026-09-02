@@ -36,7 +36,6 @@ from status import (
     kebab_violations,
     mirror_handoff,
     refresh_brief_updated,
-    refresh_projects_index_row,
     run_sync,
     slugify,
 )
@@ -310,27 +309,6 @@ class TestWriterParity(unittest.TestCase):
 
 
 # ============================================================
-# Projects index row refresh
-# ============================================================
-
-
-class TestRefreshProjectsIndexRow(unittest.TestCase):
-
-    def test_updates_row_with_current_counts(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            proj, vault = _connected_setup(Path(tmp), "p")
-            # Add a session + a decision
-            _w(vault / "projects" / "p" / "sessions" / "2026-05-27.md", "---\ntype: session\n---\n")
-            (vault / "projects" / "p" / "decisions").mkdir()
-            _w(vault / "projects" / "p" / "decisions" / "2026-05-27-x.md", "---\ntype: decision\n---\n")
-            r = refresh_projects_index_row(vault, "p")
-            self.assertIn(r, ("inserted", "created-index", "updated"))
-            text = (vault / "projects" / "_index.md").read_text()
-            self.assertIn("p/brief", text)
-            self.assertIn("2026-05-27", text)
-
-
-# ============================================================
 # End-to-end run_sync
 # ============================================================
 
@@ -342,11 +320,10 @@ class TestRunSyncEndToEnd(unittest.TestCase):
             proj, vault = _connected_setup(Path(tmp), "p")
             _w(proj / ".remember" / "now.md", "live state body\n")
             summary = run_sync(proj)
-            # All three steps should produce useful outputs
+            # Both steps should produce useful outputs
             self.assertEqual(summary["slug"], "p")
             self.assertEqual(summary["steps"]["brief_refresh"], "bumped")
             self.assertEqual(summary["steps"]["handoff_mirror"], "mirrored")
-            self.assertIn(summary["steps"]["projects_index_row"], ("inserted", "created-index", "updated"))
             # Handoff actually exists with the body
             handoff_content = (vault / "projects" / "p" / "_handoff.md").read_text()
             self.assertIn("live state body", handoff_content)
@@ -383,16 +360,6 @@ class TestStatusVocabularyGuard(unittest.TestCase):
             summary = json.loads(buf.getvalue())["synced"]
             self.assertTrue(any("paused" in w for w in summary.get("warnings", [])),
                             summary)
-
-    def test_fridged_project_row_still_refreshes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            code = self._fixture(tmp, "fridge", zone="_fridge")
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-                rc = status_cli(["--project-dir", str(code)])
-            self.assertEqual(rc, 0)
-            summary = json.loads(buf.getvalue())["synced"]
-            self.assertNotEqual(summary["steps"]["projects_index_row"], "project-missing")
 
 
 class TestTraversalSlugBreadcrumb(unittest.TestCase):

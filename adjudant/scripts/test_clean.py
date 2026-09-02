@@ -20,7 +20,6 @@ from clean import (
     detect_phase,
     fix_wikilink_form,
     preview_dir,
-    upsert_index_content,
     write_preview_to_disk,
     _bump_updated_field,
 )
@@ -224,115 +223,6 @@ class TestBumpUpdatedField(unittest.TestCase):
 
 
 # ============================================================
-# Index generation
-# ============================================================
-
-
-class TestUpsertIndexContent(unittest.TestCase):
-
-    def test_upsert_bullet_list_preserves_intro(self):
-        existing = (
-            "---\n"
-            "type: index\n"
-            "updated: 2026-05-01\n"
-            "---\n\n"
-            "# Decisions\n\n"
-            "Intro paragraph that the human wrote. Preserve me.\n\n"
-            "## Entries\n\n"
-            "- [[old-entry|old]]\n\n"
-            "## Notes\n\n"
-            "Trailing section. Preserve me too.\n"
-        )
-        entries = [Path("a.md"), Path("b.md")]
-        new, mode = upsert_index_content(existing, "decisions", entries)
-        self.assertEqual(mode, "upserted")
-        # Intro preserved
-        self.assertIn("Intro paragraph that the human wrote", new)
-        # Trailing section preserved
-        self.assertIn("Trailing section. Preserve me too.", new)
-        # New entries
-        self.assertIn("[[a|a]]", new)
-        self.assertIn("[[b|b]]", new)
-        # Old entry gone
-        self.assertNotIn("old-entry", new)
-
-    def test_curated_alias_survives_the_rebuild(self):
-        # A hand-written alias is the one line of an index a human actually
-        # authored, and it is unrecoverable from the filename. Replacing it
-        # with a slug-title also contradicts the one-line-per-entry
-        # convention the rebuild exists to serve.
-        existing = (
-            "---\ntype: index\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\n\n"
-            "# Memory\n\n## Entries\n\n"
-            "- [[prefers-agents-md|Canonical repo context lives in AGENTS.md]]\n"
-        )
-        new, mode = upsert_index_content(
-            existing, "memory", [Path("prefers-agents-md.md")])
-        self.assertEqual(mode, "upserted")
-        self.assertIn("[[prefers-agents-md|Canonical repo context lives in AGENTS.md]]",
-                      new)
-
-    def test_a_new_entry_still_gets_the_generated_alias(self):
-        # Preserving curated text must not stop the rebuild doing its job for
-        # entries nobody has annotated yet.
-        existing = (
-            "---\ntype: index\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\n\n"
-            "# Memory\n\n## Entries\n\n"
-            "- [[prefers-agents-md|Canonical repo context lives in AGENTS.md]]\n"
-        )
-        new, _ = upsert_index_content(
-            existing, "memory",
-            [Path("prefers-agents-md.md"), Path("in-repo-over-patch.md")])
-        self.assertIn("[[in-repo-over-patch|in repo over patch]]", new)
-        self.assertIn("Canonical repo context lives in AGENTS.md", new)
-
-    def test_a_stale_alias_for_a_deleted_entry_does_not_come_back(self):
-        # Preservation is keyed on the entry still existing; a curated alias
-        # is not a reason to resurrect a file that is gone.
-        existing = (
-            "---\ntype: index\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\n\n"
-            "# Memory\n\n## Entries\n\n"
-            "- [[deleted-one|Something I wrote about a file that is gone]]\n"
-        )
-        new, _ = upsert_index_content(existing, "memory", [Path("kept.md")])
-        self.assertNotIn("deleted-one", new)
-        self.assertIn("[[kept|kept]]", new)
-
-    def test_upsert_table_format_leaves_body_alone(self):
-        existing = (
-            "---\n"
-            "type: index\n"
-            "created: 2026-05-01\n"
-            "updated: 2026-05-01\n"
-            "---\n\n"
-            "# Nightly\n\n"
-            "## Entries\n\n"
-            "| Doc | Purpose |\n"
-            "|---|---|\n"
-            "| [[architecture]] | system overview |\n"
-        )
-        new, mode = upsert_index_content(existing, "nightly", [Path("a.md"), Path("b.md")])
-        self.assertEqual(mode, "frontmatter_only")
-        # Table preserved verbatim
-        self.assertIn("| Doc | Purpose |", new)
-        self.assertIn("[[architecture]]", new)
-
-    def test_upsert_no_entries_heading_leaves_body_alone(self):
-        existing = (
-            "---\n"
-            "type: index\n"
-            "created: 2026-05-01\n"
-            "updated: 2026-05-01\n"
-            "---\n\n"
-            "# Some Index\n\n"
-            "Free-form content with no entries heading.\n"
-        )
-        new, mode = upsert_index_content(existing, "x", [Path("a.md"), Path("b.md")])
-        self.assertEqual(mode, "frontmatter_only")
-        self.assertIn("Free-form content with no entries heading.", new)
-
-
-# ============================================================
 # build_preview end-to-end
 # ============================================================
 
@@ -358,8 +248,10 @@ class TestBuildPreview(unittest.TestCase):
             vault_index = build_vault_index(root)
             cs = build_preview(root, vault_index, project_slug="t")
             # decisions/ has two entries and no index. clean reports the gap;
-            # it does not create the file (VaultWriteGuard would refuse it).
-            self.assertNotIn("decisions/_index.md", cs["index_proposals"])
+            # it does not create the file (VaultWriteGuard would refuse it),
+            # and it no longer rebuilds one either — that feature is gone,
+            # along with the "index_proposals" key it used to populate.
+            self.assertNotIn("index_proposals", cs)
             self.assertIn("decisions", cs["index_gaps"])
             # Should propose changes to src.md (unknown tags: + wikilink)
             self.assertIn("src.md", cs["file_proposals"])
@@ -478,56 +370,22 @@ class TestApplySafety(unittest.TestCase):
 class TestStalePreviewGuardHoles(unittest.TestCase):
     """Fix wave 1 finding 5: two holes in finding 8's stale-preview guard.
 
-    (a) The guard covered `file_proposals` only. `index_proposals` carried no
-        `original_hash`, so an `_index.md` edited between preview and apply was
-        still silently overwritten. The proposal is computed FROM that file's
-        content, so the edit is genuinely lost, not merely regenerated.
+    (a) The guard covered `file_proposals` only; `index_proposals` carried no
+        `original_hash`, so a folder-level `_index.md` rebuild computed FROM
+        stale content could silently overwrite a live edit. Task 8 deleted
+        `index_proposals` and the whole in-place rebuild it guarded — the
+        hole and the code path it lived in went together, so its two tests
+        (`test_edited_index_is_not_silently_overwritten`,
+        `test_unedited_index_still_rebuilds`) went with them, along with
+        `test_an_index_in_both_proposal_dicts_is_applied_once`: with only one
+        proposal dict left, a path landing in two of them is not a case that
+        exists any more.
     (b) `if original_hash and live.is_file()` skipped the guard entirely when
         the live file was GONE, so a proposal for a file deleted or renamed
         between preview and apply recreated it at the old path, silently
-        undoing an intentional deletion.
+        undoing an intentional deletion. This one still applies to any
+        `file_proposals` entry, `_index.md` included.
     """
-
-    def _indexed_folder(self, root: Path) -> Path:
-        """A folder clean will want to rebuild an index for, with one present."""
-        for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
-            _w(root / "decisions" / f"{d}-{n}.md",
-               f"---\ntype: decision\nstatus: accepted\n"
-               f"created: {d}\nupdated: {d}\ndate: {d}\n"
-               f"tags:\n  - decision\n---\n\nBody {n}.\n")
-        live = root / "decisions" / "_index.md"
-        _w(live, "---\ntype: index\ncreated: 2026-01-01\nupdated: 2020-01-01\n---\n\n"
-                 "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
-        return live
-
-    def test_edited_index_is_not_silently_overwritten(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            live = self._indexed_folder(root)
-            cs = build_preview(root, build_vault_index(root), "t")
-            self.assertIn("decisions/_index.md", cs["index_proposals"],
-                          "fixture must actually produce an index proposal")
-            write_preview_to_disk(root, cs)
-            live.write_text(live.read_text() + "\nMy hand-written summary.\n")
-            backup = apply_preview(root)
-            self.assertIn("My hand-written summary.", live.read_text(),
-                          "an index edited since preview must not be clobbered")
-            note = backup / "SKIPPED-STALE.txt"
-            self.assertTrue(note.is_file(), "the skip must be recorded")
-            self.assertIn("decisions/_index.md", note.read_text())
-
-    def test_unedited_index_still_rebuilds(self):
-        # Guard against over-correction: the ordinary path must still apply.
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            live = self._indexed_folder(root)
-            cs = build_preview(root, build_vault_index(root), "t")
-            write_preview_to_disk(root, cs)
-            backup = apply_preview(root)
-            self.assertEqual(live.read_text(),
-                             cs["index_proposals"]["decisions/_index.md"]["proposed_content"],
-                             "an untouched index must still be rebuilt")
-            self.assertFalse((backup / "SKIPPED-STALE.txt").exists())
 
     def test_file_deleted_after_preview_is_not_resurrected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -562,26 +420,19 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
                              "the old path must not reappear beside the rename")
             self.assertTrue(renamed.is_file())
 
-    def test_an_index_in_both_proposal_dicts_is_applied_once(self):
-        """An `_index.md` that also needs a tag fix lands in file_proposals AND
-        index_proposals, but `write_preview_to_disk` collapses both into one
-        `files/<rel>`. Applying it twice reports the second pass as stale (a
-        lie: nothing changed under us) and re-backs-up the already-tidied file
-        over the only pre-change copy."""
+    def test_an_index_file_with_drift_is_schema_repaired_like_any_other(self):
+        # Task 8 retired the in-place rebuild: an `_index.md` is no longer
+        # entangled with a second proposal dict, so a schema fix to one goes
+        # through `file_proposals` exactly like a fix to any other file, once,
+        # with the same backup contract.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
-                _w(root / "decisions" / f"{d}-{n}.md",
-                   f"---\ntype: decision\nstatus: accepted\n"
-                   f"created: {d}\nupdated: {d}\ndate: {d}\n"
-                   f"tags:\n  - decision\n---\n\nBody {n}.\n")
             live = root / "decisions" / "_index.md"
             _w(live, "---\ntype: index\ncreated: 2020-01-01\nupdated: 2020-01-01\n"
                      "tags:\n  - index\n  - ob/cabinet\n---\n\n"
                      "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
             cs = build_preview(root, build_vault_index(root), "t")
             self.assertIn("decisions/_index.md", cs["file_proposals"])
-            self.assertIn("decisions/_index.md", cs["index_proposals"])
             write_preview_to_disk(root, cs)
             backup = apply_preview(root)
             self.assertFalse((backup / "SKIPPED-STALE.txt").exists(),
@@ -589,8 +440,11 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             legacy = backup / "decisions" / "_index.md.legacy"
             self.assertIn("ob/cabinet", legacy.read_text(),
                           "the backup must hold the PRE-clean index")
-            self.assertIn("2026-01-02-b", live.read_text(),
-                          "the rebuild must still land")
+            self.assertNotIn("tags:", live.read_text(),
+                             "the unknown field must still be stripped")
+            self.assertIn("# Decisions\n\n## Entries\n\n- [[stale-entry]]",
+                          live.read_text(),
+                          "clean no longer touches the body of an index file")
 
 
 class TestPreviewApplyRoundTrip(unittest.TestCase):

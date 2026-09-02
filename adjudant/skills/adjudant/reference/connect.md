@@ -19,8 +19,7 @@ connect is three phases; the card in the middle is the only thing the user must 
 3. **Apply + receipt.** Run connect.py with the confirmed values (`--purpose`,
    `--initial-status`, plus the usual flags). Render `summary.receipt` back as the same
    card with per-artifact marks: created / already-present / updated. A re-run on a
-   healthy project shows all already-present and writes nothing new (the
-   `projects/_index.md` stats row is refreshed in place). For `coding` and `plugin`
+   healthy project shows all already-present and writes nothing new. For `coding` and `plugin`
    projects the receipt closes with one board pointer: tasks/ holds the cards;
    run /adjudant board to open a deck on them (opt-in, never auto-seeded).
 
@@ -37,8 +36,6 @@ connect never writes the key itself).
 4. **Session note** — create today's `{vault}/projects/{zone}/{slug}/sessions/{YYYY-MM-DD}.md` from `templates/session.md` with frontmatter filled in
 5. **Gitignore** — append `.claude/adjudant` to project `.gitignore` (create file if missing)
 6. **Base dashboards** — install `templates/bases/dashboard-*.base` into `{project}/bases/`, each `file.inFolder(...)` filter rewritten to the project's real vault path (sessions, decisions, tasks, freshness views). Write-if-absent: an edited dashboard is never clobbered by an idempotent re-run.
-
-Also: append project row to `{vault}/projects/_index.md`.
 
 ## Inputs
 
@@ -76,7 +73,6 @@ Re-running on an already-connected project fills gaps; never overwrites user con
 - Existing `brief.md` untouched
 - Missing subfolders created; existing untouched
 - Today's session note: if exists, no-op (the SessionStart hook handles append-on-resume separately)
-- `projects/_index.md` row: updated in place, not duplicated
 
 ## Fail conditions
 

@@ -9,17 +9,19 @@ The contract, enforced in `_vault_write.VaultWriteGuard` rather than promised
 in prose: clean may rewrite a file in place and it may remove one. It may not
 create a vault file. Anything it cannot fix by rewriting, it reports.
 
-Surface features:
-  1. Rebuild an EXISTING `_index.md` in every project subfolder with >=2
-     same-type siblings. A folder with no index is reported as a gap, never
-     filled: creating one is the single write that made the old verb add more
-     than it removed, and plan 4 owns index generation.
+Surface features, numbered 2-4 (feature 1 below):
   2. Bump `updated:` frontmatter on touched files (doc, brief, note types)
   3. Rewrite `[text](path.md)` -> `[[path-stem|text]]` when path resolves in vault
   4. Frontmatter schema repair per FIELD_SCHEMA: strip unknown fields, migrate
      the one legacy key with a live target (node_type -> type), and normalise
      decision-status aliases (accepted/locked/current -> active).
      Task-status aliases are accepted input and never rewritten.
+
+Feature 1 — rebuilding an EXISTING folder-level `_index.md` — is gone: plan 4's
+`_index_gen` owns the only two index surfaces left (`Home.md`,
+`{slug}/_index.md`), both generated whole from the filesystem. A folder with
+no index is still reported as a gap under `index_gaps`, never filled:
+`VaultWriteGuard` refuses the create either way.
 
 Deep pass (`--deep`), read-only, no guard needed:
   folder drift, frontmatter drift, type drift, naming violations, artefact
@@ -198,163 +200,10 @@ def fix_wikilink_form(body: str, vault_index: set[str]) -> tuple[str, int]:
     return "\n".join(out_lines), fixed_count
 
 
-# ============================================================
-# Index regeneration
-# ============================================================
-
-
-def _capitalize_folder_name(name: str) -> str:
-    name = name.replace("-", " ").replace("_", " ")
-    return " ".join(w.capitalize() for w in name.split())
-
-
-def _sort_entries(entries: list[Path]) -> list[Path]:
-    """Sort: reverse-chronological for date-prefixed, alphabetical otherwise.
-    Mixed sets: date entries first (reverse chrono), then plain alphabetical."""
-    dated = []
-    plain = []
-    for f in entries:
-        m = DATE_PREFIX_RE.match(f.stem)
-        if m and m.group(1):
-            dated.append((m.group(1), f))
-        else:
-            plain.append(f)
-    if dated and not plain:
-        return [f for _, f in sorted(dated, key=lambda x: x[0], reverse=True)]
-    if not dated and plain:
-        return sorted(plain, key=lambda x: x.stem)
-    return (
-        [f for _, f in sorted(dated, key=lambda x: x[0], reverse=True)]
-        + sorted(plain, key=lambda x: x.stem)
-    )
-
-
-# A bullet the rebuild could have produced tells us nothing; one with any other
-# alias is a line a human wrote, and the filename cannot reconstruct it.
-_CURATED_BULLET_RE = re.compile(r"^\s*-\s+\[\[([^\]|#]+?)(?:#[^\]|]*)?\|(.+?)\]\]\s*$")
-
-
-def harvest_aliases(section_lines: list[str]) -> dict[str, str]:
-    """`{link target: alias}` for every aliased bullet in an Entries section.
-
-    First occurrence wins, matching the rest of clean's duplicate handling.
-    """
-    found: dict[str, str] = {}
-    for ln in section_lines:
-        m = _CURATED_BULLET_RE.match(ln)
-        if m:
-            found.setdefault(m.group(1).strip(), m.group(2).strip())
-    return found
-
-
-def _format_entry_bullet(f: Path, aliases: Optional[dict[str, str]] = None) -> str:
-    """One index row. A curated alias for this entry outranks the generated
-    one; regenerating over it discards the only authored content an index
-    holds, and `stem.replace("-", " ")` cannot get it back."""
-    stem = f.stem
-    curated = (aliases or {}).get(stem)
-    if curated:
-        return f"- [[{stem}|{curated}]]"
-    m = DATE_PREFIX_RE.match(stem)
-    if m and m.group(1) and m.group(2):
-        display = f"{m.group(1)} {m.group(2).replace('-', ' ')}"
-    else:
-        display = stem.replace("-", " ").replace("_", " ")
-    return f"- [[{stem}|{display}]]"
-
-
-_ENTRIES_HEADING_RE = re.compile(r"^##\s+entries\b", re.IGNORECASE)
-_NEXT_H2_RE = re.compile(r"^##\s+")
-_BULLET_LINK_RE = re.compile(r"^\s*-\s+\[\[")
-
-
-def _find_entries_section_in_body(body: str) -> Optional[tuple[int, int]]:
-    """Locate the `## Entries` section. Returns (content_start, content_end)
-    as 0-indexed line bounds (end exclusive). Excludes the heading itself.
-    Returns None if no `## Entries` heading exists.
-    """
-    lines = body.split("\n")
-    heading_idx = None
-    for i, line in enumerate(lines):
-        if _ENTRIES_HEADING_RE.match(line.strip()):
-            heading_idx = i
-            break
-    if heading_idx is None:
-        return None
-    start = heading_idx + 1
-    end = len(lines)
-    for i in range(start, len(lines)):
-        if _NEXT_H2_RE.match(lines[i]):
-            end = i
-            break
-    return (start, end)
-
-
-def _section_is_bullet_list(lines: list[str]) -> bool:
-    """True if section content is predominantly `- [[wikilink]]` bullets."""
-    non_blank = [l for l in lines if l.strip()]
-    if not non_blank:
-        return True  # empty section — safe to fill
-    bullets = [l for l in non_blank if _BULLET_LINK_RE.match(l)]
-    return len(bullets) >= max(1, len(non_blank) // 2)
-
-
-def upsert_index_content(
-    existing_text: str,
-    folder_name: str,
-    entries: list[Path],
-) -> tuple[str, str]:
-    """Conservatively update an existing `_index.md`.
-
-    Behaviour:
-      - Bump `updated:` to today (if field present)
-      - If body has `## Entries` heading with bullet-list content: replace bullets,
-        keep heading + everything else. mode='upserted'.
-      - If body has `## Entries` with non-bullet content (table, prose): leave
-        body alone (only frontmatter changes). mode='frontmatter_only'.
-      - If no `## Entries` heading: leave body alone. mode='frontmatter_only'.
-
-    Returns (new_text, mode).
-    """
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    # Frontmatter side: bump updated. An existing `tags:` block is left for
-    # feature 4 to strip as an unknown field, on the pass that walks the file.
-    new_text = _bump_updated_field(existing_text, today)
-
-    # Body side: try entries upsert
-    # Re-parse to get the body AFTER frontmatter changes
-    fm2, body2 = parse_frontmatter(new_text)
-    section = _find_entries_section_in_body(body2)
-    if section is None:
-        return new_text, "frontmatter_only"
-
-    start, end = section
-    body_lines = body2.split("\n")
-    section_lines = body_lines[start:end]
-    if not _section_is_bullet_list(section_lines):
-        return new_text, "frontmatter_only"
-
-    # Generate new entry bullets, carrying forward any alias a human curated
-    # for an entry that still exists.
-    sorted_entries = _sort_entries(entries)
-    aliases = harvest_aliases(section_lines)
-    new_bullets = [_format_entry_bullet(f, aliases) for f in sorted_entries]
-
-    # Replace section content: keep leading/trailing blank lines if any in original style
-    # Use one blank before bullets, one trailing blank
-    new_section = [""] + new_bullets + [""]
-    # Trim trailing blank from input section if we'd duplicate
-    while new_section and new_section[-1] == "" and end < len(body_lines) and body_lines[end - 1] == "":
-        # already blank-padded
-        break
-
-    new_body_lines = body_lines[:start] + new_section + body_lines[end:]
-    new_body = "\n".join(new_body_lines)
-
-    # Reassemble: keep frontmatter from new_text, replace body
-    new_text = _strip_then_prepend_body(new_text, new_body)
-    return new_text, "upserted"
+# Index regeneration lived here. It is gone: `clean` never creates a vault
+# file, and the only two index surfaces left are generated whole by
+# _index_gen from the filesystem. An index that is upserted in place is an
+# index that can be stale, which 24 of 139 already were.
 
 
 # ============================================================
@@ -783,57 +632,10 @@ def build_preview(
 
     # Bucket: per-file proposed full content (only when content changes)
     file_proposals: dict[str, dict[str, Any]] = {}
-    # Index proposals — rebuilds of an index that already exists
-    index_proposals: dict[str, dict[str, Any]] = {}
-    # Folders that want an index and have none. Reported, never filled.
+    # Folders that want an index and have none. Reported, never filled:
+    # `_index_gen` owns the two surviving index surfaces, and clean creates
+    # nothing (`VaultWriteGuard` refuses it at apply time regardless).
     index_gaps = detect_index_gaps(project_dir, files)
-
-    # --- Feature 1: index rebuilds ---
-    by_parent: dict[Path, list[VaultFile]] = defaultdict(list)
-    for f in files:
-        parent = f.rel_path.parent
-        if parent == Path("."):
-            continue
-        by_parent[parent].append(f)
-
-    for parent, members in by_parent.items():
-        # Skip exempt folders
-        if any(p in INDEX_EXEMPT_FOLDERS for p in parent.parts):
-            continue
-        non_index = [m for m in members if m.rel_path.name != "_index.md"]
-        if len(non_index) < 2:
-            continue
-        idx_rel = str(parent / "_index.md")
-        existing_path = project_dir / parent / "_index.md"
-
-        if existing_path.is_file():
-            try:
-                existing = existing_path.read_text()  # strict: never write replaced bytes back
-            except UnicodeDecodeError:
-                continue
-            proposed, mode = upsert_index_content(
-                existing,
-                folder_name=parent.name,
-                entries=[m.rel_path for m in non_index],
-            )
-            if proposed.strip() != existing.strip():
-                index_proposals[idx_rel] = {
-                    "folder": str(parent),
-                    "had_existing": True,
-                    "mode": mode,
-                    "entry_count": len(non_index),
-                    # Hashed like a file proposal: `proposed` was computed FROM
-                    # `existing`, so an edit landing between preview and apply
-                    # is genuinely lost, not regenerated. The apply-time guard
-                    # needs this to notice.
-                    "original_hash": _hash_short(existing),
-                    "proposed_content": proposed,
-                }
-        # A folder with no `_index.md` falls through: creating one was the
-        # single write that made a cleanup verb add more than it removed, and
-        # `_vault_write.VaultWriteGuard` now refuses it at apply time. It is
-        # reported in `index_gaps` instead, and plan 4's generator, which owns
-        # index surfaces, fills it.
 
     # --- Features 2-4: per-file edits ---
     schema_actions: dict[str, dict[str, Any]] = {}
@@ -922,14 +724,12 @@ def build_preview(
         "scope": scope,
         "summary": {
             "files_modified": len(file_proposals),
-            "indexes_rebuilt": len(index_proposals),
             "index_gaps": len(index_gaps),
             "schema_files": len(schema_actions),
-            "total_changes": len(file_proposals) + len(index_proposals),
+            "total_changes": len(file_proposals),
             "structural_findings": _structural_count(structural),
         },
         "file_proposals": file_proposals,
-        "index_proposals": index_proposals,
         "index_gaps": index_gaps,
         "schema_actions": schema_actions,
         "structural_findings": structural,
@@ -980,10 +780,6 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
         target = files_root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(info["proposed_content"])
-    for rel, info in change_set["index_proposals"].items():
-        target = files_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(info["proposed_content"])
 
     # summary.md
     summary = change_set["summary"]
@@ -1001,26 +797,12 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
         "## Summary",
         "",
         f"- Files to modify: {summary['files_modified']}",
-        f"- Indexes to rebuild: {summary['indexes_rebuilt']}",
         f"- Index gaps reported: {summary.get('index_gaps', 0)}",
         f"- Total changes: {summary['total_changes']}",
     ]
     if change_set.get("deep"):
         summary_lines.append(
             f"- Structural findings: {summary.get('structural_findings', 0)}")
-    summary_lines += [
-        "",
-        "## Index rebuilds",
-        "",
-    ]
-    for rel, info in sorted(change_set["index_proposals"].items()):
-        if info.get("mode") == "frontmatter_only":
-            marker = "frontmatter-only"
-        elif info.get("mode") == "upserted":
-            marker = "upsert-entries"
-        else:
-            marker = "rewrite"
-        summary_lines.append(f"- {marker}: `{rel}` ({info['entry_count']} entries)")
     if change_set.get("index_gaps"):
         summary_lines.append("")
         summary_lines.append("## Index gaps (reported, not filled)")
@@ -1202,47 +984,36 @@ def apply_preview(project_dir: Path) -> Path:
 
     files_root = preview / "files"
     skipped: list[tuple[str, str]] = []
-    handled: set[str] = set()
 
     # Backup + apply. Every live write in this loop goes through the guard.
     guard = VaultWriteGuard(project_dir)
-    for rel_set in (change_set["file_proposals"], change_set["index_proposals"]):
-        for rel, info in rel_set.items():
-            live = _contained(project_dir, rel)
-            proposed = _contained(files_root, rel)
-            if live is None or proposed is None or not proposed.is_file():
-                continue
-            # `write_preview_to_disk` collapses both proposal dicts into one
-            # `files/<rel>`, so a path in both (an `_index.md` that also needs
-            # a schema fix) has exactly ONE proposed body and must be
-            # applied exactly once. A second pass would compare the live file
-            # against a hash this run just invalidated (a false stale report)
-            # and overwrite the pre-change backup with already-cleaned content.
-            if rel in handled:
-                continue
-            handled.add(rel)
-            # changes.json is editable by design, so `info` is untrusted too.
-            info = info if isinstance(info, dict) else {}
-            reason = _skip_reason(live, info.get("original_hash"))
-            if reason:
-                skipped.append((rel, reason))
-                continue
-            try:
-                body = proposed.read_text()
-            except (OSError, UnicodeDecodeError):
-                skipped.append((rel, "unreadable"))
-                continue
-            # Backup live (if exists)
-            if live.is_file():
-                backup_target = backup_dir / (rel + ".legacy")
-                backup_target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(live, backup_target)
-            # Apply. No mkdir for the parent: a proposal whose folder does not
-            # exist can only be a create, which the guard refuses anyway.
-            try:
-                guard.rewrite(live, body)
-            except VaultCreateRefused:
-                skipped.append((rel, "refused"))
+    for rel, info in change_set["file_proposals"].items():
+        live = _contained(project_dir, rel)
+        proposed = _contained(files_root, rel)
+        if live is None or proposed is None or not proposed.is_file():
+            continue
+        # changes.json is editable by design, so `info` is untrusted too.
+        info = info if isinstance(info, dict) else {}
+        reason = _skip_reason(live, info.get("original_hash"))
+        if reason:
+            skipped.append((rel, reason))
+            continue
+        try:
+            body = proposed.read_text()
+        except (OSError, UnicodeDecodeError):
+            skipped.append((rel, "unreadable"))
+            continue
+        # Backup live (if exists)
+        if live.is_file():
+            backup_target = backup_dir / (rel + ".legacy")
+            backup_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(live, backup_target)
+        # Apply. No mkdir for the parent: a proposal whose folder does not
+        # exist can only be a create, which the guard refuses anyway.
+        try:
+            guard.rewrite(live, body)
+        except VaultCreateRefused:
+            skipped.append((rel, "refused"))
 
     if skipped:
         _write_skipped_note(backup_dir, skipped)
@@ -1343,11 +1114,9 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         preview = write_preview_to_disk(project_dir, change_set)
         print(f"[clean] preview written to {preview}", file=sys.stderr)
         summary = change_set["summary"]
-        print(
-            f"[clean] {summary['total_changes']} changes "
-            f"({summary['files_modified']} files, {summary['indexes_rebuilt']} indexes)",
-            file=sys.stderr,
-        )
+        print(f"[clean] {summary['total_changes']} changes "
+              f"({summary['files_modified']} files)",
+              file=sys.stderr)
         if summary.get("index_gaps"):
             print(f"[clean] {summary['index_gaps']} folder(s) want an index and "
                   f"have none; clean reports them and does not create files",

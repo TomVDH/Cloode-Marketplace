@@ -13,19 +13,16 @@ from connect import (
     VALID_PROJECT_TYPES,
     append_gitignore,
     build_contract,
-    count_non_index_files,
     derive_project_name,
     derive_project_type,
     detect_state,
     infer_initial_status,
     infer_project_type,
-    newest_session_date,
     provision_context_files,
     resolve_vault_for_connect,
     run_connect,
     scaffold_vault_project,
     slug_to_title,
-    upsert_projects_index_row,
     validate_slug,
     write_breadcrumb,
     write_session_note,
@@ -355,156 +352,6 @@ class TestAppendGitignore(unittest.TestCase):
 
 
 # ============================================================
-# Step 6: projects/_index.md row upsert
-# ============================================================
-
-
-class TestUpsertProjectsIndexRow(unittest.TestCase):
-
-    def test_creates_index_if_missing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            r = upsert_projects_index_row(vault, "x", "coding", "active", 0, 0, "—")
-            self.assertEqual(r, "created-index")
-            text = (vault / "projects" / "_index.md").read_text()
-            self.assertIn("x/brief", text)
-
-    def test_inserts_if_index_exists(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            upsert_projects_index_row(vault, "a", "coding", "active", 0, 0, "—")
-            r = upsert_projects_index_row(vault, "b", "plugin", "active", 1, 2, "2026-05-27")
-            self.assertEqual(r, "inserted")
-            text = (vault / "projects" / "_index.md").read_text()
-            self.assertIn("a/brief", text)
-            self.assertIn("b/brief", text)
-
-    def test_hand_maintained_index_is_never_corrupted(self):
-        # Audit 2026-07-27 finding 13: the row was inserted after the FIRST
-        # `|---|` anywhere in the file, so it landed inside an unrelated table
-        # in a hand-curated index. port.py already guarded against this;
-        # connect, sync and shelf all used this unguarded copy.
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            idx = vault / "projects" / "_index.md"
-            custom = (
-                "---\ntype: index\ntags:\n  - index\n---\n\n"
-                "# Projects by quarter\n\n"
-                "| Quarter | Theme |\n"
-                "|---------|-------|\n"
-                "| Q1 | Platform |\n"
-            )
-            idx.write_text(custom)
-            r = upsert_projects_index_row(vault, "x", "coding", "active", 0, 0, "—")
-            self.assertEqual(r, "skipped-unknown-format")
-            self.assertEqual(idx.read_text(), custom,
-                             "a custom index must be left byte-identical")
-
-    def test_canonical_index_still_takes_rows(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            idx = vault / "projects" / "_index.md"
-            idx.write_text(
-                "---\ntype: index\ntags:\n  - index\n---\n\n"
-                "# All Projects\n\n"
-                "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
-                "|---------|------|--------|-----------|----------|--------------|\n")
-            r = upsert_projects_index_row(vault, "x", "coding", "active", 0, 0, "—")
-            self.assertEqual(r, "inserted")
-            self.assertIn("x/brief", idx.read_text())
-
-    def test_updates_existing_row(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            upsert_projects_index_row(vault, "a", "coding", "active", 0, 0, "—")
-            r = upsert_projects_index_row(vault, "a", "coding", "active", 5, 10, "2026-05-27")
-            self.assertEqual(r, "updated")
-            text = (vault / "projects" / "_index.md").read_text()
-            # Row contains updated counts + last_session, with wikilink form preserved
-            self.assertIn("coding | active | 5 | 10 | 2026-05-27", text)
-            # And the old "0 | 0" row is gone
-            self.assertNotIn("active | 0 | 0 | —", text)
-
-
-class TestUpsertReplacementIsConfinedToTheCanonicalTable(unittest.TestCase):
-    """Fix wave 1 finding 4: finding 13's remediation guarded only the INSERT
-    path. The row-REPLACEMENT path still matched `| [[slug/brief\\|` on ANY
-    line, so a row for that slug living inside the user's own hand-maintained
-    table was overwritten with the canonical 6-column row.
-    """
-
-    _HAND_ROW = "| [[demo/brief\\|demo]] | my own annotation |"
-
-    def test_hand_maintained_row_is_not_overwritten(self):
-        # No canonical table anywhere: nothing may be written at all.
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            idx = vault / "projects" / "_index.md"
-            custom = (
-                "---\ntype: index\ntags:\n  - index\n---\n\n"
-                "# Reading notes\n\n"
-                "| Source | Note |\n"
-                "|--------|------|\n"
-                + self._HAND_ROW + "\n"
-            )
-            idx.write_text(custom)
-            r = upsert_projects_index_row(vault, "demo", "coding", "done", 3, 4, "2026-07-01")
-            self.assertEqual(r, "skipped-unknown-format")
-            self.assertEqual(idx.read_text(), custom,
-                             "a hand-maintained table must be left byte-identical")
-
-    def test_canonical_row_updates_while_hand_row_survives(self):
-        # Both tables in one file: the canonical row must still be refreshed,
-        # and only that one.
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            idx = vault / "projects" / "_index.md"
-            idx.write_text(
-                "---\ntype: index\ntags:\n  - index\n---\n\n"
-                "# Reading notes\n\n"
-                "| Source | Note |\n"
-                "|--------|------|\n"
-                + self._HAND_ROW + "\n\n"
-                "# All Projects\n\n"
-                "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
-                "|---------|------|--------|-----------|----------|--------------|\n"
-                "| [[demo/brief\\|demo]] | coding | active | 0 | 0 | — |\n")
-            r = upsert_projects_index_row(vault, "demo", "coding", "done", 3, 4, "2026-07-01")
-            self.assertEqual(r, "updated")
-            text = idx.read_text()
-            self.assertIn(self._HAND_ROW, text,
-                          "the user's own row must survive verbatim")
-            self.assertIn("coding | done | 3 | 4 | 2026-07-01", text,
-                          "the canonical row must still be refreshed")
-            self.assertNotIn("active | 0 | 0 | —", text)
-            self.assertEqual(text.count("my own annotation"), 1)
-
-    def test_row_below_the_canonical_table_is_not_touched(self):
-        # A second table AFTER the canonical one: the span must end at the
-        # canonical table's last row, not run to end of file.
-        with tempfile.TemporaryDirectory() as tmp:
-            vault = _make_vault(tmp)
-            idx = vault / "projects" / "_index.md"
-            idx.write_text(
-                "---\ntype: index\ntags:\n  - index\n---\n\n"
-                "# All Projects\n\n"
-                "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
-                "|---------|------|--------|-----------|----------|--------------|\n"
-                "| [[other/brief\\|other]] | coding | active | 0 | 0 | — |\n\n"
-                "# Reading notes\n\n"
-                "| Source | Note |\n"
-                "|--------|------|\n"
-                + self._HAND_ROW + "\n")
-            r = upsert_projects_index_row(vault, "demo", "coding", "done", 3, 4, "2026-07-01")
-            self.assertEqual(r, "inserted",
-                             "the slug is absent from the canonical table, so insert")
-            text = idx.read_text()
-            self.assertIn(self._HAND_ROW, text,
-                          "the trailing hand-maintained row must survive verbatim")
-            self.assertIn("| [[demo/brief\\|demo]] | coding | done | 3 | 4 | 2026-07-01 |", text)
-
-
-# ============================================================
 # End-to-end run_connect
 # ============================================================
 
@@ -539,8 +386,9 @@ class TestRunConnectEndToEnd(unittest.TestCase):
             self.assertTrue((pdir / "sessions" / "2026-05-27.md").is_file())
             # .gitignore
             self.assertIn(".claude/adjudant", (proj / ".gitignore").read_text())
-            # Projects index row
-            self.assertIn("my-project", (vault / "projects" / "_index.md").read_text())
+            # projects/_index.md is retired: Home groups every project by
+            # lifecycle folder instead, and connect writes no row anywhere.
+            self.assertFalse((vault / "projects" / "_index.md").exists())
 
     def test_reconnect_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -549,30 +397,6 @@ class TestRunConnectEndToEnd(unittest.TestCase):
             for _ in range(2):
                 run_connect(proj, vault, "v", "p", "coding", "P", "2026-05-27", "10:00")
             self.assertEqual(detect_state(proj, vault, "p"), "connected")
-
-
-# ============================================================
-# Counts + dates
-# ============================================================
-
-
-class TestCounts(unittest.TestCase):
-
-    def test_count_non_index_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            d = Path(tmp)
-            (d / "_index.md").write_text("idx")
-            (d / "a.md").write_text("a")
-            (d / "b.md").write_text("b")
-            (d / "c.txt").write_text("c")
-            self.assertEqual(count_non_index_files(d), 2)
-
-    def test_newest_session_date(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            d = Path(tmp)
-            for date in ["2026-05-25", "2026-05-27", "2026-05-26"]:
-                (d / f"{date}.md").write_text("x")
-            self.assertEqual(newest_session_date(d), "2026-05-27")
 
 
 # ============================================================

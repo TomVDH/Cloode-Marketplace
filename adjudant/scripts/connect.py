@@ -10,7 +10,6 @@ Onboards a code-side project to the vault:
      INDEX_EXEMPT_FOLDERS like sessions/ and images/)
   4. Write today's session note: `{vault}/projects/{slug}/sessions/{YYYY-MM-DD}.md`
   5. Append `.claude/adjudant` to project `.gitignore`
-  Also: add or update the project's row in `{vault}/projects/_index.md`.
 
 Idempotent. Re-running fills gaps; never overwrites user-authored content.
 
@@ -600,123 +599,11 @@ def append_gitignore(project_root: Path) -> str:
         return "created"
 
 
-# ============================================================
-# Step 6: projects/_index.md row (upsert)
-# ============================================================
-
-
-PROJECTS_INDEX_ROW_RE = re.compile(
-    r"^\|\s*\[\[(?P<slug>[^/|\]]+)/brief\\?\|[^]]+\]\]\s*\|"
-)
-
-
-def count_non_index_files(folder: Path) -> int:
-    if not folder.is_dir():
-        return 0
-    return sum(
-        1 for f in folder.iterdir()
-        if f.is_file() and f.suffix == ".md" and f.name != "_index.md"
-    )
-
-
-def newest_session_date(sessions_dir: Path) -> str:
-    if not sessions_dir.is_dir():
-        return "—"
-    dates: list[str] = []
-    for f in sessions_dir.iterdir():
-        if not f.is_file() or f.suffix != ".md":
-            continue
-        m = re.match(r"^(\d{4}-\d{2}-\d{2})", f.stem)
-        if m:
-            dates.append(m.group(1))
-    return max(dates) if dates else "—"
-
-
-# The canonical 6-column projects-index header. v3 retired the two
-# _index-*.md templates; this regex is the shape's only declaration now.
-# A row is only ever inserted under THIS header — anything else is a
-# hand-maintained or custom index and is left alone.
-_CANONICAL_INDEX_HEADER_RE = re.compile(
-    r"^\|\s*Project\s*\|\s*Type\s*\|\s*Status\s*\|\s*Decisions\s*\|"
-    r"\s*Sessions\s*\|\s*Last Session\s*\|\s*$", re.I)
-
-
-_TABLE_SEPARATOR_RE = re.compile(r"^\|[\s\-|:]+\|\s*$")
-
-
-def _canonical_table_body(lines: list[str]) -> Optional[tuple[int, int]]:
-    """`(start, end)` line range of the canonical projects table's row body.
-
-    `start` is the first line after the header's `|---|` separator; `end` is
-    one past its last row, stopping at the first line that is not a table row.
-    None when there is no canonical header, or no separator beneath it.
-
-    Both the insert AND the replace path go through this: a row for our slug
-    that happens to live in the user's own table is not ours to rewrite.
-    """
-    for i, line in enumerate(lines):
-        if not _CANONICAL_INDEX_HEADER_RE.match(line):
-            continue
-        # Markdown requires the delimiter row directly beneath the header.
-        if i + 1 >= len(lines) or not _TABLE_SEPARATOR_RE.match(lines[i + 1]):
-            return None
-        start = end = i + 2
-        while end < len(lines) and lines[end].lstrip().startswith("|"):
-            end += 1
-        return start, end
-    return None
-
-
-def upsert_projects_index_row(
-    vault_path: Path,
-    slug: str,
-    project_type: str,
-    status: str,
-    decisions_n: int,
-    sessions_n: int,
-    last_session: str,
-) -> str:
-    idx = vault_path / "projects" / "_index.md"
-    new_row = (
-        f"| [[{slug}/brief\\|{slug}]] | {project_type} | {status} | "
-        f"{decisions_n} | {sessions_n} | {last_session} |"
-    )
-    if not idx.is_file():
-        idx.write_text(
-            "---\ntype: index\ncreated: " + datetime.now().strftime("%Y-%m-%d")
-            + "\nupdated: " + datetime.now().strftime("%Y-%m-%d") + "\n---\n\n"
-            "# All Projects\n\n"
-            "| Project | Type | Status | Decisions | Sessions | Last Session |\n"
-            "|---------|------|--------|-----------|----------|--------------|\n"
-            + new_row + "\n"
-        )
-        return "created-index"
-
-    text = idx.read_text()
-    lines = text.splitlines()
-    # Never corrupt a hand-maintained index (audit 2026-07-27 finding 13, and
-    # fix wave 1 finding 4). Insert used to land after the FIRST `|---|`
-    # anywhere in the file; replace used to match `| [[slug/brief\|` on ANY
-    # line, so a row for this slug inside the user's own table was overwritten
-    # with the canonical 6-column form. Both paths are now confined to the
-    # canonical table's own row body.
-    body = _canonical_table_body(lines)
-    if body is None:
-        return "skipped-unknown-format"
-    start, end = body
-
-    target_pattern = re.compile(
-        r"^\|\s*\[\[" + re.escape(slug) + r"/brief\\?\|"
-    )
-    found = False
-    for i in range(start, end):
-        if target_pattern.search(lines[i]):
-            lines[i] = new_row
-            found = True
-    if not found:
-        lines.insert(start, new_row)
-    idx.write_text("\n".join(lines) + "\n")
-    return "updated" if found else "inserted"
+# Step 6 (projects/_index.md row upsert) lived here. It is gone: Home groups
+# every project by lifecycle folder and is generated whole by plan 4's
+# _index_gen, so a hand-upserted second list of the same projects could only
+# disagree with it — which it did, with 28 rows, two duplicated, and
+# malformed table pipes.
 
 
 # ============================================================
@@ -739,8 +626,7 @@ def detect_state(project_root: Path, vault_path: Optional[Path], slug: Optional[
 
 _RECEIPT_MARK = {
     "created": "created", "preserved": "already-present",
-    "added": "updated", "updated": "updated", "inserted": "updated",
-    "created-index": "created",
+    "added": "updated", "updated": "updated",
 }
 
 
@@ -756,7 +642,6 @@ def build_receipt(summary: dict[str, Any]) -> list[dict[str, str]]:
         {"artifact": "vault scaffold", "state": "created" if scaffold["created"] else "already-present"},
         {"artifact": "session note", "state": _RECEIPT_MARK.get(steps["session_note"], steps["session_note"])},
         {"artifact": ".gitignore entries", "state": _RECEIPT_MARK.get(steps["gitignore"], steps["gitignore"])},
-        {"artifact": "projects/_index.md row", "state": _RECEIPT_MARK.get(steps["projects_index_row"], steps["projects_index_row"])},
     ]
     # Board pointer for the project types that get a tasks/ folder by default.
     # The board is opt-in and never auto-seeded: v3 deleted the PostToolUse
@@ -821,20 +706,10 @@ def run_connect(
     # dashboard is never clobbered by an idempotent re-run.
     summary["steps"]["base_dashboards"] = provision_dashboards(proj_dir, slug)
 
-    # Step 6
-    decisions_n = count_non_index_files(proj_dir / "decisions")
-    sessions_n = count_non_index_files(proj_dir / "sessions")
-    last_session = newest_session_date(proj_dir / "sessions")
-    brief_path = proj_dir / "brief.md"
-    status = "active"
-    if brief_path.is_file():
-        fm, _ = parse_frontmatter(brief_path.read_text(errors="replace"))
-        s = fm.fields.get("status")
-        if isinstance(s, str) and s:
-            status = s
-    summary["steps"]["projects_index_row"] = upsert_projects_index_row(
-        vault_path, slug, project_type, status, decisions_n, sessions_n, last_session
-    )
+    # Step 6 wrote a row into projects/_index.md. That file is retired: Home
+    # groups every project by lifecycle folder and is generated whole, so a
+    # hand-upserted second list could only disagree with it. 28 rows, two
+    # duplicated, with malformed table pipes, is what it disagreed by.
 
     summary["receipt"] = build_receipt(summary)
     return summary
@@ -966,7 +841,6 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
           f"preserved={len(summary['steps']['vault_scaffold']['preserved'])}", file=sys.stderr)
     print(f"[connect] session_note: {summary['steps']['session_note']}", file=sys.stderr)
     print(f"[connect] gitignore: {summary['steps']['gitignore']}", file=sys.stderr)
-    print(f"[connect] projects_index_row: {summary['steps']['projects_index_row']}", file=sys.stderr)
 
     print(json.dumps(summary, indent=2, default=str))
     return 0

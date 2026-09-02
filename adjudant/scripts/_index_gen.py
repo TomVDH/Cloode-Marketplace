@@ -257,3 +257,49 @@ def write_project_index(project_dir: Path, today: date) -> Path:
     path = project_dir / "_index.md"
     path.write_text(render_project_index(project_dir, today))
     return path
+
+
+# ============================================================
+# Retiring the other 139
+# ============================================================
+
+
+def prune_index_files(vault: Path) -> list[Path]:
+    """Delete every `_index.md` that is not a project contents page.
+
+    139 folder indexes existed. For an agent they are worth nothing: a
+    directory listing is the true current contents, a markdown copy is stale
+    the moment anything changes, 24 were already staler than their own folder
+    and 15 had a body under 25 bytes. `projects/_index.md` goes with them:
+    Home groups by lifecycle folder now, and a second list of the same
+    projects adds nothing but a second thing to disagree.
+
+    Returns what it deleted, so a caller can report it.
+    """
+    keep = {pdir / "_index.md"
+            for _slug, pdir, _zone in enumerate_projects_all_zones(vault)}
+    deleted: list[Path] = []
+    base = vault / "projects"
+    if not base.is_dir():
+        return deleted
+    for f in sorted(base.rglob("_index.md")):
+        if f in keep:
+            continue
+        try:
+            f.unlink()
+        except OSError:
+            continue
+        deleted.append(f)
+    return deleted
+
+
+def regenerate(vault: Path, today: date) -> dict:
+    """Rewrite both surfaces and retire every other index. Returns a receipt."""
+    deleted = prune_index_files(vault)
+    projects = [str(write_project_index(pdir, today))
+                for _slug, pdir, _zone in enumerate_projects_all_zones(vault)]
+    return {
+        "home": str(write_home(vault, today)),
+        "projects": projects,
+        "deleted": [str(p) for p in deleted],
+    }

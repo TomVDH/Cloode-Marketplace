@@ -190,34 +190,35 @@ class TestCleanIsNetSubtractive(unittest.TestCase):
                 project = self._project(Path(t), folder)
                 change_set = self._preview(project)
                 self.assertEqual(change_set["index_gaps"], [folder])
-                self.assertEqual(change_set["index_proposals"], {})
+                # Task 8 retired the in-place rebuild entirely: there is no
+                # second proposal dict to be empty, because there is no
+                # longer any code path that could populate one.
+                self.assertNotIn("index_proposals", change_set)
                 self._run(project)
                 self.assertFalse((project / folder / "_index.md").exists(),
                                  "clean generated an index")
 
-    def test_an_existing_index_is_rewritten_in_place_not_created(self):
-        # The shape the byte assertion cannot cover, so it needs its own test.
-        # Refreshing an `_index.md` that already exists is a rewrite the
-        # contract permits, and a rewrite is free to grow the file — it grows
-        # by ~150 bytes here. What may never grow is the file COUNT, which is
-        # the contract: clean rewrites and removes, and cannot add.
+    def test_an_existing_index_with_no_drift_is_left_alone(self):
+        # Task 8 retired the in-place rebuild: an `_index.md` that already
+        # exists and carries no schema drift now produces no proposal of any
+        # kind, which is stronger than "does not grow" — it does not change.
         for folder in FOLDERS:
             with self.subTest(folder=folder), tempfile.TemporaryDirectory() as t:
                 project = self._project(Path(t), folder)
-                (project / folder / "_index.md").write_text(
-                    "---\ntype: index\ncreated: 2026-01-01\n"
-                    "updated: 2026-01-01\n---\n\n# Entries\n\n## Entries\n\n")
+                existing = ("---\ntype: index\ncreated: 2026-01-01\n"
+                            "updated: 2026-01-01\n---\n\n# Entries\n\n## Entries\n\n")
+                (project / folder / "_index.md").write_text(existing)
                 before = self._paths(project)
                 before_n, _ = self._count(project)
                 change_set = self._preview(project)
-                self.assertIn(f"{folder}/_index.md", change_set["index_proposals"])
-                self.assertTrue(
-                    change_set["index_proposals"][f"{folder}/_index.md"]["had_existing"])
+                self.assertNotIn(f"{folder}/_index.md", change_set["file_proposals"])
                 clean.write_preview_to_disk(project, change_set)
                 clean.apply_preview(project)
                 after_n, _ = self._count(project)
                 self.assertEqual(after_n, before_n, "clean added files to the vault")
                 self.assertEqual(self._paths(project) - before, set())
+                self.assertEqual((project / folder / "_index.md").read_text(), existing,
+                                 "clean touched an index file it no longer rebuilds")
 
 
 if __name__ == "__main__":

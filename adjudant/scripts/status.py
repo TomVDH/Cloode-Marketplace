@@ -15,8 +15,9 @@ the cost of being wrong:
     worth_a_look  cosmetic, advisory, or a question rather than a defect
 
 The make-current phase is the only part that writes, and it writes exactly
-what `sync` wrote: the brief's `updated:` field, the handoff mirror, and the
-project's row in `projects/_index.md`.
+what `sync` wrote: the brief's `updated:` field and the handoff mirror. It no
+longer upserts a row into `projects/_index.md` — plan 4 retired that surface;
+Home groups every project by lifecycle folder and is generated whole instead.
 
 CLI:
     python3 status.py [--project-dir PATH] [--vault-dir PATH] [--out FILE]
@@ -70,7 +71,6 @@ from _vault_walk import (  # noqa: E402
     ZONE_FOR_STATUS,
     atomic_write_text,
     file_lock,
-    find_project_dir,
     obsidian_cli_path,
     parse_frontmatter,
     resolve_project_from_cwd,
@@ -82,11 +82,6 @@ from _vault_walk import (  # noqa: E402
     zone_of,
 )
 from board_bridge import kebab as _bridge_kebab  # noqa: E402
-from connect import (  # noqa: E402
-    count_non_index_files,
-    newest_session_date,
-    upsert_projects_index_row,
-)
 
 # Task-status alias set for schema_drift's normalizable flag. Defensive:
 # status must render even if board.py is mid-edit.
@@ -692,25 +687,6 @@ def mirror_handoff(
     return "mirrored"
 
 
-def refresh_projects_index_row(vault_path: Path, slug: str) -> str:
-    proj_dir = find_project_dir(vault_path, slug) or (vault_path / "projects" / slug)
-    if not proj_dir.is_dir():
-        return "project-missing"
-    brief_path = proj_dir / "brief.md"
-    if not brief_path.is_file():
-        return "brief-missing"
-    fm, _ = parse_frontmatter(brief_path.read_text(errors="replace"))
-    project_type = fm.fields.get("project_type") or "coding"
-    status_value = fm.fields.get("status") or "active"
-    decisions_n = count_non_index_files(proj_dir / "decisions")
-    sessions_n = count_non_index_files(proj_dir / "sessions")
-    last_session = newest_session_date(proj_dir / "sessions")
-    return upsert_projects_index_row(
-        vault_path, slug, project_type, status_value,
-        decisions_n, sessions_n, last_session
-    )
-
-
 def make_current(
     vault_project_dir: Path,
     vault_path: Optional[Path],
@@ -720,7 +696,7 @@ def make_current(
     today: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> dict:
-    """Bring the three derived facts up to date. The one phase that writes.
+    """Bring the two derived facts up to date. The one phase that writes.
 
     Every caller reaches the same implementation: the breadcrumb-driven
     `run_sync` and the report's `synced` band both land here, so the two can
@@ -728,6 +704,12 @@ def make_current(
 
     The handoff mirror needs the CODE root (that is where `.remember/` lives).
     Without one there is nothing to mirror, which is a state, not a failure.
+
+    `vault_path` is unused in this body now: it existed to locate
+    `projects/_index.md` for the row this phase used to refresh, and plan 4
+    retired that surface. Left in the signature rather than trimmed, since
+    both call sites already have one to hand and a future write here (the
+    generated surfaces are a plausible next step) would want it back anyway.
     """
     today = today or datetime.now().strftime("%Y-%m-%d")
     steps: dict = {}
@@ -747,11 +729,6 @@ def make_current(
     else:
         steps["handoff_mirror"] = "no-source"
 
-    if vault_path is not None:
-        steps["projects_index_row"] = refresh_projects_index_row(vault_path, slug)
-    else:
-        steps["projects_index_row"] = "no-vault"
-
     fm, _ = parse_frontmatter(brief_path.read_text(errors="replace")) \
         if brief_path.is_file() else (None, "")
     if fm is not None:
@@ -759,7 +736,7 @@ def make_current(
         if isinstance(declared, str) and declared not in ZONE_FOR_STATUS:
             warnings.append(
                 f"brief status {declared!r} is off-vocabulary "
-                f"({' | '.join(ZONE_FOR_STATUS)}); row written as-is, fix the brief")
+                f"({' | '.join(ZONE_FOR_STATUS)}); fix the brief")
 
     return {"today": today, "slug": slug, "steps": steps, "warnings": warnings}
 
@@ -1304,8 +1281,7 @@ def cli_main(argv: Optional[list] = None) -> int:
     if steps:
         print(f"[status] {report['slug']}: "
               f"brief={steps.get('brief_refresh')}, "
-              f"handoff={steps.get('handoff_mirror')}, "
-              f"row={steps.get('projects_index_row')}",
+              f"handoff={steps.get('handoff_mirror')}",
               file=sys.stderr)
 
     payload = json.dumps(report, indent=2, default=str)

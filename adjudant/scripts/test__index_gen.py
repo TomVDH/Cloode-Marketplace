@@ -12,6 +12,8 @@ from datetime import date
 from pathlib import Path
 
 from _index_gen import (
+    prune_index_files,
+    regenerate,
     render_home,
     render_project_index,
     write_home,
@@ -201,6 +203,73 @@ class TestProjectIndex(unittest.TestCase):
             self.assertTrue(links)
             for wl in links:
                 self.assertTrue(resolve_wikilink(wl.target, idx), wl.target)
+
+
+class TestPruneAndRegenerate(unittest.TestCase):
+
+    def _vault(self, tmp: Path) -> Path:
+        vault = tmp / "v"
+        pdir = _mk(vault, "demo", "active", ["2026-08-30"])
+        for folder in ("decisions", "notes", "tasks"):
+            (pdir / folder).mkdir()
+            (pdir / folder / "_index.md").write_text(
+                "---\ntype: index\n---\n\n# X\n\n## Entries\n")
+            (pdir / folder / "real.md").write_text(
+                "---\ntype: note\nupdated: 2026-08-01\n---\n\n# real\n")
+        (pdir / "_index.md").write_text("hand written, will be overwritten")
+        (vault / "projects" / "_index.md").write_text(
+            "---\ntype: index\n---\n\n# All Projects\n")
+        return vault
+
+    def test_prune_removes_folder_indexes_and_the_projects_index(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            deleted = prune_index_files(vault)
+            names = sorted(str(p.relative_to(vault)) for p in deleted)
+            self.assertEqual(len(names), 4)
+            self.assertIn("projects/_index.md", names)
+            for folder in ("decisions", "notes", "tasks"):
+                self.assertIn(f"projects/active/demo/{folder}/_index.md", names)
+
+    def test_prune_keeps_the_project_contents_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            prune_index_files(vault)
+            self.assertTrue(
+                (vault / "projects" / "active" / "demo" / "_index.md").is_file())
+
+    def test_prune_keeps_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            (vault / "Home.md").write_text("---\ntype: index\n---\n# Vault\n")
+            prune_index_files(vault)
+            self.assertTrue((vault / "Home.md").is_file())
+
+    def test_prune_touches_no_content_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            prune_index_files(vault)
+            self.assertEqual(
+                len(list((vault / "projects").rglob("real.md"))), 3)
+
+    def test_prune_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            prune_index_files(vault)
+            self.assertEqual(prune_index_files(vault), [])
+
+    def test_regenerate_writes_both_surfaces_and_prunes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = self._vault(Path(tmp))
+            out = regenerate(vault, date(2026, 9, 1))
+            self.assertEqual(out["home"], str(vault / "Home.md"))
+            self.assertEqual(
+                out["projects"],
+                [str(vault / "projects" / "active" / "demo" / "_index.md")])
+            self.assertEqual(len(out["deleted"]), 4)
+            survivors = sorted(
+                str(p.relative_to(vault)) for p in vault.rglob("_index.md"))
+            self.assertEqual(survivors, ["projects/active/demo/_index.md"])
 
 
 if __name__ == "__main__":
