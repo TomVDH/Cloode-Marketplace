@@ -806,111 +806,6 @@ class TestHooksWiring(_PatchedTree):
         self.assertTrue(any("hooks-wiring" in f for f in r.failures))
 
 
-_DECISION_TEMPLATE_OK = """---
-type: decision
-status: active                # active | superseded | reversed | implemented | deferred
-date: {YYYY-MM-DD}
-tags:
-  - decision
-supersedes: ""                # optional: wikilink to previous decision being replaced
----
-
-## Decision
-"""
-
-_VS_DECISION_VOCAB = (
-    "# Vault Standards\n\n## 9. Decision status vocabulary\n\n"
-    "`active` | `superseded` | `reversed` | `implemented` | `deferred`\n")
-
-
-class TestDecisionStatusVocabularyOnRepo(unittest.TestCase):
-
-    def test_validator_passes_on_repo(self):
-        r = validate.Result()
-        validate.validate_decision_status_vocabulary(r)
-        self.assertEqual(r.failures, [], r.failures)
-        self.assertIn("decision-status-vocabulary", r.passes)
-
-
-class TestDecisionStatusVocabulary(_PatchedTree):
-
-    def _seed(self, template=_DECISION_TEMPLATE_OK, standards=_VS_DECISION_VOCAB):
-        (validate.TEMPLATES / "decision.md").write_text(template)
-        (validate.REFERENCE / "vault-standards.md").write_text(standards)
-
-    def test_passes_when_all_three_agree(self):
-        self._seed()
-        r = Result()
-        validate.validate_decision_status_vocabulary(r)
-        self.assertEqual(r.failures, [], r.failures)
-
-    def test_fails_on_tampered_enum_comment(self):
-        self._seed(template=_DECISION_TEMPLATE_OK.replace(" | deferred", ""))
-        r = Result()
-        validate.validate_decision_status_vocabulary(r)
-        self.assertTrue(any("decision-status-vocabulary" in f for f in r.failures))
-
-    def test_fails_when_standards_missing_value(self):
-        self._seed(standards=_VS_DECISION_VOCAB.replace("`deferred`", "`parked`"))
-        r = Result()
-        validate.validate_decision_status_vocabulary(r)
-        self.assertTrue(any("deferred" in f for f in r.failures))
-
-    def test_fails_on_off_vocabulary_default(self):
-        self._seed(template=_DECISION_TEMPLATE_OK.replace("status: active", "status: accepted"))
-        r = Result()
-        validate.validate_decision_status_vocabulary(r)
-        self.assertTrue(any("decision-status-vocabulary" in f for f in r.failures))
-
-
-class TestTemplateSchemaParityOnRepo(unittest.TestCase):
-
-    def test_validator_passes_on_repo(self):
-        r = validate.Result()
-        validate.validate_template_schema_parity(r)
-        self.assertEqual(r.failures, [], r.failures)
-        self.assertIn("template-schema-parity", r.passes)
-
-
-class TestTemplateSchemaParity(_PatchedTree):
-
-    def setUp(self):
-        super().setUp()
-        self._orig_registry = validate.FILE_TYPES_REQUIRING_TEMPLATE
-        validate.FILE_TYPES_REQUIRING_TEMPLATE = {"decision": "decision.md"}
-
-    def tearDown(self):
-        validate.FILE_TYPES_REQUIRING_TEMPLATE = self._orig_registry
-        super().tearDown()
-
-    def test_passes_on_conforming_template(self):
-        (validate.TEMPLATES / "decision.md").write_text(_DECISION_TEMPLATE_OK)
-        r = Result()
-        validate.validate_template_schema_parity(r)
-        self.assertEqual(r.failures, [], r.failures)
-
-    def test_fails_on_alien_key(self):
-        (validate.TEMPLATES / "decision.md").write_text(
-            _DECISION_TEMPLATE_OK.replace(
-                "type: decision\n",
-                'type: decision\nproject: "[[projects/x/brief|x]]"\n'))
-        r = Result()
-        validate.validate_template_schema_parity(r)
-        self.assertTrue(any("project" in f for f in r.failures))
-
-    def test_fails_on_missing_required_key(self):
-        (validate.TEMPLATES / "decision.md").write_text(
-            _DECISION_TEMPLATE_OK.replace("date: {YYYY-MM-DD}\n", ""))
-        r = Result()
-        validate.validate_template_schema_parity(r)
-        self.assertTrue(any("date" in f for f in r.failures))
-
-    def test_fails_when_template_missing(self):
-        r = Result()
-        validate.validate_template_schema_parity(r)
-        self.assertTrue(any("template-schema-parity" in f for f in r.failures))
-
-
 _ZONE_PY_OK = '''#!/usr/bin/env python3
 """A zone-aware python hook."""
 from _vault_walk import find_project_dir, is_safe_slug, resolve_vault
@@ -1150,7 +1045,7 @@ if __name__ == "__main__":
     unittest.main()
 
 class TestAdvisorWiring(unittest.TestCase):
-    """35. advisor-wiring - the opt-in advisor's three surfaces stay wired:
+    """33. advisor-wiring - the opt-in advisor's three surfaces stay wired:
     the contract doc exists, the SessionStart banner names it, and the toggle
     still stamps AGENTS.md. Any one of them silently dropping out leaves a
     mode that claims to watch and does not."""

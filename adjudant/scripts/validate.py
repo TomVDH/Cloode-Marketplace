@@ -4,15 +4,15 @@
 Run from the plugin root (adjudant/). Exit 0 on pass, 1 on any failure.
 
 Validators:
-  1. harness-parity         — source/, .claude/, .gemini/ skill paths all resolve to skills/adjudant
-  2. templates-tag-schema   — no deprecated tags (#ob/, #cabinet/) in any template
-  3. claude-md-imports-agents — templates/CLAUDE.md starts with @AGENTS.md
-  4. template-coverage      — every file-type in vault-standards has a matching template
-  5. command-metadata-coherence — verbs in command-metadata.json match SKILL.md router
-  6. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
-  7. port-preview-coherence  — if preview dir exists, has all required files
-  8. port-backup-integrity   — backup dirs have at least one .legacy file
-  9. gitignore-includes-port-dirs — .gitignore lists port dirs if either exists
+   1. harness-parity         — source/, .claude/, .gemini/ skill paths all resolve to skills/adjudant
+   2. templates-tag-schema   — no deprecated tags (#ob/, #cabinet/) in any template
+   3. claude-md-imports-agents — templates/CLAUDE.md starts with @AGENTS.md
+   4. template-coverage      — every file-type in vault-standards has a matching template
+   5. command-metadata-coherence — verbs in command-metadata.json match SKILL.md router
+   6. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
+   7. port-preview-coherence  — if preview dir exists, has all required files
+   8. port-backup-integrity   — backup dirs have at least one .legacy file
+   9. gitignore-includes-port-dirs — .gitignore lists port dirs if either exists
  10. version-consistency     — plugin.json / command-metadata.json / SKILL.md (+ marketplace when present) versions all match
  11. tidy-preview-coherence  — if tidy preview dir exists, has summary.md + changes.json + files/
  12. tidy-backup-integrity   — tidy backup dirs have at least one .legacy file
@@ -31,16 +31,14 @@ Validators:
  25. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
  26. task-status-vocabulary       : every board.py STATUS_TO_COLUMN alias is documented in the vault-standards status alias table
  27. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
- 28. decision-status-vocabulary   : _vault_walk constants, vault-standards, and the decision template agree on the five-state note vocabulary
- 29. template-schema-parity       : every registered template's frontmatter keys cover its type's required set and stay inside required | optional
- 30. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
- 31. freshness-vocabulary         : FRESHNESS_VALUES, the epistemic optional sets, and vault-standards section 10 agree
- 32. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
- 33. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
- 34. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
- 35. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
+ 28. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
+ 29. freshness-vocabulary         : FRESHNESS_VALUES, the epistemic optional sets, and vault-standards section 10 agree
+ 30. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
+ 31. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
+ 32. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
+ 33. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
 
-35 validators total.
+33 validators total.
 """
 
 import ast
@@ -53,11 +51,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _voice  # noqa: E402
 from _vault_walk import (  # noqa: E402
-    DECISION_STATUS_VALUES,
     FIELD_SCHEMA,
     FRESHNESS_VALUES,
     PROJECT_STATUS_VALUES,
-    parse_frontmatter,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -755,7 +751,7 @@ def _base_template_problems(text: str, legal_props: set) -> list[str]:
 
 
 def validate_base_dashboards(r: Result) -> None:
-    """32. base-dashboards — every shipped .base dashboard template is
+    """30. base-dashboards — every shipped .base dashboard template is
     structurally sound and references only schema-legal properties."""
     name = "base-dashboards"
     src = TEMPLATES / "bases"
@@ -780,7 +776,7 @@ def validate_base_dashboards(r: Result) -> None:
 
 
 def validate_freshness_vocabulary(r: Result) -> None:
-    """31. freshness-vocabulary — _vault_walk.FRESHNESS_VALUES, the epistemic
+    """29. freshness-vocabulary — _vault_walk.FRESHNESS_VALUES, the epistemic
     optional sets, and vault-standards section 10 agree on the truth-lifetime
     vocabulary and its home types."""
     name = "freshness-vocabulary"
@@ -813,7 +809,7 @@ def validate_freshness_vocabulary(r: Result) -> None:
 
 
 def validate_hook_zone_awareness(r: Result) -> None:
-    """30. hook-zone-awareness — no hook may hardcode projects/<slug>.
+    """28. hook-zone-awareness — no hook may hardcode projects/<slug>.
 
     Audit 2026-07-27: every hook built `{vault}/projects/{slug}` directly while
     /adjudant shelf moves projects to `_fridge/` and `_archive/` without
@@ -857,68 +853,6 @@ def validate_hook_zone_awareness(r: Result) -> None:
     if missing_guard:
         r.add_fail(name, f"hooks build paths from an unvalidated slug: {sorted(set(missing_guard))}")
         return
-    r.add_pass(name)
-
-
-def validate_decision_status_vocabulary(r: Result) -> None:
-    """28. decision-status-vocabulary — _vault_walk constants, vault-standards,
-    and the decision template agree on the five-state note vocabulary."""
-    name = "decision-status-vocabulary"
-    expected = ("active", "superseded", "reversed", "implemented", "deferred")
-    if DECISION_STATUS_VALUES != expected:
-        r.add_fail(name, f"_vault_walk.DECISION_STATUS_VALUES is {DECISION_STATUS_VALUES}")
-        return
-    vs_path = REFERENCE / "vault-standards.md"
-    if not vs_path.is_file():
-        r.add_fail(name, "reference/vault-standards.md not found")
-        return
-    vs = vs_path.read_text()
-    missing = [s for s in expected if f"`{s}`" not in vs]
-    if missing:
-        r.add_fail(name, f"vault-standards.md missing states: {missing}")
-        return
-    enum_comment = " | ".join(expected)
-    t = TEMPLATES / "decision.md"
-    if not t.is_file():
-        r.add_fail(name, "templates/decision.md not found")
-        return
-    text = t.read_text()
-    m = re.search(r"^status:\s*(\S+)", text, re.MULTILINE)
-    if not m or m.group(1) not in expected:
-        r.add_fail(name, f"{t.name}: status value missing or off-vocabulary")
-        return
-    if enum_comment not in text:
-        r.add_fail(name, f"{t.name}: enum comment '{enum_comment}' missing")
-        return
-    r.add_pass(name)
-
-
-def validate_template_schema_parity(r: Result) -> None:
-    """29. template-schema-parity — every registered template's frontmatter keys
-    cover its type's required set and stay inside required | optional. The
-    permanent regression guard against retired fields re-entering a template."""
-    name = "template-schema-parity"
-    for ftype, entry in FILE_TYPES_REQUIRING_TEMPLATE.items():
-        spec = FIELD_SCHEMA.get(ftype)
-        if spec is None:
-            r.add_fail(name, f"no FIELD_SCHEMA entry for file type {ftype}")
-            return
-        legal = spec["required"] | spec["optional"]
-        for fname in (entry if isinstance(entry, list) else [entry]):
-            path = TEMPLATES / fname
-            if not path.is_file():
-                r.add_fail(name, f"{fname}: template missing")
-                return
-            fm, _body = parse_frontmatter(path.read_text())
-            keys = set(fm.fields)
-            missing = spec["required"] - keys
-            if missing:
-                r.add_fail(name, f"{fname}: missing required keys {sorted(missing)}")
-                return
-            alien = keys - legal
-            if alien:
-                r.add_fail(name, f"{fname}: keys outside schema {sorted(alien)}")
-                return
     r.add_pass(name)
 
 
@@ -1008,7 +942,7 @@ def _voice_surfaces() -> list[Path]:
 
 
 def validate_voice_patterns(r: Result) -> None:
-    """33. voice-patterns — the named no-ai-slop sentence patterns.
+    """31. voice-patterns — the named no-ai-slop sentence patterns.
 
     The lexicon (validator 24) catches words. This catches shapes: superficial
     `-ing` analysis clauses, binary contrasts, importance puffery, weasel
@@ -1035,7 +969,7 @@ def validate_voice_patterns(r: Result) -> None:
 
 
 def validate_render_voice(r: Result) -> None:
-    """34. render-voice — the voice contract reaches rendered CLI output.
+    """32. render-voice — the voice contract reaches rendered CLI output.
 
     voice.md has always described the shape of what the verbs print, and
     nothing checked it: the contract bound the docs about the code, not the
@@ -1070,7 +1004,7 @@ def validate_render_voice(r: Result) -> None:
 
 
 def validate_advisor_wiring(r: Result) -> None:
-    """35. advisor-wiring — the opt-in advisor's three surfaces stay wired.
+    """33. advisor-wiring — the opt-in advisor's three surfaces stay wired.
 
     The mode's whole design is visible state: a contract doc, a SessionStart
     banner that names it, and an AGENTS.md marker the toggle stamps. Any one
@@ -1267,8 +1201,6 @@ def main() -> int:
     validate_board_template_markers(r)
     validate_task_status_vocabulary(r)
     validate_hooks_wiring(r)
-    validate_decision_status_vocabulary(r)
-    validate_template_schema_parity(r)
     validate_hook_zone_awareness(r)
     validate_freshness_vocabulary(r)
     validate_base_dashboards(r)

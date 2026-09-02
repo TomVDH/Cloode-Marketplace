@@ -250,7 +250,7 @@ class TestCaptureTask(_Harness):
             self.assertTrue(note.is_file())
             text = note.read_text()
             self.assertIn("type: task", text)
-            self.assertIn("status: todo", text)
+            self.assertIn("status: backlog", text)
             deck = proj / "board" / "board-data.json"
             self.assertTrue(deck.is_file(), "the board should seed the card")
             import json

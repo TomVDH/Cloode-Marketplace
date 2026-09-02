@@ -211,7 +211,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--today", help="Override 'today' (YYYY-MM-DD) for age math")
     parser.add_argument("--title", help="capture-task: the task's one-line title")
     parser.add_argument("--note", default="",
-                        help="capture-task: the observation, lands in ## Task")
+                        help="capture-task: the observation, lands in ## Notes")
     args = parser.parse_args(argv)
 
     if args.action == "capture-task":

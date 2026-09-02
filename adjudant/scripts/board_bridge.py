@@ -87,8 +87,12 @@ def _strip_frontmatter_comments(text: str) -> str:
 
 def render_task_note(slug: str, description: str) -> str:
     """templates/task.md with {slug} filled and the description inserted
-    into the ## Task section (left untouched when the description is empty,
-    matching the template's own empty shape)."""
+    into the ## Notes section (left untouched when the description is empty,
+    matching the template's own empty shape).
+
+    v3 moved the insertion point: the title line is the task now, and ## Notes
+    is what the template offers for "anything the person picking this up
+    needs". The old ## Task section is gone from the template."""
     try:
         text = TEMPLATE.read_text()
     except OSError:
@@ -96,7 +100,7 @@ def render_task_note(slug: str, description: str) -> str:
     text = _strip_frontmatter_comments(text).replace("{slug}", slug)
     desc = description.strip()
     if desc:
-        marker = "## Task\n"
+        marker = "## Notes\n"
         idx = text.find(marker)
         if idx != -1:
             at = idx + len(marker)
