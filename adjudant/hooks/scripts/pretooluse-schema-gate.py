@@ -3,7 +3,7 @@
 
 Validates the PROPOSED frontmatter of a Write landing under the resolved
 vault project, using the same FIELD_SCHEMA detector that `check` reports and
-`tidy` feature 5 repairs. Catching drift at write time is what lets
+`tidy` feature 4 repairs. Catching drift at write time is what lets
 vault-standards.md stop restating enforceable detail.
 
   - BLOCK (exit 2) on missing required fields or a type/node_type conflict.

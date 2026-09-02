@@ -29,7 +29,7 @@ Then link your project once:
 | `/adjudant sync` | Push project state to the vault: brief, handoff, project index. |
 | `/adjudant check [vault\|repo\|all]` | Read-only health report: project, vault, and schema drift. `repo`/`all` also audit repo structure. |
 | `/adjudant sitrep` | Plain-language orientation after a break. Read-only. |
-| `/adjudant tidy [vault\|repo\|all]` | Routine surface cleanup: indexes, tags, wikilinks, frontmatter. Preview then apply. |
+| `/adjudant tidy [vault\|repo\|all]` | Routine surface cleanup: indexes, wikilinks, frontmatter. Preview then apply. |
 | `/adjudant ramasse` | Deep structural cleanup. Sparing, roughly quarterly. |
 | `/adjudant dream` | Semantic refresh: flags stale, contradictory, or orphaned content for you to judge. |
 | `/adjudant draw <canvas\|base\|diagram> <name>` | Create a canvas, base, or mermaid diagram. |
@@ -62,10 +62,10 @@ dream   as needed  semantic, LLM-judged, you approve every change
 | Hooks | 11 entries across 10 events, all vault-aware |
 | Templates | 16 file-type scaffolds + `board.html` |
 | Helpers | stdlib-only Python, one per file-touching verb; no build step |
-| Drift defense | `python3 scripts/validate.py` — 30 validators, run on pre-commit |
-| Tests | 1288; `python3 -m unittest discover -p 'test_*.py'` |
+| Drift defense | `python3 scripts/validate.py` — 29 validators, run on pre-commit |
+| Tests | 1267; `python3 -m unittest discover -p 'test_*.py'` |
 
-Deep reference (hook wiring, the verb-to-helper map, cross-machine details) lives in [`skills/adjudant/reference/internals.md`](skills/adjudant/reference/internals.md). Vault rules (tags, frontmatter, folders, naming) live in [`reference/vault-standards.md`](skills/adjudant/reference/vault-standards.md).
+Deep reference (hook wiring, the verb-to-helper map, cross-machine details) lives in [`skills/adjudant/reference/internals.md`](skills/adjudant/reference/internals.md). Vault rules (frontmatter, folders, naming) live in [`reference/vault-standards.md`](skills/adjudant/reference/vault-standards.md).
 
 ## Voice
 

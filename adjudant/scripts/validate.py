@@ -5,37 +5,36 @@ Run from the plugin root (adjudant/). Exit 0 on pass, 1 on any failure.
 
 Validators:
    1. harness-parity         — source/, .claude/, .gemini/ skill paths all resolve to skills/adjudant
-   2. templates-tag-schema   — no deprecated tags (#ob/, #cabinet/) in any template
-   3. claude-md-imports-agents — templates/CLAUDE.md starts with @AGENTS.md
-   4. template-schema-loads  — the templates parse into exactly the fifteen kinds, each vocabulary non-empty
-   5. command-metadata-coherence — verbs in command-metadata.json match SKILL.md router
-   6. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
-   7. port-preview-coherence  — if preview dir exists, has all required files
-   8. port-backup-integrity   — backup dirs have at least one .legacy file
-   9. gitignore-includes-port-dirs — .gitignore lists port dirs if either exists
- 10. version-consistency     — plugin.json / command-metadata.json / SKILL.md (+ marketplace when present) versions all match
- 11. tidy-preview-coherence  — if tidy preview dir exists, has summary.md + changes.json + files/
- 12. tidy-backup-integrity   — tidy backup dirs have at least one .legacy file
- 13. gitignore-includes-tidy-dirs — .gitignore lists tidy dirs if either exists
- 14. reference-files-exist   — every reference/*.md named in command-metadata.json and the SKILL.md router exists
- 15. verb-surface-parity     — every verb name appears in plugin.json / README.md / marketplace description; spelled-out verb counts match
- 16. reference-doc-links     — every relative markdown link inside reference/*.md resolves on disk
- 17. verb-description-length — command-metadata verb descriptions stay router-line short (≤ 220 chars)
- 18. repo-helper-parity      — repo_walk/repo_scan/repo_tidy each exist with a matching test_*.py
- 19. repo-standards-coverage — reference/repo-standards.md exists and names each detector category
- 20. repo-tidy-preview-coherence — if repo-tidy preview dir exists, it has summary.md + changes.json + files/
- 21. repo-tidy-backup-integrity   — repo-tidy backup subdirs with files carry at least one .legacy
- 22. gitignore-includes-repo-tidy-dirs — .gitignore lists the repo-tidy dirs if either exists
- 23. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
- 24. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
- 25. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
- 26. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
- 27. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
- 28. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
- 29. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
- 30. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
+   2. claude-md-imports-agents — templates/CLAUDE.md starts with @AGENTS.md
+   3. template-schema-loads  — the templates parse into exactly the fifteen kinds, each vocabulary non-empty
+   4. command-metadata-coherence — verbs in command-metadata.json match SKILL.md router
+   5. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
+   6. port-preview-coherence  — if preview dir exists, has all required files
+   7. port-backup-integrity   — backup dirs have at least one .legacy file
+   8. gitignore-includes-port-dirs — .gitignore lists port dirs if either exists
+   9. version-consistency     — plugin.json / command-metadata.json / SKILL.md (+ marketplace when present) versions all match
+ 10. tidy-preview-coherence  — if tidy preview dir exists, has summary.md + changes.json + files/
+ 11. tidy-backup-integrity   — tidy backup dirs have at least one .legacy file
+ 12. gitignore-includes-tidy-dirs — .gitignore lists tidy dirs if either exists
+ 13. reference-files-exist   — every reference/*.md named in command-metadata.json and the SKILL.md router exists
+ 14. verb-surface-parity     — every verb name appears in plugin.json / README.md / marketplace description; spelled-out verb counts match
+ 15. reference-doc-links     — every relative markdown link inside reference/*.md resolves on disk
+ 16. verb-description-length — command-metadata verb descriptions stay router-line short (≤ 220 chars)
+ 17. repo-helper-parity      — repo_walk/repo_scan/repo_tidy each exist with a matching test_*.py
+ 18. repo-standards-coverage — reference/repo-standards.md exists and names each detector category
+ 19. repo-tidy-preview-coherence — if repo-tidy preview dir exists, it has summary.md + changes.json + files/
+ 20. repo-tidy-backup-integrity   — repo-tidy backup subdirs with files carry at least one .legacy
+ 21. gitignore-includes-repo-tidy-dirs — .gitignore lists the repo-tidy dirs if either exists
+ 22. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
+ 23. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
+ 24. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
+ 25. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
+ 26. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
+ 27. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
+ 28. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
+ 29. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
 
-30 validators total.
+29 validators total.
 """
 
 import ast
@@ -58,13 +57,6 @@ HARNESS_DIRS = [
     ROOT / "source" / "skills" / "adjudant",
     ROOT / ".claude" / "skills" / "adjudant",
     ROOT / ".gemini" / "skills" / "adjudant",
-]
-
-DEPRECATED_TAG_PATTERNS = [
-    re.compile(r"#ob/"),
-    re.compile(r"#cabinet/"),
-    re.compile(r"^\s*-\s+ob/", re.MULTILINE),
-    re.compile(r"^\s*-\s+cabinet/", re.MULTILINE),
 ]
 
 
@@ -111,23 +103,6 @@ def validate_harness_parity(r: Result) -> None:
         except OSError as e:
             r.add_fail(name, f"{h.relative_to(ROOT)}: {e}")
             return
-    r.add_pass(name)
-
-
-def validate_templates_tag_schema(r: Result) -> None:
-    name = "templates-tag-schema"
-    if not TEMPLATES.is_dir():
-        r.add_fail(name, f"{TEMPLATES.relative_to(ROOT)} not found")
-        return
-    offenders: list[str] = []
-    for f in TEMPLATES.glob("*.md"):
-        text = f.read_text()
-        for pat in DEPRECATED_TAG_PATTERNS:
-            if pat.search(text):
-                offenders.append(f"{f.relative_to(ROOT)} matches {pat.pattern}")
-    if offenders:
-        r.add_fail(name, "deprecated tags found: " + "; ".join(offenders))
-        return
     r.add_pass(name)
 
 
@@ -1062,7 +1037,6 @@ def main() -> int:
     print(f"adjudant validators — running from {ROOT}")
     r = Result()
     validate_harness_parity(r)
-    validate_templates_tag_schema(r)
     validate_claude_md_imports_agents(r)
     validate_template_schema_loads(r)
     validate_command_metadata_coherence(r)

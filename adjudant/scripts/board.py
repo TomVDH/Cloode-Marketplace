@@ -195,10 +195,10 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
     cards: list[dict[str, Any]] = []
     for f, fields, body, cid in _iter_task_notes(project_dir):
         status = _clean_scalar(fields.get("status")).lower()
+        # `category:` only. The fallback that read the first non-`task` entry
+        # of a `tags:` list is gone with the tags: no template declares the
+        # field, so a task note carrying one is drift the schema strips.
         category = _clean_scalar(fields.get("category"))
-        if not category:
-            tags = _as_list(fields.get("tags"))
-            category = next((t for t in tags if t not in ("task", "tasks")), None)
         cards.append({
             "id": cid,
             "title": _clean_scalar(fields.get("title")) or _first_heading(body) or f.stem,

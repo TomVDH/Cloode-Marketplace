@@ -26,10 +26,6 @@ from _vault_walk import (
     resolve_project_from_cwd,
     smart_project_dir,
     VaultUnresolvableError,
-    is_bucket_d_tag,
-    is_bucket_b_migration,
-    BUCKET_A_TYPES,
-    BUCKET_B_MIGRATIONS,
 )
 
 
@@ -365,63 +361,6 @@ class TestBreadcrumb(unittest.TestCase):
     def test_resolve_vault_env_override(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as vault:
             self.assertEqual(resolve_vault(Path(tmp), env_vault=vault), Path(vault))
-
-
-# ============================================================
-# Schema constants + Bucket D classification
-# ============================================================
-
-
-class TestBucketDClassification(unittest.TestCase):
-
-    def test_ob_prefix_is_bucket_d(self):
-        self.assertTrue(is_bucket_d_tag("ob/doc"))
-        self.assertTrue(is_bucket_d_tag("ob/session"))
-        self.assertTrue(is_bucket_d_tag("ob/project"))
-
-    def test_cabinet_prefix_drops_unless_bucket_b(self):
-        # Other cabinet/* — drop
-        self.assertTrue(is_bucket_d_tag("cabinet/random"))
-        self.assertTrue(is_bucket_d_tag("cabinet/old"))
-        # Bucket B migration sources — NOT Bucket D (they survive via migration)
-        self.assertFalse(is_bucket_d_tag("cabinet/decision"))
-        self.assertFalse(is_bucket_d_tag("cabinet/recon"))
-
-    def test_vague_topicals_dropped(self):
-        for t in ["architecture", "frontend", "moc", "scheduler"]:
-            self.assertTrue(is_bucket_d_tag(t), f"{t} should be Bucket D")
-
-    def test_crew_names_dropped(self):
-        for t in ["bostrol", "kevijntje", "jonasty"]:
-            self.assertTrue(is_bucket_d_tag(t))
-
-    def test_project_type_tag_dropped(self):
-        self.assertTrue(is_bucket_d_tag("type/coding"))
-        self.assertTrue(is_bucket_d_tag("type/plugin"))
-
-    def test_project_slug_self_tag_dropped(self):
-        self.assertTrue(is_bucket_d_tag("hubspot-nightly", project_slug="hubspot-nightly"))
-        # slug-variant: "slug/sub"
-        self.assertTrue(is_bucket_d_tag("hubspot-nightly/sub", project_slug="hubspot-nightly"))
-        # slug-variant: "slug-suffix"
-        self.assertTrue(is_bucket_d_tag("hubspot-nightly-thing", project_slug="hubspot-nightly"))
-        # unrelated tag with no slug context
-        self.assertFalse(is_bucket_d_tag("project"))  # Bucket A
-
-    def test_bucket_a_passes_through(self):
-        for t in ["decision", "session", "note", "project"]:
-            self.assertFalse(is_bucket_d_tag(t))
-
-    def test_bucket_b_migration_lookup(self):
-        self.assertEqual(is_bucket_b_migration("cabinet/decision"), "decision")
-        self.assertEqual(is_bucket_b_migration("cabinet/recon"), "recon-item")
-        self.assertIsNone(is_bucket_b_migration("cabinet/random"))
-        self.assertIsNone(is_bucket_b_migration("project"))
-
-    def test_task_type_in_schema(self):
-        # task is a first-class file type; its bare #task tag is Bucket A
-        self.assertIn("task", BUCKET_A_TYPES)
-        self.assertFalse(is_bucket_d_tag("task"))
 
 
 # ============================================================

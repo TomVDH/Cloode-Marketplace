@@ -39,7 +39,7 @@
     },
     {
       "name": "tidy",
-      "description": "Routine surface sweep: indexes, tags, wikilink form, updated dates, off-schema frontmatter. Previews then applies. [vault|repo|all] adds repo symlinks.",
+      "description": "Routine surface sweep: indexes, wikilink form, updated dates, off-schema frontmatter. Previews then applies. [vault|repo|all] adds repo symlinks.",
       "argumentHint": "[vault|repo|all]",
       "reference": "reference/tidy.md",
       "weight": "medium"

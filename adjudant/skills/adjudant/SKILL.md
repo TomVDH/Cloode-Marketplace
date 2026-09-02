@@ -20,7 +20,7 @@ Vault editor/writer and project initializer. One skill, one command, thirteen ve
 | `sync` | `reference/sync.md` | Push project state to the vault: brief, handoff, project index row |
 | `check` | `reference/check.md` | Read-only project + vault health, with schema drift. `[vault\|repo\|all]` also audits repo structure (versions, symlinks, registration, stale plans) |
 | `sitrep` | `reference/sitrep.md` | Plain-language orientation after a break: where you left off, what's done, where the vault is, what's next, plus git and dev-server state. Read-only |
-| `tidy` | `reference/tidy.md` | Routine surface sweep: indexes, tags, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply. `[vault\|repo\|all]` adds repo symlinks |
+| `tidy` | `reference/tidy.md` | Routine surface sweep: indexes, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply. `[vault\|repo\|all]` adds repo symlinks |
 | `ramasse` | `reference/ramasse.md` | Deep structural clean: folder shape, schema, file types, naming, broken wikilinks. Sparing, roughly quarterly |
 | `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: flags stale, contradictory, redundant, and orphaned content as candidates Claude judges before anything changes |
 | `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, hand-authored or generated from vault data |
@@ -63,7 +63,7 @@ The `voice-lexicon` validator enforces the machine-checkable subset.
 
 ## Vault standards — single source of truth
 
-`reference/vault-standards.md` is the authoritative spec for tag taxonomy, frontmatter requirements per file type, folder structure, file-naming rules, and wikilink form. All vault writes must conform. The build's `validate.py` enforces.
+`reference/vault-standards.md` is the authoritative spec for frontmatter requirements per file type, folder structure, file-naming rules, and wikilink form. All vault writes must conform. The build's `validate.py` enforces.
 
 ## Content authoring
 

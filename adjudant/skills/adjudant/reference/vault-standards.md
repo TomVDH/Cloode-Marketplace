@@ -8,10 +8,9 @@ Each rule states its shape once. Detail enforced mechanically is not restated:
 
 | rule area | enforcer |
 |---|---|
-| frontmatter keys per type | the type's template, parsed by `_template_schema.py` into `FIELD_SCHEMA`; convention in `templates/README.md`; the PreToolUse gate; `tidy` feature 5 repairs |
-| tag buckets A, B, D | `BUCKET_A_TYPES` / `BUCKET_B_MIGRATIONS` / `BUCKET_D_TAG_EXACT`; `tidy.normalize_tags`; validator 2 |
+| frontmatter keys per type | the type's template, parsed by `_template_schema.py` into `FIELD_SCHEMA`; convention in `templates/README.md`; the PreToolUse gate; `tidy` feature 4 repairs |
 | status vocabularies | the `status:` line's trailing `# a | b | c` comment in each template; the board's read aliases are declared in `board.py` `STATUS_TO_COLUMN` |
-| wikilink form | `tidy` feature 4 |
+| wikilink form | `tidy` feature 3 |
 | folder shape, some file naming | `ramasse_scan` detectors |
 
 The parity validators are gone. They held this document, the templates and a set of `_vault_walk.py` constants to each other, a question that only exists while a rule is written down twice. The template is the one declaration now.
@@ -26,11 +25,11 @@ Project membership is the folder path (`projects/[zone/]slug/…`), never a fron
 
 `session:` holds the Claude Code conversation id behind a write, optional on the kinds whose template lists it and hook-stamped rather than hand-written. A stored id may dangle (transcripts are ephemeral): it retraces reasoning, never holds the conclusion, so a decision's content must land in the vault. The pre-v3 `session_id:` and `source_session:` are fields on no type; `tidy` strips them.
 
-## 2. Tag schema (locked 2026-05-25)
+## 2. Tags (retired v3)
 
-Bare tags only, no prefix. Every file carries exactly one file-type tag matching its `type:`; `Home.md` is the lone exception (`type: vault-home`, no tag). **Bucket A** (thirteen file-type tags), **B** (custom types migrated from `cabinet/*` by `/adjudant ramasse`) and **D** (deprecated: `ob/*`, leftover `cabinet/*`, project-slug tags, vague topicals, crew names) are enumerated in `_vault_walk.py` and applied by `tidy.normalize_tags`.
+No template declares `tags:`, so a `tags:` block is an unknown field: the write gate lets it through, `check` reports it, and `tidy` feature 4 strips it. Nothing adjudant writes carries one.
 
-**Bucket C**, topical tags, is judgment with no enforcer: optional, queryable, sparing. Established clusters are `#content/` plus one of `seafood-companies`, `blog`, `page`, `hardware`, `personnel`, `videos`, `workflows`, `features`. A new topical needs all three: namespaced (`category/value`), queryable (you would filter on it), used across three or more files. Project kind is not a tag: it is `project_type:` on the brief, one of `coding | knowledge | plugin | tinkerage`. `cssclasses:` is an Obsidian CSS class, not a tag, and tag normalization leaves it alone.
+The retired scheme mandated exactly one tag per file restating that file's own `type:`, policed by four bucket constants, two classifiers, a normaliser and a validator. A tag that repeats a field carries no information, and the nested topical form the buckets existed to police was never enforced anywhere. Inline `#tags` in body prose are yours; nothing reads or rewrites them. `cssclasses:` was never a tag and is unaffected.
 
 ## 3. File-type schemas
 

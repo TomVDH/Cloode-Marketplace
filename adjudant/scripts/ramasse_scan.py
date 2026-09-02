@@ -5,9 +5,13 @@ Scans an adjudant-managed vault project and emits a structured drift
 catalog (JSON) for Claude to render or for `/adjudant ramasse` to use
 as the analysis phase before planning a deep restructure.
 
-Reports on: folder drift, index gaps, frontmatter drift, tag drift,
-type drift, naming violations, wikilink form violations, broken
-wikilinks, doc/decision mismatches. Read-only — never writes.
+Reports on: folder drift, index gaps, frontmatter drift, type drift,
+naming violations, wikilink form violations, broken wikilinks,
+doc/decision mismatches. Read-only — never writes.
+
+Tag drift is not among them since v3: a `tags:` key is a field no
+template declares, so it surfaces as ordinary frontmatter drift rather
+than through a rule of its own.
 
 CLI:
     python3 ramasse_scan.py --project-dir PATH [--vault-dir PATH] [--out FILE] [--include-legacy]
@@ -34,16 +38,12 @@ from typing import Any, Optional
 from _cost import cost_block, read_threshold, stat_walk
 from _vault_walk import (
     AUTO_CREATED_FOLDERS,
-    BUCKET_A_TYPES,
-    BUCKET_B_MIGRATIONS,
     FIELD_SCHEMA,
     DEFAULT_SKIP,
     INDEX_EXEMPT_FOLDERS,
     PROJECT_TYPE_DEFAULT_FOLDERS,
     VaultFile,
     build_vault_index,
-    is_bucket_b_migration,
-    is_bucket_d_tag,
     is_checkable_wikilink,
     resolve_vault,
     resolve_wikilink,
@@ -169,49 +169,6 @@ def detect_frontmatter_drift(files: list[VaultFile]) -> list[dict]:
             if isinstance(value, str) and value.strip().lower() in ("null", "~"):
                 drift.append({"file": rel, "issue": f"{key}: {value} (per §1 omit empty keys)"})
     return drift
-
-
-def detect_tag_drift(files: list[VaultFile], project_slug: Optional[str]) -> dict[str, Any]:
-    """Tags violating the locked 2026-05-25 schema.
-
-    Returns categories with counts + sample tag values.
-    """
-    bucket_d_counter: Counter[str] = Counter()
-    bucket_b_counter: Counter[str] = Counter()
-    bucket_d_by_category: dict[str, set[str]] = {
-        "ob_prefix": set(),
-        "cabinet_prefix": set(),  # excluding bucket-B migrations
-        "project_slug": set(),
-        "vague_topical": set(),
-        "crew": set(),
-        "type_tag": set(),
-    }
-    for f in files:
-        for t in f.tags:
-            if is_bucket_d_tag(t, project_slug=project_slug):
-                bucket_d_counter[t] += 1
-                if t.startswith("ob/"):
-                    bucket_d_by_category["ob_prefix"].add(t)
-                elif t.startswith("cabinet/"):
-                    bucket_d_by_category["cabinet_prefix"].add(t)
-                elif project_slug and (t == project_slug or t.startswith(project_slug + "/") or t.startswith(project_slug + "-")):
-                    bucket_d_by_category["project_slug"].add(t)
-                elif t.startswith("type/"):
-                    bucket_d_by_category["type_tag"].add(t)
-                elif t in {"bostrol", "kevijntje", "henske", "jonasty"}:
-                    bucket_d_by_category["crew"].add(t)
-                else:
-                    bucket_d_by_category["vague_topical"].add(t)
-            migration = is_bucket_b_migration(t)
-            if migration:
-                bucket_b_counter[t] += 1
-    return {
-        "bucket_d_total_occurrences": sum(bucket_d_counter.values()),
-        "bucket_d_distinct": len(bucket_d_counter),
-        "bucket_d_by_category": {k: sorted(v) for k, v in bucket_d_by_category.items() if v},
-        "bucket_d_top": bucket_d_counter.most_common(15),
-        "bucket_b_migrations_needed": dict(bucket_b_counter),
-    }
 
 
 def detect_type_drift(files: list[VaultFile]) -> dict[str, Any]:
@@ -403,7 +360,6 @@ def run_scan(
     folder_drift = [] if scope else detect_folder_drift(project_dir, proj_type, extras)
     index_gaps = detect_index_gaps(project_dir, files)
     fm_drift = detect_frontmatter_drift(files)
-    tag_drift = detect_tag_drift(files, slug)
     type_drift = detect_type_drift(files)
     naming = detect_naming_violations(files) + detect_artefact_naming(project_dir, include_legacy)
     wl_form = detect_wikilink_form_violations(files, vault_index) if vault_index else []
@@ -417,7 +373,6 @@ def run_scan(
         len(folder_drift)
         + len(index_gaps)
         + len(fm_drift)
-        + tag_drift["bucket_d_distinct"]
         + len(type_drift["values"])
         + len(naming)
         + len(wl_form)
@@ -442,7 +397,6 @@ def run_scan(
         "folder_drift": folder_drift,
         "index_gaps": index_gaps,
         "frontmatter_drift": fm_drift,
-        "tag_drift": tag_drift,
         "type_drift": type_drift,
         "naming_violations": naming,
         "wikilink_form_violations": wl_form,

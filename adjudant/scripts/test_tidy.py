@@ -17,12 +17,9 @@ from tidy import (
     detect_phase,
     fix_wikilink_form,
     generate_index_content,
-    normalize_tags,
     preview_dir,
     upsert_index_content,
     write_preview_to_disk,
-    _migrate_ob_to_bucket_a,
-    _rewrite_tags_block,
     _bump_updated_field,
 )
 from _vault_walk import build_vault_index
@@ -79,50 +76,6 @@ class TestDetectPhase(unittest.TestCase):
             (backup_root(Path(tmp)) / "20260526T120000Z").mkdir(parents=True)
             (backup_root(Path(tmp)) / "20260526T120000Z" / "x.legacy").write_text("old")
             self.assertEqual(detect_phase(Path(tmp)), "applied")
-
-
-# ============================================================
-# Tag normalisation
-# ============================================================
-
-
-class TestNormalizeTags(unittest.TestCase):
-
-    def test_ob_bucket_a_migrates(self):
-        # ob/{bucket-A-type} → {bucket-A-type} preserves §2A file-type tag
-        new, dropped = normalize_tags(["ob/doc"], project_slug="x")
-        self.assertEqual(new, ["doc"])
-        self.assertEqual(dropped, ["ob/doc → doc"])
-
-    def test_ob_non_bucket_a_drops(self):
-        # ob/api-ref is not Bucket A → drop
-        new, dropped = normalize_tags(["ob/api-ref"], project_slug="x")
-        self.assertEqual(new, [])
-        self.assertEqual(dropped, ["ob/api-ref"])
-
-    def test_ob_dedup_with_existing_bare(self):
-        new, _ = normalize_tags(["project", "ob/project"], project_slug="x")
-        # ob/project migrates to project, dedup keeps just 'project'
-        self.assertEqual(new, ["project"])
-
-    def test_migrates_bucket_b(self):
-        new, dropped = normalize_tags(["cabinet/decision"], project_slug="x")
-        self.assertEqual(new, ["decision"])
-        self.assertEqual(dropped, ["cabinet/decision → decision"])
-
-    def test_drops_project_slug_self_tag(self):
-        new, _ = normalize_tags(["hubspot-nightly", "decision"], project_slug="hubspot-nightly")
-        self.assertEqual(new, ["decision"])
-
-    def test_dedup(self):
-        new, _ = normalize_tags(["a", "a", "b"], project_slug=None)
-        self.assertEqual(new, ["a", "b"])
-
-    def test_preserves_unknown(self):
-        new, _ = normalize_tags(["content/blog", "auth"], project_slug=None)
-        # content/blog is canonical (§2C); 'auth' is uncategorised but not Bucket D
-        self.assertIn("content/blog", new)
-        self.assertIn("auth", new)
 
 
 # ============================================================
@@ -208,31 +161,6 @@ class TestFixWikilinkForm(unittest.TestCase):
             self.assertIn("[fake](target.md)", new)
 
 
-# ============================================================
-# Tags block surgical rewrite
-# ============================================================
-
-
-class TestRewriteTagsBlock(unittest.TestCase):
-
-    def test_replace_existing(self):
-        text = "---\ntype: note\ntags:\n  - ob/note\n  - keep\n---\n\nbody"
-        new = _rewrite_tags_block(text, ["keep"])
-        self.assertIn("tags:\n  - keep", new)
-        self.assertNotIn("ob/note", new)
-        self.assertIn("body", new)
-
-    def test_empty_tags_removes_block(self):
-        text = "---\ntype: note\ntags:\n  - ob/note\n---\n\nbody"
-        new = _rewrite_tags_block(text, [])
-        self.assertNotIn("tags:", new)
-
-    def test_no_existing_block_adds_when_tags(self):
-        text = "---\ntype: note\n---\n\nbody"
-        new = _rewrite_tags_block(text, ["new"])
-        self.assertIn("tags:\n  - new", new)
-
-
 class TestBumpUpdatedField(unittest.TestCase):
 
     def test_bumps_existing(self):
@@ -252,29 +180,12 @@ class TestBumpUpdatedField(unittest.TestCase):
 # ============================================================
 
 
-class TestMigrateObToBucketA(unittest.TestCase):
-
-    def test_bucket_a_migrates(self):
-        self.assertEqual(_migrate_ob_to_bucket_a("ob/decision"), "decision")
-        self.assertEqual(_migrate_ob_to_bucket_a("ob/doc"), "doc")
-        self.assertEqual(_migrate_ob_to_bucket_a("ob/dream-report"), "dream-report")
-
-    def test_non_bucket_a_returns_none(self):
-        self.assertIsNone(_migrate_ob_to_bucket_a("ob/api-ref"))
-        self.assertIsNone(_migrate_ob_to_bucket_a("ob/gemini"))
-
-    def test_non_ob_prefix_returns_none(self):
-        self.assertIsNone(_migrate_ob_to_bucket_a("decision"))
-        self.assertIsNone(_migrate_ob_to_bucket_a("cabinet/decision"))
-
-
 class TestUpsertIndexContent(unittest.TestCase):
 
     def test_upsert_bullet_list_preserves_intro(self):
         existing = (
             "---\n"
             "type: index\n"
-            "tags:\n  - ob/index\n  - architecture\n"
             "updated: 2026-05-01\n"
             "---\n\n"
             "# Decisions\n\n"
@@ -285,7 +196,7 @@ class TestUpsertIndexContent(unittest.TestCase):
             "Trailing section. Preserve me too.\n"
         )
         entries = [Path("a.md"), Path("b.md")]
-        new, mode = upsert_index_content(existing, "decisions", entries, "x")
+        new, mode = upsert_index_content(existing, "decisions", entries)
         self.assertEqual(mode, "upserted")
         # Intro preserved
         self.assertIn("Intro paragraph that the human wrote", new)
@@ -296,9 +207,6 @@ class TestUpsertIndexContent(unittest.TestCase):
         self.assertIn("[[b|b]]", new)
         # Old entry gone
         self.assertNotIn("old-entry", new)
-        # Tags normalized
-        self.assertNotIn("ob/index", new)
-        self.assertIn("- index", new)
 
     def test_curated_alias_survives_the_rebuild(self):
         # A hand-written alias is the one line of an index a human actually
@@ -306,12 +214,12 @@ class TestUpsertIndexContent(unittest.TestCase):
         # with a slug-title also contradicts the one-line-per-entry
         # convention the rebuild exists to serve.
         existing = (
-            "---\ntype: index\ntags:\n  - index\nupdated: 2026-05-01\n---\n\n"
+            "---\ntype: index\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\n\n"
             "# Memory\n\n## Entries\n\n"
             "- [[prefers-agents-md|Canonical repo context lives in AGENTS.md]]\n"
         )
         new, mode = upsert_index_content(
-            existing, "memory", [Path("prefers-agents-md.md")], "x")
+            existing, "memory", [Path("prefers-agents-md.md")])
         self.assertEqual(mode, "upserted")
         self.assertIn("[[prefers-agents-md|Canonical repo context lives in AGENTS.md]]",
                       new)
@@ -320,13 +228,13 @@ class TestUpsertIndexContent(unittest.TestCase):
         # Preserving curated text must not stop the rebuild doing its job for
         # entries nobody has annotated yet.
         existing = (
-            "---\ntype: index\ntags:\n  - index\nupdated: 2026-05-01\n---\n\n"
+            "---\ntype: index\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\n\n"
             "# Memory\n\n## Entries\n\n"
             "- [[prefers-agents-md|Canonical repo context lives in AGENTS.md]]\n"
         )
         new, _ = upsert_index_content(
             existing, "memory",
-            [Path("prefers-agents-md.md"), Path("in-repo-over-patch.md")], "x")
+            [Path("prefers-agents-md.md"), Path("in-repo-over-patch.md")])
         self.assertIn("[[in-repo-over-patch|in repo over patch]]", new)
         self.assertIn("Canonical repo context lives in AGENTS.md", new)
 
@@ -334,11 +242,11 @@ class TestUpsertIndexContent(unittest.TestCase):
         # Preservation is keyed on the entry still existing; a curated alias
         # is not a reason to resurrect a file that is gone.
         existing = (
-            "---\ntype: index\ntags:\n  - index\nupdated: 2026-05-01\n---\n\n"
+            "---\ntype: index\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\n\n"
             "# Memory\n\n## Entries\n\n"
             "- [[deleted-one|Something I wrote about a file that is gone]]\n"
         )
-        new, _ = upsert_index_content(existing, "memory", [Path("kept.md")], "x")
+        new, _ = upsert_index_content(existing, "memory", [Path("kept.md")])
         self.assertNotIn("deleted-one", new)
         self.assertIn("[[kept|kept]]", new)
 
@@ -346,7 +254,7 @@ class TestUpsertIndexContent(unittest.TestCase):
         existing = (
             "---\n"
             "type: index\n"
-            "tags:\n  - ob/index\n"
+            "created: 2026-05-01\n"
             "updated: 2026-05-01\n"
             "---\n\n"
             "# Nightly\n\n"
@@ -355,25 +263,23 @@ class TestUpsertIndexContent(unittest.TestCase):
             "|---|---|\n"
             "| [[architecture]] | system overview |\n"
         )
-        new, mode = upsert_index_content(existing, "nightly", [Path("a.md"), Path("b.md")], "x")
+        new, mode = upsert_index_content(existing, "nightly", [Path("a.md"), Path("b.md")])
         self.assertEqual(mode, "frontmatter_only")
         # Table preserved verbatim
         self.assertIn("| Doc | Purpose |", new)
         self.assertIn("[[architecture]]", new)
-        # But tags normalized
-        self.assertNotIn("ob/index", new)
 
     def test_upsert_no_entries_heading_leaves_body_alone(self):
         existing = (
             "---\n"
             "type: index\n"
-            "tags:\n  - index\n"
+            "created: 2026-05-01\n"
             "updated: 2026-05-01\n"
             "---\n\n"
             "# Some Index\n\n"
             "Free-form content with no entries heading.\n"
         )
-        new, mode = upsert_index_content(existing, "x", [Path("a.md"), Path("b.md")], "x")
+        new, mode = upsert_index_content(existing, "x", [Path("a.md"), Path("b.md")])
         self.assertEqual(mode, "frontmatter_only")
         self.assertIn("Free-form content with no entries heading.", new)
 
@@ -385,7 +291,7 @@ class TestGenerateIndexContent(unittest.TestCase):
             Path("2026-05-26-a.md"),
             Path("2026-05-27-b.md"),
             Path("2026-05-25-c.md"),
-        ], project_slug="x")
+        ])
         # 2026-05-27 should come first
         lines = out.split("\n")
         entry_lines = [l for l in lines if l.startswith("- [[")]
@@ -398,16 +304,21 @@ class TestGenerateIndexContent(unittest.TestCase):
             Path("zebra.md"),
             Path("alpha.md"),
             Path("mango.md"),
-        ], project_slug="x")
+        ])
         entry_lines = [l for l in out.split("\n") if l.startswith("- [[")]
         self.assertEqual(entry_lines[0], "- [[alpha|alpha]]")
         self.assertEqual(entry_lines[2], "- [[zebra|zebra]]")
 
     def test_has_frontmatter_and_heading(self):
-        out = generate_index_content("decisions", [Path("2026-05-26-a.md")], project_slug="x")
+        out = generate_index_content("decisions", [Path("2026-05-26-a.md")])
         self.assertTrue(out.startswith("---\n"))
         self.assertIn("type: index", out)
         self.assertIn("# Decisions", out)
+        # Both dates, per the derived index schema, and no tags block: the
+        # generator has to write a file its own schema phase accepts.
+        self.assertIn("created:", out)
+        self.assertIn("updated:", out)
+        self.assertNotIn("tags:", out)
 
 
 # ============================================================
@@ -421,7 +332,9 @@ class TestBuildPreview(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "brief.md",
-                "---\ntype: project\nslug: t\nproject_type: coding\nupdated: 2026-05-01\n"
+                "---\ntype: project\ncreated: 2026-05-01\nupdated: 2026-05-01\n"
+                "verified: 2026-05-01\nverified_by: read\n"
+                "slug: t\nproject_type: coding\n"
                 "tags:\n  - project\n  - ob/project\n---\n\n# T\n")
             # Two decisions, no index
             _w(root / "decisions" / "2026-05-26-a.md", "---\ntype: decision\n---\n")
@@ -429,23 +342,28 @@ class TestBuildPreview(unittest.TestCase):
             # File with a markdown-style link to a vault file
             _w(root / "target.md", "---\ntype: note\n---\n")
             _w(root / "src.md",
-                "---\ntype: note\ntags:\n  - ob/note\n---\n\nSee [target](target.md).")
+                "---\ntype: note\ncreated: 2026-05-01\nupdated: 2026-05-01\n"
+                "tags:\n  - ob/note\n---\n\nSee [target](target.md).")
             vault_index = build_vault_index(root)
             cs = build_preview(root, vault_index, project_slug="t")
             # Should rebuild decisions/_index.md
             self.assertIn("decisions/_index.md", cs["index_proposals"])
-            # Should propose changes to src.md (tags + wikilink)
+            # Should propose changes to src.md (unknown tags: + wikilink)
             self.assertIn("src.md", cs["file_proposals"])
-            # Should propose changes to brief.md (tags)
+            # Should propose changes to brief.md (unknown fields stripped)
             self.assertIn("brief.md", cs["file_proposals"])
+            # tags: is no longer a rule of its own — it strips because no
+            # template declares it, the same way slug: and project_type: do.
+            self.assertNotIn("tags:", cs["file_proposals"]["brief.md"]["proposed_content"])
 
     def test_clean_project_no_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "brief.md",
-                "---\ntype: project\nslug: t\nproject_type: coding\n"
-                "tags:\n  - project\n---\n\n# T\n")
-            _w(root / "_handoff.md", "---\ntype: handoff\n---\nbody")
+                "---\ntype: project\ncreated: 2026-05-01\nupdated: 2026-05-01\n"
+                "verified: 2026-05-01\nverified_by: read\n---\n\n# T\n")
+            _w(root / "_handoff.md",
+               "---\ntype: handoff\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\nbody")
             cs = build_preview(root, set(), project_slug="t")
             self.assertEqual(cs["summary"]["total_changes"], 0)
 
@@ -465,7 +383,8 @@ class TestApplySafety(unittest.TestCase):
     def _dirty(self, root: Path) -> Path:
         """A project with one file tidy will want to change."""
         p = root / "decisions" / "2026-01-01-d.md"
-        _w(p, "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+        _w(p, "---\ntype: decision\nstatus: accepted\n"
+              "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
               "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
         return p
 
@@ -560,10 +479,12 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
         """A folder tidy will want to rebuild an index for, with one present."""
         for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
             _w(root / "decisions" / f"{d}-{n}.md",
-               f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+               f"---\ntype: decision\nstatus: accepted\n"
+               f"created: {d}\nupdated: {d}\ndate: {d}\n"
                f"tags:\n  - decision\n---\n\nBody {n}.\n")
         live = root / "decisions" / "_index.md"
-        _w(live, "---\ntype: index\n---\n\n# Decisions\n")
+        _w(live, "---\ntype: index\ncreated: 2026-01-01\nupdated: 2020-01-01\n---\n\n"
+                 "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
         return live
 
     def test_edited_index_is_not_silently_overwritten(self):
@@ -602,7 +523,8 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             root = Path(tmp)
             for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
                 _w(root / "decisions" / f"{d}-{n}.md",
-                   f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+                   f"---\ntype: decision\nstatus: accepted\n"
+                   f"created: {d}\nupdated: {d}\ndate: {d}\n"
                    f"tags:\n  - decision\n---\n\nBody {n}.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             self.assertFalse(
@@ -617,7 +539,8 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             root = Path(tmp)
             for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
                 _w(root / "decisions" / f"{d}-{n}.md",
-                   f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+                   f"---\ntype: decision\nstatus: accepted\n"
+                   f"created: {d}\nupdated: {d}\ndate: {d}\n"
                    f"tags:\n  - decision\n---\n\nBody {n}.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
@@ -633,7 +556,8 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             live = root / "decisions" / "2026-01-01-d.md"
-            _w(live, "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+            _w(live, "---\ntype: decision\nstatus: accepted\n"
+                     "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
                      "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
@@ -649,7 +573,8 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             live = root / "decisions" / "2026-01-01-d.md"
-            _w(live, "---\ntype: decision\nstatus: accepted\ndate: 2026-01-01\n"
+            _w(live, "---\ntype: decision\nstatus: accepted\n"
+                     "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
                      "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
@@ -670,10 +595,11 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             root = Path(tmp)
             for n, d in (("a", "2026-01-01"), ("b", "2026-01-02")):
                 _w(root / "decisions" / f"{d}-{n}.md",
-                   f"---\ntype: decision\nstatus: accepted\ndate: {d}\n"
+                   f"---\ntype: decision\nstatus: accepted\n"
+                   f"created: {d}\nupdated: {d}\ndate: {d}\n"
                    f"tags:\n  - decision\n---\n\nBody {n}.\n")
             live = root / "decisions" / "_index.md"
-            _w(live, "---\ntype: index\nupdated: 2020-01-01\n"
+            _w(live, "---\ntype: index\ncreated: 2020-01-01\nupdated: 2020-01-01\n"
                      "tags:\n  - index\n  - ob/cabinet\n---\n\n"
                      "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
             cs = build_preview(root, build_vault_index(root), "t")
@@ -696,9 +622,12 @@ class TestPreviewApplyRoundTrip(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _w(root / "brief.md",
-                "---\ntype: project\nslug: t\nproject_type: coding\n"
+                "---\ntype: project\ncreated: 2026-05-01\nupdated: 2026-05-01\n"
+                "verified: 2026-05-01\nverified_by: read\n"
+                "slug: t\nproject_type: coding\n"
                 "tags:\n  - project\n  - ob/project\n---\n\n# T\n")
-            _w(root / "_handoff.md", "---\ntype: handoff\n---\nbody")
+            _w(root / "_handoff.md",
+               "---\ntype: handoff\ncreated: 2026-05-01\nupdated: 2026-05-01\n---\nbody")
 
             # Phase 1: preview
             self.assertEqual(detect_phase(root), "fresh")

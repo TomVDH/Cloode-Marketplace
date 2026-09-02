@@ -105,14 +105,6 @@ class TestCardsFromTasks(unittest.TestCase):
             self.assertEqual(c["title"], "De-hardcode engine")
             self.assertEqual(c["notes"], "a note")
 
-    def test_category_falls_back_to_tag(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write(root / "tasks" / "x.md", "---\nstatus: todo\ntags:\n  - task\n  - infra\n---\n# X\n")
-            card = cards_from_tasks(root)[0]
-            self.assertEqual(card["category"], "infra")
-            self.assertEqual(card["column"], "backlog")  # unknown/todo -> backlog
-
     def test_no_tasks_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(cards_from_tasks(Path(tmp)), [])

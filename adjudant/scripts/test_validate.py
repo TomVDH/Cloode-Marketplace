@@ -193,21 +193,6 @@ class TestCommandMetadataCoherence(_PatchedTree):
         self.assertTrue(any("command-metadata-coherence" in f for f in r.failures))
 
 
-class TestTemplatesTagSchema(_PatchedTree):
-
-    def test_passes_when_no_deprecated_tags(self):
-        (validate.TEMPLATES / "note.md").write_text("---\ntags:\n  - note\n---\n")
-        r = Result()
-        validate.validate_templates_tag_schema(r)
-        self.assertEqual(r.failures, [])
-
-    def test_fails_on_deprecated_ob_tag(self):
-        (validate.TEMPLATES / "note.md").write_text("---\ntags:\n  - ob/note\n---\n#ob/note\n")
-        r = Result()
-        validate.validate_templates_tag_schema(r)
-        self.assertTrue(any("templates-tag-schema" in f for f in r.failures))
-
-
 class TestClaudeMdImportsAgents(_PatchedTree):
 
     def test_passes_when_first_line_is_import(self):

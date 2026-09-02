@@ -45,7 +45,6 @@ from typing import Any, Optional
 
 from _cost import cost_block, read_threshold, stat_walk
 from _vault_walk import (
-    BUCKET_A_TYPES,
     VaultFile,
     _wikilink_stem,
     build_vault_index,

@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Adjudant tidy — mechanical vault sweep.
 
-Five features (locked spec — replaces the old ramasse mechanical surface):
+Four features (replaces the old ramasse mechanical surface):
   1. Rebuild `_index.md` in every project subfolder with ≥2 same-type siblings
   2. Bump `updated:` frontmatter on touched files (doc, brief, note types)
-  3. Normalise tags per locked 2026-05-25 schema (drop Bucket D, migrate Bucket B)
-  4. Rewrite `[text](path.md)` → `[[path-stem|text]]` when path resolves in vault
-  5. Frontmatter schema repair per FIELD_SCHEMA: strip unknown fields, migrate
+  3. Rewrite `[text](path.md)` → `[[path-stem|text]]` when path resolves in vault
+  4. Frontmatter schema repair per FIELD_SCHEMA: strip unknown fields, migrate
      the one legacy key with a live target (node_type → type), and normalise
      decision-status aliases (accepted/locked/current → active).
      Task-status aliases are accepted input and never rewritten.
+
+Tag normalisation was feature 3 until v3 and is gone with the tag buckets.
+A `tags:` block is a field no template declares, so feature 4 strips it as an
+ordinary unknown field: the general mechanism rather than a rule of its own.
 
 Idempotent: a second run with no fresh drift = no changes.
 
@@ -45,15 +48,11 @@ from _cost import cost_block, read_threshold, stat_walk
 from _scratch import BACKUP_KEEP, prune_backups, scratch_dir
 from _vault_walk import (
     FIELD_SCHEMA,
-    BUCKET_A_TYPES,
-    BUCKET_B_MIGRATIONS,
     DECISION_STATUS_ALIASES,
     INDEX_EXEMPT_FOLDERS,
     MD_LINK_RE,
     VaultFile,
     build_vault_index,
-    is_bucket_b_migration,
-    is_bucket_d_tag,
     parse_frontmatter,
     resolve_vault,
     resolve_wikilink,
@@ -69,19 +68,6 @@ try:
     _TASK_STATUS_ALIASES: set = set(STATUS_TO_COLUMN)
 except Exception:  # pragma: no cover - degraded, schema phase still strips
     _TASK_STATUS_ALIASES = set()
-
-
-def _migrate_ob_to_bucket_a(tag: str) -> Optional[str]:
-    """If tag is `ob/<bucket-A-type>`, return the bare type. Else None.
-
-    Preserves the file-type tag mandate (§2A) when dropping `ob/*` prefix.
-    """
-    if not tag.startswith("ob/"):
-        return None
-    bare = tag[3:]
-    if bare in BUCKET_A_TYPES:
-        return bare
-    return None
 
 
 # Kept as scratch *kinds*, not directory names: since v3 these resolve under
@@ -119,47 +105,6 @@ def detect_phase(project_dir: Path) -> str:
     if backup.is_dir() and any(backup.iterdir()):
         return "applied"
     return "fresh"
-
-
-# ============================================================
-# Tag normalisation
-# ============================================================
-
-
-def normalize_tags(tags: list[str], project_slug: Optional[str]) -> tuple[list[str], list[str]]:
-    """Return (new_tags, dropped_tags). Preserves order, removes duplicates."""
-    seen: set[str] = set()
-    new: list[str] = []
-    dropped: list[str] = []
-    for t in tags:
-        if not isinstance(t, str) or not t.strip():
-            continue
-        tag = t.strip()
-        # Bucket B migration first (cabinet/*)
-        migration = is_bucket_b_migration(tag)
-        if migration:
-            if migration not in seen:
-                new.append(migration)
-                seen.add(migration)
-            dropped.append(f"{tag} → {migration}")
-            continue
-        # ob/{bucket-A-type} → {bucket-A-type} (preserves §2A file-type tag)
-        ob_migration = _migrate_ob_to_bucket_a(tag)
-        if ob_migration:
-            if ob_migration not in seen:
-                new.append(ob_migration)
-                seen.add(ob_migration)
-            dropped.append(f"{tag} → {ob_migration}")
-            continue
-        # Bucket D drop
-        if is_bucket_d_tag(tag, project_slug=project_slug):
-            dropped.append(tag)
-            continue
-        # Keep
-        if tag not in seen:
-            new.append(tag)
-            seen.add(tag)
-    return new, dropped
 
 
 # ============================================================
@@ -292,7 +237,6 @@ def _format_entry_bullet(f: Path, aliases: Optional[dict[str, str]] = None) -> s
 def generate_index_content(
     folder_name: str,
     entries: list[Path],
-    project_slug: Optional[str],
 ) -> str:
     """Generate canonical `_index.md` content for a folder with no existing index."""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -302,9 +246,8 @@ def generate_index_content(
     return (
         "---\n"
         "type: index\n"
+        f"created: {today}\n"
         f"updated: {today}\n"
-        "tags:\n"
-        "  - index\n"
         "---\n\n"
         f"# {pretty}\n\n"
         "## Entries\n\n"
@@ -353,12 +296,10 @@ def upsert_index_content(
     existing_text: str,
     folder_name: str,
     entries: list[Path],
-    project_slug: Optional[str],
 ) -> tuple[str, str]:
     """Conservatively update an existing `_index.md`.
 
     Behaviour:
-      - Normalise frontmatter tags (drop Bucket D, migrate Bucket B + ob/*)
       - Bump `updated:` to today (if field present)
       - If body has `## Entries` heading with bullet-list content: replace bullets,
         keep heading + everything else. mode='upserted'.
@@ -369,17 +310,10 @@ def upsert_index_content(
     Returns (new_text, mode).
     """
     today = datetime.now().strftime("%Y-%m-%d")
-    fm, body = parse_frontmatter(existing_text)
 
-    # Frontmatter side: normalize tags + bump updated
-    new_text = existing_text
-    fm_tags = fm.fields.get("tags") if isinstance(fm.fields.get("tags"), list) else []
-    new_tags, _ = normalize_tags([str(t) for t in fm_tags] if fm_tags else [], project_slug)
-    # Ensure 'index' is present (this IS an index)
-    if "index" not in new_tags:
-        new_tags = ["index"] + new_tags
-    new_text = _rewrite_tags_block(new_text, new_tags)
-    new_text = _bump_updated_field(new_text, today)
+    # Frontmatter side: bump updated. An existing `tags:` block is left for
+    # feature 4 to strip as an unknown field, on the pass that walks the file.
+    new_text = _bump_updated_field(existing_text, today)
 
     # Body side: try entries upsert
     # Re-parse to get the body AFTER frontmatter changes
@@ -417,62 +351,8 @@ def upsert_index_content(
 
 
 # ============================================================
-# File content rewriter — surgical edit of tags + body wikilinks + updated
+# File content rewriter — surgical edit of frontmatter + body wikilinks
 # ============================================================
-
-
-def _rewrite_tags_block(text: str, new_tags: list[str]) -> str:
-    """Surgically replace the `tags:` block in frontmatter with new_tags.
-
-    Handles two existing forms: list (`tags:\\n  - foo`) and missing.
-    If the file has no `tags:` field, adds one before the closing `---`.
-    If new_tags is empty, removes the block.
-    """
-    lines = text.split("\n")
-    if not lines or lines[0].rstrip() != "---":
-        return text
-
-    # Find frontmatter closing index
-    close_idx = None
-    for i in range(1, len(lines)):
-        if lines[i].rstrip() == "---":
-            close_idx = i
-            break
-    if close_idx is None:
-        return text
-
-    fm_lines = lines[1:close_idx]
-    # Find existing tags block
-    tags_start = None
-    tags_end = None
-    for i, ln in enumerate(fm_lines):
-        if re.match(r"^tags\s*:", ln):
-            tags_start = i
-            # find end: subsequent indented list items
-            j = i + 1
-            while j < len(fm_lines):
-                if re.match(r"^\s+-\s+", fm_lines[j]):
-                    j += 1
-                else:
-                    break
-            tags_end = j
-            break
-
-    new_block: list[str] = []
-    if new_tags:
-        new_block.append("tags:")
-        for t in new_tags:
-            new_block.append(f"  - {t}")
-
-    if tags_start is not None:
-        # Replace [tags_start:tags_end] with new_block
-        fm_lines = fm_lines[:tags_start] + new_block + fm_lines[tags_end:]
-    else:
-        # Add tags block before close (only if there are tags to add)
-        if new_tags:
-            fm_lines = fm_lines + new_block
-
-    return "\n".join([lines[0]] + fm_lines + lines[close_idx:])
 
 
 def _bump_updated_field(text: str, today: str) -> str:
@@ -629,7 +509,6 @@ def build_preview(
                 existing,
                 folder_name=parent.name,
                 entries=[m.rel_path for m in non_index],
-                project_slug=project_slug,
             )
             if proposed.strip() != existing.strip():
                 index_proposals[idx_rel] = {
@@ -648,7 +527,6 @@ def build_preview(
             proposed = generate_index_content(
                 folder_name=parent.name,
                 entries=[m.rel_path for m in non_index],
-                project_slug=project_slug,
             )
             # No `original_hash`: there was nothing to hash. `had_existing`
             # False is itself the guard — apply refuses this proposal if a
@@ -661,7 +539,7 @@ def build_preview(
                 "proposed_content": proposed,
             }
 
-    # --- Features 2-5: per-file edits ---
+    # --- Features 2-4: per-file edits ---
     schema_actions: dict[str, dict[str, Any]] = {}
     for f in files:
         try:
@@ -672,20 +550,14 @@ def build_preview(
             continue
         modified = original
 
-        # Feature 3: tag normalisation
-        if f.tags_frontmatter:
-            new_tags, dropped = normalize_tags(f.tags_frontmatter, project_slug)
-            if dropped:
-                modified = _rewrite_tags_block(modified, new_tags)
-
-        # Feature 4: wikilink form fix
+        # Feature 3: wikilink form fix
         fm, body = parse_frontmatter(modified)
         new_body, wf_count = fix_wikilink_form(body, vault_index)
         if wf_count > 0:
             # Re-assemble: original frontmatter prefix + new body
             modified = _strip_then_prepend_body(modified, new_body)
 
-        # Feature 5: frontmatter schema repair. Legacy-key migrations run on
+        # Feature 4: frontmatter schema repair. Legacy-key migrations run on
         # any parse-clean block; unknown-field strips and decision-status
         # normalisation additionally need a canonical type (schema_drift).
         if f.frontmatter.has_block and not f.frontmatter.parse_error:
@@ -998,7 +870,7 @@ def apply_preview(project_dir: Path) -> Path:
                 continue
             # `write_preview_to_disk` collapses both proposal dicts into one
             # `files/<rel>`, so a path in both (an `_index.md` that also needs
-            # a tag or schema fix) has exactly ONE proposed body and must be
+            # a schema fix) has exactly ONE proposed body and must be
             # applied exactly once. A second pass would compare the live file
             # against a hash this run just invalidated (a false stale report)
             # and overwrite the pre-change backup with already-tidied content.

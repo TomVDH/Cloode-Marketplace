@@ -16,7 +16,6 @@ from ramasse_scan import (
     detect_index_gaps,
     detect_artefact_naming,
     detect_naming_violations,
-    detect_tag_drift,
     detect_type_drift,
     detect_wikilink_form_violations,
     run_scan,
@@ -172,40 +171,6 @@ class TestDetectFrontmatterDrift(unittest.TestCase):
             drift = detect_frontmatter_drift(files)
             self.assertEqual(len(drift), 1)
             self.assertIn("missing frontmatter", drift[0]["issue"])
-
-
-# ============================================================
-# Tag drift
-# ============================================================
-
-
-class TestDetectTagDrift(unittest.TestCase):
-
-    def test_ob_prefix_counted(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "a.md", "---\ntype: doc\ntags:\n  - ob/doc\n  - ob/api-ref\n---\n")
-            _write_file(root / "b.md", "---\ntype: doc\ntags:\n  - ob/doc\n---\n")
-            files = list(walk_project(root))
-            drift = detect_tag_drift(files, project_slug="test")
-            self.assertEqual(drift["bucket_d_total_occurrences"], 3)
-            self.assertIn("ob/doc", dict(drift["bucket_d_top"]))
-
-    def test_bucket_b_migrations_listed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "a.md", "---\ntype: decision\ntags:\n  - cabinet/decision\n---\n")
-            files = list(walk_project(root))
-            drift = detect_tag_drift(files, project_slug="test")
-            self.assertIn("cabinet/decision", drift["bucket_b_migrations_needed"])
-
-    def test_project_slug_tag_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "a.md", "---\ntype: note\ntags:\n  - hubspot-nightly\n---\n")
-            files = list(walk_project(root))
-            drift = detect_tag_drift(files, project_slug="hubspot-nightly")
-            self.assertIn("hubspot-nightly", drift["bucket_d_by_category"].get("project_slug", []))
 
 
 # ============================================================
@@ -385,13 +350,13 @@ class TestRunDream(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make_minimal_project(root)
-            # Add a Bucket D tag
-            _write_file(root / "a.md", "---\ntype: note\ntags:\n  - ob/note\n---\n")
+            # A frontmatter value the standards say to omit rather than write
+            _write_file(root / "a.md", "---\ntype: note\nsession: null\n---\n")
             # Add a non-canonical type
             _write_file(root / "b.md", "---\ntype: api-ref\n---\n")
             report = run_scan(root, root)
             self.assertGreater(report["summary"]["drift_items"], 0)
-            self.assertGreater(report["tag_drift"]["bucket_d_total_occurrences"], 0)
+            self.assertGreater(len(report["frontmatter_drift"]), 0)
             self.assertGreater(report["type_drift"]["non_canonical_count"], 0)
 
     def test_emits_serializable_json(self):
@@ -399,7 +364,7 @@ class TestRunDream(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make_minimal_project(root)
-            _write_file(root / "a.md", "---\ntype: note\ntags:\n  - ob/note\n---\n")
+            _write_file(root / "a.md", "---\ntype: note\nsession: null\n---\n")
             report = run_scan(root, root)
             payload = json.dumps(report, default=str)
             roundtrip = json.loads(payload)

@@ -20,7 +20,6 @@ Public API:
     resolve_vault(project_root, env_vault=None) -> Optional[Path]
     is_safe_slug(slug) -> bool
     safe_project_root(vault, slug) -> Optional[Path]
-    is_bucket_d_tag(tag, project_slug=None) -> bool
     schema_drift_for_file(vf, aliases=None) -> Optional[dict]
     schema_drift_for_text(text, rel_path, aliases=None) -> Optional[dict]
     schema_drift(files, aliases=None) -> dict
@@ -29,9 +28,7 @@ Note schema, re-exported from _template_schema (the templates ARE the schema;
 nothing here declares a second copy):
     FIELD_SCHEMA, STATUS_VALUES_FOR_TYPE, HEADINGS_FOR_TYPE
 
-Tag + folder constants (imported by dream + tidy):
-    BUCKET_A_TYPES, BUCKET_B_MIGRATIONS, BUCKET_D_TAG_PREFIXES,
-    BUCKET_D_TAG_EXACT, VAGUE_TOPICAL_TAGS, CREW_NAMES,
+Folder constants (imported by ramasse_scan + tidy):
     PROJECT_TYPE_DEFAULT_FOLDERS, AUTO_CREATED_FOLDERS, INDEX_EXEMPT_FOLDERS
 
 CLI smoke-test mode (read-only, the module never writes):
@@ -893,50 +890,14 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
 
 
 # ============================================================
-# Schema constants — single source of truth (imported by dream + tidy)
+# Folder constants — single source of truth (imported by ramasse_scan + tidy)
 # ============================================================
+# The tag buckets used to live here: four constants, two classifiers and a
+# normaliser, maintaining a tag on every file that restated the file's own
+# `type:`. A tag that repeats a field carries no information, and the nested
+# form the buckets existed to police was never enforced anywhere. Stripping a
+# `tags:` block is now an ordinary unknown-field strip through FIELD_SCHEMA.
 
-
-BUCKET_A_TYPES: frozenset[str] = frozenset({
-    "decision", "session", "note", "doc", "project", "handoff",
-    "index", "iteration", "release", "source", "dream-report", "task",
-    "memory",
-})
-BUCKET_A_TYPES_PLUS_HOME: frozenset[str] = BUCKET_A_TYPES | {"vault-home"}
-
-# Bucket B — custom file types migrated from cabinet/*
-BUCKET_B_MIGRATIONS: dict[str, str] = {
-    "cabinet/recon": "recon-item",
-    "cabinet/portal-concept": "portal-concept",
-    "cabinet/preview": "preview",
-    "cabinet/asset-index": "index",
-    "cabinet/dev-doc": "doc",
-    "cabinet/decision": "decision",
-}
-
-# Bucket D — tags to drop entirely
-BUCKET_D_TAG_PREFIXES: tuple[str, ...] = ("ob/",)
-
-VAGUE_TOPICAL_TAGS: frozenset[str] = frozenset({
-    "architecture", "architecture-lockin", "architecture-source",
-    "frontend", "cms", "moc", "toolbox", "scheduler",
-    "campaign-request", "flow-c", "nightly", "hubspot",
-    "reconciler",
-})
-
-CREW_NAMES: frozenset[str] = frozenset({
-    "bostrol", "kevijntje", "henske", "jonasty",
-})
-
-# Project-type tag form is forbidden — it lives in frontmatter `project_type:`
-PROJECT_TYPE_TAGS: frozenset[str] = frozenset({
-    "type/coding", "type/knowledge", "type/plugin", "type/tinkerage",
-})
-
-BUCKET_D_TAG_EXACT: frozenset[str] = VAGUE_TOPICAL_TAGS | CREW_NAMES | PROJECT_TYPE_TAGS
-
-# Other cabinet/* tags — drop unless in BUCKET_B_MIGRATIONS keys
-_BUCKET_B_KEYS = frozenset(BUCKET_B_MIGRATIONS.keys())
 
 # Per-project_type folder defaults (must align with vault-standards.md §5)
 PROJECT_TYPE_DEFAULT_FOLDERS: dict[str, dict[str, list[str]]] = {
@@ -1409,33 +1370,6 @@ def enumerate_projects_all_zones(vault: Path) -> list[tuple[str, Path, str]]:
             if (d / "brief.md").is_file():
                 out.append((d.name, d, zone))
     return out
-
-
-def is_bucket_d_tag(tag: str, project_slug: Optional[str] = None) -> bool:
-    """Return True if tag should be dropped per Bucket D."""
-    # ob/* prefix
-    if any(tag.startswith(p) for p in BUCKET_D_TAG_PREFIXES):
-        return True
-    # cabinet/* — drop unless in Bucket B migrations
-    if tag.startswith("cabinet/") and tag not in _BUCKET_B_KEYS:
-        return True
-    # Exact match (vague topicals, crew, project-type tags)
-    if tag in BUCKET_D_TAG_EXACT:
-        return True
-    # Project-slug self-tag and slug/* / slug-* variants
-    if project_slug:
-        if tag == project_slug:
-            return True
-        if tag.startswith(project_slug + "/"):
-            return True
-        if tag.startswith(project_slug + "-"):
-            return True
-    return False
-
-
-def is_bucket_b_migration(tag: str) -> Optional[str]:
-    """If tag is a Bucket B migration source, return the target tag; else None."""
-    return BUCKET_B_MIGRATIONS.get(tag)
 
 
 # ============================================================

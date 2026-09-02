@@ -103,7 +103,7 @@ User reviews the plan. May approve as-is, edit specific entries, reject and re-j
 
 ## Phase 5 — Execute
 
-Invoke `superpowers:executing-plans` to apply with checkpoints. Each plan step is its own commit-able unit. **Content operations are destructive — every one is backed up first** to `.adjudant-dream-backup/{ISO-8601-Z-timestamp}/<rel_path>.legacy` before the live edit. A `.adjudant-dream-{ts}/` workspace dir holds the plan + checkpoint state. For mechanical follow-up (index rebuilds after a consolidation, tag normalisation), call `tidy.py preview` then `tidy.py apply`.
+Invoke `superpowers:executing-plans` to apply with checkpoints. Each plan step is its own commit-able unit. **Content operations are destructive — every one is backed up first** to `.adjudant-dream-backup/{ISO-8601-Z-timestamp}/<rel_path>.legacy` before the live edit. A `.adjudant-dream-{ts}/` workspace dir holds the plan + checkpoint state. For mechanical follow-up (index rebuilds after a consolidation, off-schema frontmatter), call `tidy.py preview` then `tidy.py apply`.
 
 ## Inputs
 

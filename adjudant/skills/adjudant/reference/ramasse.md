@@ -7,7 +7,7 @@
 ## What ramasse does (vs tidy and dream)
 
 ```
-tidy    = surface mechanical sweep (tags, indexes, wikilink form). Routine.
+tidy    = surface mechanical sweep (indexes, wikilink form, frontmatter). Routine.
 ramasse = deep STRUCTURAL clean — folders, schema, file types, naming, renames,
           broken-wikilink triage, doc/decision mismatches. THIS verb.
 dream   = content/knowledge/memory refresh (semantic). Separate verb.
@@ -20,7 +20,7 @@ Ramasse handles everything tidy refuses to auto-fix:
 - Folder restructures (e.g., `gemini/` → `references/`, or formalising `extra_folders`)
 - Broken-wikilink triage (each link needs judgment — repoint, remove, or archive)
 - Frontmatter drift cleanup (`: null` removal, missing required fields)
-- Schema decisions (promoting recurring custom types to Bucket B)
+- Schema decisions (a recurring custom `type:` needs a template, or the files need retyping)
 
 ## The 5-phase shape (superpowers chain)
 
@@ -43,7 +43,7 @@ python3 "$(dirname "$0")/../../../scripts/ramasse_scan.py" \
   --out /tmp/ramasse-scan-{slug}.json
 ```
 
-JSON output covers: folder drift, index gaps, frontmatter drift, tag drift, type drift, naming violations, wikilink form violations, broken wikilinks, doc/decision flags. Same shape the v0.3.0 `dream.py` used.
+JSON output covers: folder drift, index gaps, frontmatter drift, type drift, naming violations, wikilink form violations, broken wikilinks, doc/decision flags. Tag drift is not among them since v3: a `tags:` block is a field no template declares, so it surfaces as ordinary frontmatter drift.
 
 Claude reads the JSON, renders a structural-state narrative for the user as input to
 brainstorming. Shape (voice.md §Shape): the narrative leads with the largest
@@ -53,7 +53,7 @@ actionable drift item and ends with the single next step (proceed to phase 2, or
 
 Invoke `superpowers:brainstorming` with the scanner output as context. Explore:
 - Which drift items are real problems vs intentional (e.g., `extra_folders` declared in brief)?
-- For type drift values (`api-ref`, etc.): promote to Bucket B custom type, or migrate to existing Bucket A?
+- For type drift values (`api-ref`, etc.): write a template for the kind, or retype the files to a kind that has one?
 - For naming violations: rename + wikilink rewrite, or accept?
 - For broken wikilinks: triage by category (cross-project legacy refs vs genuine missing targets)?
 
@@ -63,7 +63,7 @@ Output: a shared understanding of what's worth restructuring.
 
 Invoke `superpowers:writing-plans` to produce a concrete restructure plan:
 - Specific files to rename + their new paths
-- Schema additions (new Bucket B types, `extra_folders` updates)
+- Schema additions (a new template for a new kind, `extra_folders` updates)
 - Folder reshapes
 - Broken-wikilink resolutions (per link: repoint to X, archive, or delete)
 - Plus all the mechanical fixes (delegated to tidy)
@@ -80,7 +80,7 @@ User reviews the plan. May:
 
 ## Phase 5 — Execute
 
-Invoke `superpowers:executing-plans` to apply with checkpoints. Each plan step is its own commit-able unit. For mechanical bits (tag normalisation, index rebuilds, wikilink form), call `tidy.py preview` then `tidy.py apply` internally. For renames + structural changes, do the file moves directly + run a vault-wide wikilink rewrite pass after each.
+Invoke `superpowers:executing-plans` to apply with checkpoints. Each plan step is its own commit-able unit. For mechanical bits (index rebuilds, wikilink form, off-schema frontmatter), call `tidy.py preview` then `tidy.py apply` internally. For renames + structural changes, do the file moves directly + run a vault-wide wikilink rewrite pass after each.
 
 A `.adjudant-ramasse-{ts}/` workspace dir holds the plan + checkpoint state. Backups for any destructive operation go to `.adjudant-ramasse-backup/{ts}/`.
 

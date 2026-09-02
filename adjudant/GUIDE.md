@@ -70,7 +70,7 @@ Three verbs, in a deliberate ladder from safe to careful. Match the verb to how 
 
 | Verb | Cadence | What it touches | Risk |
 |---|---|---|---|
-| `tidy` | routine (daily/weekly) | indexes, tags, wikilink form, dates, off-schema frontmatter | none — it never breaks anything |
+| `tidy` | routine (daily/weekly) | indexes, wikilink form, dates, off-schema frontmatter | none — it never breaks anything |
 | `ramasse` | sparing (quarterly) | folder shape, file types, naming, broken wikilinks | deliberate structural change, under your review |
 | `dream` | as needed | the actual prose — stale, contradictory, redundant, or orphaned content | semantic, LLM-judged; you approve every change |
 
