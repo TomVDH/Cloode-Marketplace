@@ -54,8 +54,8 @@ Four surfaces carry it. Three are mechanical and read `scripts/_voice.py`:
 
 | Surface | Enforced by | Scope |
 |---|---|---|
-| Repo docs, templates, SKILL.md | validators 24 + 33, at commit | full lexicon, all named patterns |
-| Rendered CLI output | validator 34, at commit | same, over every string literal the helpers can print, via `ast` so comments and identifiers are not hits |
+| Repo docs, templates, SKILL.md | validators 23 + 28, at commit | full lexicon, all named patterns |
+| Rendered CLI output | validator 29, at commit | same, over every string literal the helpers can print, via `ast` so comments and identifiers are not hits |
 | Prose written into the vault | the PreToolUse gate, at write time | `BLOCKING_PHRASES` only: openers, closers, glazing |
 
 The fourth is the widest and is not enforcement at all. The three above reach

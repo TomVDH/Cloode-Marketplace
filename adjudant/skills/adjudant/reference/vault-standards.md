@@ -10,7 +10,7 @@ Each rule states its shape once. Detail enforced mechanically is not restated:
 |---|---|
 | frontmatter keys per type | the type's template, parsed by `_template_schema.py` into `FIELD_SCHEMA`; convention in `templates/README.md`; the PreToolUse gate; `tidy` feature 5 repairs |
 | tag buckets A, B, D | `BUCKET_A_TYPES` / `BUCKET_B_MIGRATIONS` / `BUCKET_D_TAG_EXACT`; `tidy.normalize_tags`; validator 2 |
-| status vocabularies | the `status:` line's trailing `# a | b | c` comment in each template; validator 26 covers the board's read aliases |
+| status vocabularies | the `status:` line's trailing `# a | b | c` comment in each template; the board's read aliases are declared in `board.py` `STATUS_TO_COLUMN` |
 | wikilink form | `tidy` feature 4 |
 | folder shape, some file naming | `ramasse_scan` detectors |
 

@@ -228,25 +228,49 @@ class TestClaudeMdImportsAgents(_PatchedTree):
         self.assertTrue(any("claude-md-imports-agents" in f for f in r.failures))
 
 
-class TestTemplateCoverage(_PatchedTree):
+class TestTemplateSchemaLoads(_PatchedTree):
+    """The one validator that replaced the six.
 
-    def _provision_all(self):
-        for template in validate.FILE_TYPES_REQUIRING_TEMPLATE.values():
-            for t in (template if isinstance(template, list) else [template]):
-                (validate.TEMPLATES / t).write_text("---\n---\n")
+    It drives the real parser over whatever TEMPLATES points at, so a template
+    that stops parsing, or a kind that appears or disappears, fails the build
+    at the only place the schema is declared.
+    """
 
-    def test_passes_when_all_templates_present(self):
-        self._provision_all()
+    REAL = Path(__file__).resolve().parent.parent / "skills" / "adjudant" / "templates"
+
+    def _ship(self, skip=()):
+        for src in sorted(self.REAL.glob("*.md")):
+            if src.name in skip:
+                continue
+            (validate.TEMPLATES / src.name).write_text(src.read_text())
+
+    def test_passes_on_the_shipped_templates(self):
+        self._ship()
         r = Result()
-        validate.validate_template_coverage(r)
-        self.assertEqual(r.failures, [])
+        validate.validate_template_schema_loads(r)
+        self.assertEqual(r.failures, [], r.failures)
+        self.assertIn("template-schema-loads", r.passes)
 
-    def test_fails_when_one_missing(self):
-        self._provision_all()
-        (validate.TEMPLATES / "decision.md").unlink()
+    def test_fails_when_a_kind_disappears(self):
+        self._ship(skip=("decision.md",))
         r = Result()
-        validate.validate_template_coverage(r)
-        self.assertTrue(any("decision" in f for f in r.failures))
+        validate.validate_template_schema_loads(r)
+        self.assertTrue(any("'decision'" in f for f in r.failures), r.failures)
+
+    def test_fails_when_a_kind_appears(self):
+        self._ship()
+        (validate.TEMPLATES / "memory.md").write_text(
+            "---\ntype: memory\ncreated: 2026-09-01\nupdated: 2026-09-01\n---\n\nbody\n")
+        r = Result()
+        validate.validate_template_schema_loads(r)
+        self.assertTrue(any("'memory'" in f for f in r.failures), r.failures)
+
+    def test_fails_when_a_template_stops_parsing(self):
+        self._ship()
+        (validate.TEMPLATES / "note.md").write_text("---\ntype:\n---\n\nbody\n")
+        r = Result()
+        validate.validate_template_schema_loads(r)
+        self.assertTrue(any("do not parse" in f for f in r.failures), r.failures)
 
 
 class TestPluginVersionSet(_PatchedTree):
@@ -631,12 +655,6 @@ class TestVoiceLexicon(unittest.TestCase):
                     setattr(validate, k, v)
 
 
-class TestTaskTemplateRegistered(unittest.TestCase):
-
-    def test_task_type_registered(self):
-        self.assertEqual(validate.FILE_TYPES_REQUIRING_TEMPLATE.get("task"), "task.md")
-
-
 class TestBoardTemplateMarkersOnRepo(unittest.TestCase):
 
     def test_validator_passes_on_repo(self):
@@ -695,51 +713,6 @@ class TestBoardTemplateMarkers(_PatchedTree):
     def test_fails_on_an_empty_catch_block(self):
         r = self._write(self._GOOD + "<script>try{x()}catch(e){}</script>")
         self.assertTrue(any("empty catch" in f for f in r.failures), r.failures)
-
-
-class TestTaskStatusVocabularyOnRepo(unittest.TestCase):
-
-    def test_validator_passes_on_repo(self):
-        r = validate.Result()
-        validate.validate_task_status_vocabulary(r)
-        self.assertEqual(r.failures, [], r.failures)
-        self.assertIn("task-status-vocabulary", r.passes)
-
-
-class TestTaskStatusVocabulary(_PatchedTree):
-
-    @staticmethod
-    def _alias_table(exclude=()):
-        from board import STATUS_TO_COLUMN
-        by_col: dict = {}
-        for alias, col in STATUS_TO_COLUMN.items():
-            if alias in exclude:
-                continue
-            by_col.setdefault(col, []).append(alias)
-        rows = "\n".join(
-            "| " + ", ".join(f"`{a}`" for a in aliases) + f" | `{col}` |"
-            for col, aliases in by_col.items())
-        return "| Alias | Board column |\n|---|---|\n" + rows + "\n"
-
-    def test_passes_when_table_covers_all_aliases(self):
-        (validate.REFERENCE / "vault-standards.md").write_text(
-            "# Vault Standards\n\n" + self._alias_table())
-        r = Result()
-        validate.validate_task_status_vocabulary(r)
-        self.assertEqual(r.failures, [], r.failures)
-
-    def test_fails_when_alias_undocumented(self):
-        (validate.REFERENCE / "vault-standards.md").write_text(
-            "# Vault Standards\n\n" + self._alias_table(exclude=("wip",)))
-        r = Result()
-        validate.validate_task_status_vocabulary(r)
-        self.assertTrue(any("wip" in f for f in r.failures))
-
-    def test_fails_when_table_absent(self):
-        (validate.REFERENCE / "vault-standards.md").write_text("# Vault Standards\n")
-        r = Result()
-        validate.validate_task_status_vocabulary(r)
-        self.assertTrue(any("task-status-vocabulary" in f for f in r.failures))
 
 
 class TestHooksWiringOnRepo(unittest.TestCase):
@@ -1036,7 +1009,7 @@ if __name__ == "__main__":
     unittest.main()
 
 class TestAdvisorWiring(unittest.TestCase):
-    """33. advisor-wiring - the opt-in advisor's three surfaces stay wired:
+    """30. advisor-wiring - the opt-in advisor's three surfaces stay wired:
     the contract doc exists, the SessionStart banner names it, and the toggle
     still stamps AGENTS.md. Any one of them silently dropping out leaves a
     mode that claims to watch and does not."""
@@ -1070,6 +1043,35 @@ class TestAdvisorWiring(unittest.TestCase):
             finally:
                 validate.ROOT = orig
             self.assertTrue(any("advisor-wiring" in f for f in r.failures))
+
+
+class TestParityValidatorsRemoved(unittest.TestCase):
+    """The six validators that existed only to compare two declarations.
+
+    Each one asked whether a Python constant, a template and a prose section
+    agreed. The template is the only declaration now, so the question has no
+    second half to ask about. One validator replaces all six: the templates
+    parse into exactly the fifteen kinds.
+    """
+
+    def test_the_six_are_gone(self):
+        src = Path(validate.__file__).read_text()
+        for name in ("template-coverage", "status-vocabulary",
+                     "task-status-vocabulary", "decision-status-vocabulary",
+                     "template-schema-parity", "freshness-vocabulary"):
+            self.assertNotIn(name, src,
+                             f"{name} survived; it checks a second declaration "
+                             "that no longer exists")
+
+    def test_the_replacement_exists(self):
+        src = Path(validate.__file__).read_text()
+        self.assertIn("template-schema-loads", src)
+
+    def test_declared_count_matches_reality(self):
+        src = Path(validate.__file__).read_text()
+        declared = int(re.search(r"(\d+) validators total", src).group(1))
+        listed = len(re.findall(r"^\s*\d+\. [a-z-]+", src, re.M))
+        self.assertEqual(declared, listed)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ Validators:
    1. harness-parity         — source/, .claude/, .gemini/ skill paths all resolve to skills/adjudant
    2. templates-tag-schema   — no deprecated tags (#ob/, #cabinet/) in any template
    3. claude-md-imports-agents — templates/CLAUDE.md starts with @AGENTS.md
-   4. template-coverage      — every file-type in vault-standards has a matching template
+   4. template-schema-loads  — the templates parse into exactly the fifteen kinds, each vocabulary non-empty
    5. command-metadata-coherence — verbs in command-metadata.json match SKILL.md router
    6. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
    7. port-preview-coherence  — if preview dir exists, has all required files
@@ -26,19 +26,16 @@ Validators:
  20. repo-tidy-preview-coherence — if repo-tidy preview dir exists, it has summary.md + changes.json + files/
  21. repo-tidy-backup-integrity   — repo-tidy backup subdirs with files carry at least one .legacy
  22. gitignore-includes-repo-tidy-dirs — .gitignore lists the repo-tidy dirs if either exists
- 23. status-vocabulary            — _vault_walk constants, vault-standards, and brief templates all agree on the six-state vocabulary
- 24. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
- 25. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
- 26. task-status-vocabulary       : every board.py STATUS_TO_COLUMN alias is documented in the vault-standards status alias table
- 27. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
- 28. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
- 29. freshness-vocabulary         : FRESHNESS_VALUES, the epistemic optional sets, and vault-standards section 10 agree
- 30. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
- 31. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
- 32. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
- 33. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
+ 23. voice-lexicon                : no banned/glazing/shape terms in templates/, SKILL.md, reference/ (voice.md excepted); no em dashes in templates/
+ 24. board-template-markers       : templates/board.html exists, both BOARD_DATA markers present, seeded JSON parses and has columns, nothing fetched off-machine, no empty catch
+ 25. hooks-wiring                 : every hooks.json command resolves to an existing executable file under hooks/scripts/
+ 26. hook-zone-awareness          : no hook hardcodes projects/<slug>; each resolves zone-aware and gates the slug first
+ 27. base-dashboards              : shipped .base dashboard templates are structurally sound and schema-legal
+ 28. voice-patterns              : no named no-ai-slop sentence patterns in templates/, SKILL.md, reference/
+ 29. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
+ 30. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
 
-33 validators total.
+30 validators total.
 """
 
 import ast
@@ -50,15 +47,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _voice  # noqa: E402
-import _vault_walk  # noqa: E402
 from _vault_walk import FIELD_SCHEMA  # noqa: E402
-
-# Both constants were deleted in v3, when the templates became the schema.
-# Validators 23 and 29 exist only to check that a constant, the prose and the
-# templates agree; with the constant gone there is nothing left to compare, so
-# they report the absence rather than crashing the run. Both are deleted next.
-FRESHNESS_VALUES = getattr(_vault_walk, "FRESHNESS_VALUES", None)
-PROJECT_STATUS_VALUES = getattr(_vault_walk, "PROJECT_STATUS_VALUES", None)
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL = ROOT / "skills" / "adjudant"
@@ -70,28 +59,6 @@ HARNESS_DIRS = [
     ROOT / ".claude" / "skills" / "adjudant",
     ROOT / ".gemini" / "skills" / "adjudant",
 ]
-
-# File types that must have a matching template (per vault-standards List A)
-FILE_TYPES_REQUIRING_TEMPLATE = {
-    "decision": "decision.md",
-    "session": "session.md",
-    "note": "note.md",
-    "doc": "doc.md",
-    "handoff": "handoff.md",
-    "source": "source.md",
-    "release": "release.md",
-    "dream": "dream.md",
-    "task": "task.md",
-    # brief.md is the template for kind `project`: the filename is not the
-    # kind, and one brief replaced four project-type variants.
-    "project": "brief.md",
-    "spec": "spec.md",
-    "component": "component.md",
-    "api": "api.md",
-    "schema": "schema.md",
-    # index has two legal shapes: the vault root and a project root.
-    "index": ["home.md", "index-project.md"],
-}
 
 DEPRECATED_TAG_PATTERNS = [
     re.compile(r"#ob/"),
@@ -178,17 +145,37 @@ def validate_claude_md_imports_agents(r: Result) -> None:
     r.add_pass(name)
 
 
-def validate_template_coverage(r: Result) -> None:
-    name = "template-coverage"
-    missing: list[str] = []
-    for file_type, template in FILE_TYPES_REQUIRING_TEMPLATE.items():
-        templates = template if isinstance(template, list) else [template]
-        for t in templates:
-            if not (TEMPLATES / t).exists():
-                missing.append(f"type {file_type!r} → {t}")
-    if missing:
-        r.add_fail(name, "missing templates: " + "; ".join(missing))
+def validate_template_schema_loads(r: Result) -> None:
+    """4. template-schema-loads — the templates parse into exactly the fifteen
+    kinds, and every declared vocabulary is non-empty.
+
+    This is the only validator the schema needs now. The six it replaces all
+    checked that two declarations agreed; with one declaration the question
+    cannot be asked, and the only remaining risk is a template that does not
+    parse or a kind that quietly appears or disappears.
+    """
+    name = "template-schema-loads"
+    expected = {
+        "project", "session", "decision", "task", "note",
+        "doc", "source", "spec", "handoff", "index",
+        "release", "dream", "component", "api", "schema",
+    }
+    try:
+        import _template_schema
+        schema = _template_schema.load_schema(TEMPLATES)
+    except Exception as e:
+        r.add_fail(name, f"templates do not parse: {e}")
         return
+    got = set(schema)
+    if got != expected:
+        missing, extra = sorted(expected - got), sorted(got - expected)
+        r.add_fail(name, f"kinds drifted - missing {missing}, unexpected {extra}")
+        return
+    for kind, spec in schema.items():
+        for field, values in spec.get("vocab", {}).items():
+            if not values:
+                r.add_fail(name, f"{kind}.{field} declares an empty vocabulary")
+                return
     r.add_pass(name)
 
 
@@ -688,32 +675,6 @@ def validate_gitignore_includes_repo_tidy_dirs(r: Result) -> None:
     r.add_pass(name)
 
 
-def validate_status_vocabulary(r: Result) -> None:
-    """23. status-vocabulary — _vault_walk constants, vault-standards, and brief
-    templates all agree on the six-state vocabulary."""
-    name = "status-vocabulary"
-    expected = ("active", "stale", "fridge", "done", "dead", "seed")
-    if PROJECT_STATUS_VALUES != expected:
-        r.add_fail(name, f"_vault_walk.PROJECT_STATUS_VALUES is {PROJECT_STATUS_VALUES}")
-        return
-    vs = (REFERENCE / "vault-standards.md").read_text()
-    missing = [s for s in expected if f"`{s}`" not in vs]
-    if missing:
-        r.add_fail(name, f"vault-standards.md missing states: {missing}")
-        return
-    enum_comment = " | ".join(expected)
-    for t in sorted(TEMPLATES.glob("project-brief-*.md")):
-        text = t.read_text()
-        m = re.search(r"^status:\s*(\S+)", text, re.MULTILINE)
-        if not m or m.group(1) not in expected:
-            r.add_fail(name, f"{t.name}: status value missing or off-vocabulary")
-            return
-        if enum_comment not in text:
-            r.add_fail(name, f"{t.name}: enum comment '{enum_comment}' missing")
-            return
-    r.add_pass(name)
-
-
 _BASE_TOP_KEYS = {"filters", "formulas", "properties", "summaries", "views"}
 _BASE_BARE_PROP_RE = re.compile(r"(?m)^\s+-\s+([a-z_][\w.]*)\s*$")
 _BASE_GROUPBY_PROP_RE = re.compile(r"(?m)^\s+property:\s*([\w.]+)\s*$")
@@ -751,7 +712,7 @@ def _base_template_problems(text: str, legal_props: set) -> list[str]:
 
 
 def validate_base_dashboards(r: Result) -> None:
-    """30. base-dashboards — every shipped .base dashboard template is
+    """27. base-dashboards — every shipped .base dashboard template is
     structurally sound and references only schema-legal properties."""
     name = "base-dashboards"
     src = TEMPLATES / "bases"
@@ -775,41 +736,8 @@ def validate_base_dashboards(r: Result) -> None:
     r.add_pass(name)
 
 
-def validate_freshness_vocabulary(r: Result) -> None:
-    """29. freshness-vocabulary — _vault_walk.FRESHNESS_VALUES, the epistemic
-    optional sets, and vault-standards section 10 agree on the truth-lifetime
-    vocabulary and its home types."""
-    name = "freshness-vocabulary"
-    expected = ("timeless", "dated", "pointer")
-    if FRESHNESS_VALUES != expected:
-        r.add_fail(name, f"_vault_walk.FRESHNESS_VALUES is {FRESHNESS_VALUES}")
-        return
-    vs_path = REFERENCE / "vault-standards.md"
-    if not vs_path.is_file():
-        r.add_fail(name, "reference/vault-standards.md not found")
-        return
-    vs = vs_path.read_text()
-    if "## 10. Epistemic freshness" not in vs:
-        r.add_fail(name, "vault-standards.md missing section 10 (Epistemic freshness)")
-        return
-    missing = [s for s in expected if f"`{s}`" not in vs]
-    if missing:
-        r.add_fail(name, f"vault-standards.md missing freshness values: {missing}")
-        return
-    epistemic = {"freshness", "certainty", "validity_context", "valid_from", "valid_until"}
-    for ftype in ("decision", "note", "doc", "source"):
-        if not epistemic <= FIELD_SCHEMA[ftype]["optional"]:
-            r.add_fail(name, f"FIELD_SCHEMA[{ftype!r}] missing epistemic optional set")
-            return
-    for ftype in ("session", "task", "release", "handoff", "index"):
-        if epistemic & (FIELD_SCHEMA[ftype]["required"] | FIELD_SCHEMA[ftype]["optional"]):
-            r.add_fail(name, f"epistemic fields leaked into system shape {ftype!r}")
-            return
-    r.add_pass(name)
-
-
 def validate_hook_zone_awareness(r: Result) -> None:
-    """28. hook-zone-awareness — no hook may hardcode projects/<slug>.
+    """26. hook-zone-awareness — no hook may hardcode projects/<slug>.
 
     Audit 2026-07-27: every hook built `{vault}/projects/{slug}` directly while
     /adjudant shelf moves projects to `_fridge/` and `_archive/` without
@@ -895,7 +823,7 @@ def _parse_voice_lists() -> tuple[list[str], list[str], list[str]]:
 
 
 def validate_voice_lexicon(r: Result) -> None:
-    """24. voice-lexicon: no banned/glazing/shape terms in templates/, SKILL.md,
+    """23. voice-lexicon: no banned/glazing/shape terms in templates/, SKILL.md,
     reference/ (voice.md excepted); no em dashes in templates/.
 
     Fenced blocks and inline code spans are exempt from the lexicon scan:
@@ -942,9 +870,9 @@ def _voice_surfaces() -> list[Path]:
 
 
 def validate_voice_patterns(r: Result) -> None:
-    """31. voice-patterns — the named no-ai-slop sentence patterns.
+    """28. voice-patterns — the named no-ai-slop sentence patterns.
 
-    The lexicon (validator 24) catches words. This catches shapes: superficial
+    The lexicon (validator 23) catches words. This catches shapes: superficial
     `-ing` analysis clauses, binary contrasts, importance puffery, weasel
     attribution, recap endings, rhetorical setups, faux-insight setups and
     throat-clearing. Every pattern in `_voice.SLOP_PATTERNS` was measured
@@ -969,7 +897,7 @@ def validate_voice_patterns(r: Result) -> None:
 
 
 def validate_render_voice(r: Result) -> None:
-    """32. render-voice — the voice contract reaches rendered CLI output.
+    """29. render-voice — the voice contract reaches rendered CLI output.
 
     voice.md has always described the shape of what the verbs print, and
     nothing checked it: the contract bound the docs about the code, not the
@@ -1004,7 +932,7 @@ def validate_render_voice(r: Result) -> None:
 
 
 def validate_advisor_wiring(r: Result) -> None:
-    """33. advisor-wiring — the opt-in advisor's three surfaces stay wired.
+    """30. advisor-wiring — the opt-in advisor's three surfaces stay wired.
 
     The mode's whole design is visible state: a contract doc, a SessionStart
     banner that names it, and an AGENTS.md marker the toggle stamps. Any one
@@ -1044,7 +972,7 @@ BOARD_EMPTY_CATCH_RE = re.compile(r"catch\s*\(\s*\w*\s*\)\s*\{\s*\}")
 
 
 def validate_board_template_markers(r: Result) -> None:
-    """25. board-template-markers: templates/board.html exists, both BOARD_DATA
+    """24. board-template-markers: templates/board.html exists, both BOARD_DATA
     markers are present, the seeded JSON between them parses and carries at
     least one column, the file fetches nothing from off-machine, and it
     swallows no error silently.
@@ -1089,52 +1017,11 @@ def validate_board_template_markers(r: Result) -> None:
     r.add_pass(name)
 
 
-def _parse_status_alias_table(vs_text: str) -> set[str]:
-    """Backticked aliases from the first column of the vault-standards
-    `| Alias | Board column |` table. Empty set when the table is absent."""
-    aliases: set[str] = set()
-    lines = vs_text.splitlines()
-    for i, ln in enumerate(lines):
-        if re.match(r"^\|\s*Alias\s*\|\s*Board column\s*\|", ln, re.IGNORECASE):
-            for row in lines[i + 1:]:
-                if not row.strip().startswith("|"):
-                    break
-                first_cell = row.strip().strip("|").split("|")[0]
-                aliases.update(re.findall(r"`([^`]+)`", first_cell))
-            break
-    return aliases
-
-
-def validate_task_status_vocabulary(r: Result) -> None:
-    """26. task-status-vocabulary: every status alias board.py normalizes
-    (STATUS_TO_COLUMN keys) appears in the vault-standards alias table. An
-    alias the board accepts but the doc omits is undocumented schema."""
-    name = "task-status-vocabulary"
-    vs = REFERENCE / "vault-standards.md"
-    if not vs.is_file():
-        r.add_fail(name, "reference/vault-standards.md missing")
-        return
-    try:
-        from board import STATUS_TO_COLUMN
-    except Exception as e:
-        r.add_fail(name, f"could not import board.py: {e}")
-        return
-    documented = _parse_status_alias_table(vs.read_text())
-    if not documented:
-        r.add_fail(name, "no `| Alias | Board column |` table found in vault-standards.md")
-        return
-    undocumented = sorted(set(STATUS_TO_COLUMN) - documented)
-    if undocumented:
-        r.add_fail(name, f"board.py aliases missing from the vault-standards alias table: {undocumented}")
-        return
-    r.add_pass(name)
-
-
 PLUGIN_ROOT_PATH_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\"'\s]+)")
 
 
 def validate_hooks_wiring(r: Result) -> None:
-    """27. hooks-wiring: every command in hooks/hooks.json resolves to an
+    """25. hooks-wiring: every command in hooks/hooks.json resolves to an
     existing executable file under hooks/scripts/ after ${CLAUDE_PLUGIN_ROOT}
     substitution. Dead wiring cannot stay green."""
     name = "hooks-wiring"
@@ -1177,7 +1064,7 @@ def main() -> int:
     validate_harness_parity(r)
     validate_templates_tag_schema(r)
     validate_claude_md_imports_agents(r)
-    validate_template_coverage(r)
+    validate_template_schema_loads(r)
     validate_command_metadata_coherence(r)
     validate_plugin_version_set(r)
     validate_port_preview_coherence(r)
@@ -1196,13 +1083,10 @@ def main() -> int:
     validate_repo_tidy_preview_coherence(r)
     validate_repo_tidy_backup_integrity(r)
     validate_gitignore_includes_repo_tidy_dirs(r)
-    validate_status_vocabulary(r)
     validate_voice_lexicon(r)
     validate_board_template_markers(r)
-    validate_task_status_vocabulary(r)
     validate_hooks_wiring(r)
     validate_hook_zone_awareness(r)
-    validate_freshness_vocabulary(r)
     validate_base_dashboards(r)
     validate_voice_patterns(r)
     validate_render_voice(r)
