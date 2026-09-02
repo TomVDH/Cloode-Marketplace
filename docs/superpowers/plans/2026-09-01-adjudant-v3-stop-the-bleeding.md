@@ -1637,6 +1637,404 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+## Task 11: The drift canary
+
+Every other check in this repo asks whether a file is still true. This one asks whether the agent is, which is the failure that produces untrue files.
+
+**Files:**
+- Create: `adjudant/hooks/scripts/stop-canary.py`, `adjudant/scripts/test_canary.py`
+- Modify: `adjudant/hooks/hooks.json` (new `Stop` entry), `adjudant/hooks/scripts/session-start.sh` (state it once), `adjudant/hooks/scripts/user-prompt-reminder.sh` (report a lapse)
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks. Task 6 also edits `session-start.sh`, so run this task after Task 6 and edit the result rather than the original.
+- Produces:
+  - `canary_path(session_id: str) -> str` — `$TMPDIR/adjudant-canary-{session_id}.json`, same shape and same filename guard as `task-ledger.py:39`.
+  - The state file: `{"word": str, "turns": int, "hits": int, "misses": int, "blocked": bool}`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `adjudant/scripts/test_canary.py`:
+
+```python
+"""Tests for the drift canary.
+
+A codeword is stated once at session start and printed at the end of every
+reply. When it stops appearing, the model has stopped honouring an instruction
+it was given minutes ago, and nothing else in the session is trustworthy.
+
+The rule the design rests on is that the word is NEVER restated. A per-turn
+re-assertion would keep the model printing it and the canary would measure
+nothing.
+"""
+
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+HOOKS = Path(__file__).resolve().parent.parent / "hooks" / "scripts"
+
+
+def _run(payload: dict, home: Path) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    env["TMPDIR"] = str(home)
+    env.pop("OB_VAULT", None)
+    return subprocess.run(
+        ["python3", str(HOOKS / "stop-canary.py")],
+        env=env, input=json.dumps(payload),
+        capture_output=True, text=True, timeout=15)
+
+
+class TestCanary(unittest.TestCase):
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _state(self, sid: str, **fields) -> Path:
+        p = self.home / f"adjudant-canary-{sid}.json"
+        base = {"word": "GRAMERCY", "turns": 0, "hits": 0,
+                "misses": 0, "blocked": False}
+        base.update(fields)
+        p.write_text(json.dumps(base))
+        return p
+
+    def test_word_present_records_a_hit(self):
+        p = self._state("s1")
+        r = _run({"session_id": "s1",
+                  "last_assistant_message": "Did the thing.\n\nGRAMERCY"}, self.home)
+        self.assertEqual(r.returncode, 0)
+        st = json.loads(p.read_text())
+        self.assertEqual(st["hits"], 1)
+        self.assertEqual(st["misses"], 0)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_first_miss_blocks(self):
+        p = self._state("s2")
+        r = _run({"session_id": "s2",
+                  "last_assistant_message": "Did the thing."}, self.home)
+        self.assertEqual(r.returncode, 0)
+        out = json.loads(r.stdout)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("GRAMERCY", out["reason"])
+        st = json.loads(p.read_text())
+        self.assertEqual(st["misses"], 1)
+        self.assertTrue(st["blocked"])
+
+    def test_the_miss_survives_a_successful_block(self):
+        # The signal must survive coercion. If a block makes the retry succeed
+        # and the miss were then forgotten, the counter would read clean
+        # through exactly the degradation it exists to catch.
+        p = self._state("s3")
+        _run({"session_id": "s3", "last_assistant_message": "no word"}, self.home)
+        _run({"session_id": "s3", "last_assistant_message": "ok GRAMERCY"}, self.home)
+        st = json.loads(p.read_text())
+        self.assertEqual(st["misses"], 1)
+        self.assertEqual(st["hits"], 1)
+
+    def test_second_miss_reports_and_does_not_block(self):
+        p = self._state("s4", blocked=True, misses=1)
+        r = _run({"session_id": "s4", "last_assistant_message": "still no word"},
+                 self.home)
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), "")
+        st = json.loads(p.read_text())
+        self.assertEqual(st["misses"], 2)
+
+    def test_the_word_must_be_near_the_end(self):
+        # Quoting the instruction mid-message is not compliance.
+        self._state("s5")
+        r = _run({"session_id": "s5",
+                  "last_assistant_message":
+                      "I was told to end with GRAMERCY.\n\n" + ("filler line\n" * 40)},
+                 self.home)
+        self.assertEqual(json.loads(r.stdout)["decision"], "block")
+
+    def test_no_state_file_is_a_noop(self):
+        r = _run({"session_id": "unknown", "last_assistant_message": "hi"}, self.home)
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_hostile_session_id_writes_nothing(self):
+        r = _run({"session_id": "../escape", "last_assistant_message": "hi"}, self.home)
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(list(self.home.glob("**/*escape*")), [])
+
+    def test_malformed_stdin_exits_zero(self):
+        env = dict(os.environ)
+        env["TMPDIR"] = str(self.home)
+        r = subprocess.run(["python3", str(HOOKS / "stop-canary.py")],
+                           env=env, input="not json",
+                           capture_output=True, text=True, timeout=15)
+        self.assertEqual(r.returncode, 0)
+
+
+class TestTheWordIsStatedOnce(unittest.TestCase):
+
+    def test_the_per_turn_hook_never_names_the_word(self):
+        # The rule the whole design rests on. A re-assertion keeps the model
+        # printing the word and the canary measures nothing.
+        src = (HOOKS / "user-prompt-reminder.sh").read_text()
+        self.assertNotIn("CANARY_WORDS", src)
+        self.assertNotIn("canary word", src.lower())
+
+    def test_session_start_emits_the_word_once(self):
+        src = (HOOKS / "session-start.sh").read_text()
+        self.assertEqual(src.count('"$canary_word"'), 1,
+                         "the word reaches the context block more than once")
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd adjudant/scripts && python3 -m unittest test_canary -v`
+Expected: FAIL — `stop-canary.py` does not exist.
+
+- [ ] **Step 3: Write the hook**
+
+Create `adjudant/hooks/scripts/stop-canary.py`:
+
+```python
+#!/usr/bin/env python3
+"""Drift canary - has the model stopped following its standing instructions?
+
+SessionStart states one rule: end every message with a codeword. This hook
+reads `last_assistant_message` on Stop and records whether it did.
+
+The value is that the rule is trivial. A model that stops honouring a one-word
+instruction it was given minutes ago has stopped honouring instructions
+generally, and everything else it says this session is worth less. That is the
+moment to start fresh, and nothing else tells you it has arrived.
+
+Block once, then report. The first miss blocks and asks the model to re-read
+its instructions; every later miss is only recorded, because coercing
+compliance past that point manufactures the appearance of health. The miss is
+counted either way: if a block makes the retry succeed and the miss were
+forgotten, the counter would read clean through the degradation it exists to
+catch.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import tempfile
+
+# The session_id becomes a filename component: only filename-safe ids may
+# steer the path (mirrors task-ledger.py:35).
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+# How much of the tail counts as "the end". A word quoted mid-message is not
+# compliance: the instruction says to end with it.
+_TAIL_CHARS = 240
+
+
+def canary_path(session_id: str) -> str:
+    root = os.environ.get("TMPDIR") or tempfile.gettempdir()
+    return os.path.join(root, f"adjudant-canary-{session_id}.json")
+
+
+def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not isinstance(payload, dict):
+        return 0
+
+    sid = str(payload.get("session_id") or "")
+    if not sid or not _SESSION_ID_RE.match(sid):
+        return 0
+
+    path = canary_path(sid)
+    try:
+        with open(path) as f:
+            state = json.load(f)
+    except Exception:
+        return 0                       # no canary for this session: nothing to do
+    if not isinstance(state, dict) or not state.get("word"):
+        return 0
+
+    word = str(state["word"])
+    message = str(payload.get("last_assistant_message") or "")
+    present = word in message[-_TAIL_CHARS:]
+
+    state["turns"] = int(state.get("turns", 0)) + 1
+    if present:
+        state["hits"] = int(state.get("hits", 0)) + 1
+    else:
+        state["misses"] = int(state.get("misses", 0)) + 1
+
+    should_block = (not present) and not state.get("blocked")
+    if should_block:
+        state["blocked"] = True
+
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass                           # a full TMPDIR must not surface as a failure
+
+    if should_block:
+        print(json.dumps({
+            "decision": "block",
+            "reason": (f"The session canary {word} was missing from that reply. "
+                       "Re-read your standing instructions and end every message "
+                       f"with {word} on its own line. This is said once: a later "
+                       "lapse is recorded, not corrected."),
+        }))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:                  # pragma: no cover - last-resort guard
+        sys.exit(0)
+```
+
+- [ ] **Step 4: Run the hook tests**
+
+Run: `cd adjudant/scripts && python3 -m unittest test_canary.TestCanary -v`
+Expected: PASS, 8 tests
+
+- [ ] **Step 5: Pick the word and state it once, at session start**
+
+In `adjudant/hooks/scripts/session-start.sh`, add beside the other helper functions:
+
+```bash
+# Rare nouns that do not occur in technical prose. ELLIPSIS and its kind are
+# excluded deliberately: a word that can appear naturally would mask a real
+# lapse, which is the one thing this must never do.
+CANARY_WORDS="GRAMERCY QUINCUNX SPANDREL COLOPHON TREBUCHET PALIMPSEST ORRERY CLEPSYDRA CARTOUCHE SCRIPTORIUM INCUNABULA MARGINALIA PORTCULLIS BARBICAN ASTROLABE THEODOLITE VELLUM FIRKIN GAMBREL SALTIRE ZEUGMA MANTICORE"
+
+canary_start() {
+  local session_id="$1" tmp="${TMPDIR:-/tmp}"
+  [ -n "$session_id" ] || return 0
+  case "$session_id" in *[!A-Za-z0-9._-]*) return 0 ;; esac
+  local state="$tmp/adjudant-canary-${session_id}.json"
+  # One word per session. A resume or a compaction must not re-roll it, or the
+  # streak resets exactly when drift is most likely.
+  if [ -f "$state" ]; then
+    python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["word"])' "$state" 2>/dev/null || true
+    return 0
+  fi
+  # Chosen from the session id, so a resume picks the same word without
+  # needing to have stored it first.
+  local n word idx
+  set -- $CANARY_WORDS
+  idx=$(printf '%s' "$session_id" | cksum | cut -d' ' -f1)
+  n=$(( idx % $# + 1 ))
+  eval "word=\${$n}"
+  printf '{"word":"%s","turns":0,"hits":0,"misses":0,"blocked":false}\n' "$word" > "$state" 2>/dev/null || return 0
+  find "$tmp" -maxdepth 1 -name 'adjudant-canary-*.json' -mtime +1 -delete 2>/dev/null || true
+  printf '%s' "$word"
+}
+```
+
+In `main`, after the voice directive and before the vault lines, emit the rule exactly once:
+
+```bash
+  canary_word=$(canary_start "$session_id")
+  if [ -n "$canary_word" ]; then
+    printf -- '- Session canary: end every message with `%s` on its own line. It is a drift check, so do not explain it or mention it otherwise.\n' "$canary_word"
+  fi
+```
+
+- [ ] **Step 6: Report a lapse in the per-turn hook, and never restate the word**
+
+In `adjudant/hooks/scripts/user-prompt-reminder.sh`, add a function that reads the state file and prints only when a miss has occurred. **It must not print the word.** Naming it here would restate the instruction and the canary would stop measuring anything, which is what `TestTheWordIsStatedOnce` asserts.
+
+Write it with a quoted heredoc delimiter that does not collide with any other in the file:
+
+```bash
+canary_report() {
+  local session_id="$1" tmp="${TMPDIR:-/tmp}"
+  [ -n "$session_id" ] || return 0
+  case "$session_id" in *[!A-Za-z0-9._-]*) return 0 ;; esac
+  local state="$tmp/adjudant-canary-${session_id}.json"
+  [ -f "$state" ] || return 0
+  python3 - "$state" <<'CANARY_PY' 2>/dev/null || true
+import json, sys
+try:
+    s = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit(0)
+misses, turns = int(s.get("misses", 0)), int(s.get("turns", 0))
+if misses:
+    print(f"[adjudant] Session canary missed {misses} of {turns} turns. "
+          "Standing instructions are lapsing: wrap up, then start a fresh "
+          "session rather than pushing this one further.")
+CANARY_PY
+}
+```
+
+Call it from `main` on every turn, before the existing intent nudge. It is silent while healthy, which is the rule the statusline applies to its own segments: a signal that never varies carries no information.
+
+- [ ] **Step 7: Register the Stop hook**
+
+In `adjudant/hooks/hooks.json`, add beside the existing entries:
+
+```json
+    "Stop": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-canary.py\"",
+        "timeout": 5
+      }]
+    }]
+```
+
+Validator 27 (`hooks-wiring`) checks that every command resolves to an existing file under `hooks/scripts/`, so a typo fails the build.
+
+- [ ] **Step 8: Run the suite and validators**
+
+Run: `cd adjudant/scripts && python3 -m unittest test_canary -v`
+Expected: `OK`, 10 tests
+
+Run: `cd adjudant/scripts && python3 -m unittest discover -p 'test_*.py' 2>&1 | tail -3`
+Expected: `OK`
+
+Run: `cd ../.. && python3 adjudant/scripts/validate.py 2>&1 | tail -2`
+Expected: `PASS`
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add adjudant/hooks/scripts/stop-canary.py adjudant/hooks/hooks.json adjudant/hooks/scripts/session-start.sh adjudant/hooks/scripts/user-prompt-reminder.sh adjudant/scripts/test_canary.py
+git commit -m "feat(adjudant): drift canary, a check on the agent rather than the files
+
+A codeword stated once at session start and printed at the end of every reply.
+The Stop hook reads last_assistant_message and records a hit or a miss. When it
+lapses, the model has stopped honouring a one-word instruction it was given
+minutes ago, and nothing else it says this session is worth as much.
+
+Block once, then report: coercing compliance past the first miss manufactures
+the appearance of health. The miss is recorded either way, so a block that
+works cannot erase the evidence.
+
+The word is stated exactly once. A per-turn re-assertion would keep the model
+printing it and the canary would measure nothing, which is why the tests assert
+the per-turn hook never names it.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ## Done when
 
 - `python3 -m unittest discover -p 'test_*.py'` from `adjudant/scripts/` reports `OK`.
@@ -1645,6 +2043,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - No file under a vault project matches `.adjudant-*` after a tidy preview and apply.
 - The statusline renders with no stderr output against a fixture breadcrumb.
 - `suggest_vault_roots` exists in `adjudant/scripts/_vault_walk.py` and `connect.py --suggest-vaults` prints JSON.
+- The `Stop` hook is registered, `test_canary.py` passes, and the per-turn hook never names the codeword.
 
 ## Not in this plan
 
