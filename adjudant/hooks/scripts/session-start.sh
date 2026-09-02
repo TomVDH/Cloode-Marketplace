@@ -30,6 +30,34 @@ zone_project_dir() {
   return 1
 }
 
+# Rare nouns that do not occur in technical prose. ELLIPSIS and its kind are
+# excluded deliberately: a word that can appear naturally would mask a real
+# lapse, which is the one thing this must never do.
+CANARY_WORDS="GRAMERCY QUINCUNX SPANDREL COLOPHON TREBUCHET PALIMPSEST ORRERY CLEPSYDRA CARTOUCHE SCRIPTORIUM INCUNABULA MARGINALIA PORTCULLIS BARBICAN ASTROLABE THEODOLITE VELLUM FIRKIN GAMBREL SALTIRE ZEUGMA MANTICORE"
+
+canary_start() {
+  local session_id="$1" tmp="${TMPDIR:-/tmp}"
+  [ -n "$session_id" ] || return 0
+  case "$session_id" in *[!A-Za-z0-9._-]*) return 0 ;; esac
+  local state="$tmp/adjudant-canary-${session_id}.json"
+  # One word per session. A resume or a compaction must not re-roll it, or the
+  # streak resets exactly when drift is most likely.
+  if [ -f "$state" ]; then
+    python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["word"])' "$state" 2>/dev/null || true
+    return 0
+  fi
+  # Chosen from the session id, so a resume picks the same word without
+  # needing to have stored it first.
+  local n word idx
+  set -- $CANARY_WORDS
+  idx=$(printf '%s' "$session_id" | cksum | cut -d' ' -f1)
+  n=$(( idx % $# + 1 ))
+  eval "word=\${$n}"
+  printf '{"word":"%s","turns":0,"hits":0,"misses":0,"blocked":false}\n' "$word" > "$state" 2>/dev/null || return 0
+  find "$tmp" -maxdepth 1 -name 'adjudant-canary-*.json' -mtime +1 -delete 2>/dev/null || true
+  printf '%s' "$word"
+}
+
 main() {
   local project_dir="${CLAUDE_PROJECT_DIR:-}"
   [ -z "$project_dir" ] && return 0
@@ -154,6 +182,18 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
       ;;
     *) : ;;
   esac
+
+  # Drift canary. One rare word, stated HERE and nowhere else, printed at the
+  # end of every reply and checked by the Stop hook. A model that stops
+  # honouring a one-word instruction it was given minutes ago has stopped
+  # honouring instructions generally, and the rest of the session is worth
+  # less. The per-turn hook reports a lapse but never restates the word: a
+  # re-assertion would keep the model printing it and measure nothing.
+  local canary_word=""
+  canary_word=$(canary_start "$session_id") || true
+  if [ -n "${canary_word:-}" ]; then
+    printf -- '- Session canary: end every message with `%s` on its own line. It is a drift check, so do not explain it or mention it otherwise.\n' "$canary_word"
+  fi
 
   printf -- '- Vault: `%s` (linked to project `%s`)\n' "$(basename "$vault_path")" "$slug"
 
