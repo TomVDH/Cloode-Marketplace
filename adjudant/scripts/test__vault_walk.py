@@ -1470,6 +1470,56 @@ class TestWalkSkipsWorkingDirs(unittest.TestCase):
                              "archived and remise working dirs must never be walked")
 
 
+class TestUnownedFolders(unittest.TestCase):
+    """`memory/` is walked, never graded.
+
+    The plan called for these on `TestMemoryType`, which no longer exists:
+    the memory KIND went with its template in v3 and the class was renamed
+    TestWalkSkipsWorkingDirs. The memory FOLDER is a separate thing and gets
+    its own class.
+    """
+
+    def test_memory_folder_is_never_schema_graded(self):
+        # 69 of check's 99 failures came from grading memory/ against a schema
+        # adjudant does not own. A Claude Code auto-memory note is name /
+        # description / metadata.type; Obsidian's Properties editor flattens
+        # metadata.type to a top-level type:, and adjudant then read the file
+        # as whatever type: claimed and proposed stripping the rest.
+        from _vault_walk import schema_drift, walk_project
+        flattened = ("---\nname: prefers-agents-md\ndescription: a preference\n"
+                     "type: project\n---\n\nbody\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            proot = Path(tmp)
+            (proot / "memory").mkdir()
+            (proot / "memory" / "flattened.md").write_text(flattened)
+            (proot / "notes").mkdir()
+            (proot / "notes" / "ours.md").write_text(
+                "---\ntype: note\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+                "---\n\nbody\n")
+            report = schema_drift(list(walk_project(proot)))
+            self.assertEqual(report["flagged"], 0,
+                             "memory/ was graded against a schema we do not own")
+            self.assertEqual(report["exempt"], 1)
+            self.assertEqual(report["checked"] + report["unchecked"], 1)
+            self.assertEqual([s["file"] for s in report["samples"]], [])
+
+            # The same bytes outside memory/ are graded exactly as before: the
+            # exemption is the folder, not the content, and it does not fail open.
+            (proot / "notes" / "flattened.md").write_text(flattened)
+            report = schema_drift(list(walk_project(proot)))
+            self.assertEqual(report["flagged"], 1)
+            self.assertEqual(report["exempt"], 1)
+            self.assertEqual([s["file"] for s in report["samples"]],
+                             ["notes/flattened.md"])
+
+    def test_the_unowned_set_is_named_and_narrow(self):
+        from _vault_walk import UNOWNED_FOLDERS, is_unowned
+        self.assertEqual(UNOWNED_FOLDERS, frozenset({"memory"}))
+        self.assertTrue(is_unowned(Path("memory/a.md")))
+        self.assertTrue(is_unowned("memory/deep/a.md"))
+        self.assertFalse(is_unowned(Path("notes/memory.md")))
+        self.assertFalse(is_unowned(Path("MEMORY.md")))
+
 class TestObsidianCliProbe(unittest.TestCase):
     """Tranche 2C: capability probe only - never a wrapper."""
 

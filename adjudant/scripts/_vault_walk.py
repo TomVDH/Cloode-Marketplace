@@ -23,6 +23,7 @@ Public API:
     schema_drift_for_file(vf, aliases=None) -> Optional[dict]
     schema_drift_for_text(text, rel_path, aliases=None) -> Optional[dict]
     schema_drift(files, aliases=None) -> dict
+    is_unowned(rel_path) -> bool                # UNOWNED_FOLDERS: never graded
 
 Note schema, re-exported from _template_schema (the templates ARE the schema;
 nothing here declares a second copy):
@@ -1230,12 +1231,37 @@ def schema_drift_for_file(vf: "VaultFile", aliases: Optional[set] = None) -> Opt
                               vf.file_type, str(vf.rel_path), aliases)
 
 
+# Folders whose file format another tool owns. Adjudant reads them, walks past
+# them, and never grades them. `memory/` holds Claude Code auto-memory notes,
+# whose shape is name / description / metadata.type; Obsidian's Properties
+# editor flattens the nested key to a top-level `type:`, and adjudant then read
+# the file as whatever that claimed. Grading it produced 69 of check's 99
+# failures, none of them actionable.
+#
+# `MEMORY.md` at the project root is NOT in here: that file is adjudant's own
+# perma-memory and stays graded.
+UNOWNED_FOLDERS: frozenset[str] = frozenset({"memory"})
+
+
+def is_unowned(rel_path) -> bool:
+    """True when a project-relative path sits under a folder we do not own."""
+    parts = Path(rel_path).parts
+    return bool(parts) and parts[0] in UNOWNED_FOLDERS
+
+
 def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dict[str, Any]:
-    """Aggregate schema drift across walked files: counts + capped samples."""
+    """Aggregate schema drift across walked files: counts + capped samples.
+
+    Files under UNOWNED_FOLDERS are counted as exempt and never graded.
+    """
     flagged: list[dict] = []
     checked = 0
     unchecked = 0
+    exempt = 0
     for vf in files:
+        if is_unowned(vf.rel_path):
+            exempt += 1
+            continue
         fm = vf.frontmatter
         if not fm.has_block or fm.parse_error or vf.file_type not in FIELD_SCHEMA:
             unchecked += 1
@@ -1247,6 +1273,7 @@ def schema_drift(files: list["VaultFile"], aliases: Optional[set] = None) -> dic
     return {
         "checked": checked,
         "unchecked": unchecked,
+        "exempt": exempt,
         "flagged": len(flagged),
         "counts": {
             "missing_required": sum(1 for d in flagged if "missing_required" in d),
