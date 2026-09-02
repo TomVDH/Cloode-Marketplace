@@ -936,6 +936,36 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+## Carried forward from plan 1's adversarial review
+
+Two claims were refuted after plan 1 landed. Both trace to `board`, which this
+plan owns, and neither was in the original scope. Fold them into Task 5, where
+`board` becomes opt-in.
+
+**A write into `tasks/` still auto-seeds a board.** `posttooluse-vault-log.py`
+fires `board_bridge --ensure-only` on any Write or Edit under `tasks/`, and
+`ensure_board` then scaffolds `board-data.json`, `board.html` and a lock file.
+A prover reproduced it: six writes into `tasks/` leave four unrequested vault
+files, against one for the same six writes into `notes/`. Plan 1's acceptance
+test only ever writes to `notes/`, which is the single fixture choice that
+hides it.
+
+The spec already settled that `board` is opt-in and never auto-seeded, so
+Task 5 must delete that branch from the hook, not merely gate the verb. Extend
+`test_no_crud.py` to run its six writes into `tasks/` as well as `notes/` and
+assert the same single-file outcome.
+
+**`board.py` writes a backup directory inside a vault project.**
+`board.py:653` puts `.bak/` next to `board-data.json`, so it lands in
+`{vault}/projects/{slug}/board/.bak/`. This is the one backup path in the
+plugin that was always well-behaved: it rotates at five, and what it protects
+is real content rather than scratch, since a deck holds the cards you dragged.
+
+Decide explicitly in Task 5 rather than by omission. Keeping it is defensible;
+if it stays, the state contract and the spec's "scratch moves out of the vault"
+line both need a sentence naming the exception, because as written they are
+false.
+
 ## Done when
 
 - `python3 -m unittest discover -p 'test_*.py'` reports `OK`.

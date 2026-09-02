@@ -801,6 +801,13 @@ own filename.
 **A project in the wrong folder.** In `active/` with no session for 30 days. This
 is the prompt that makes lifecycle triage happen instead of never happening.
 
+**One exception to "scratch leaves the vault", to be confirmed in plan 3.**
+`board.py` keeps a rotating `.bak/` beside the deck it backs up, inside the
+project. It is the only backup path that always rotated, and a deck holds real
+content rather than scratch. Plan 3 either moves it or names it as a deliberate
+exception; leaving the rule stated absolutely while this survives makes the rule
+false.
+
 **Output is a read-only report ordered by cost of being wrong**, in three bands:
 wrong now, going stale, worth a look. It never gates anything.
 
