@@ -292,3 +292,46 @@ class TestOneBadFileCannotDisableTheSchema(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             with self.assertRaises(ValueError):
                 load_schema(Path(t) / "does-not-exist")
+
+
+class TestSingleValueVocabulary(unittest.TestCase):
+    """A one-word comment reads as the strictest possible rule and enforced
+    nothing, because _parse_rule only built a vocabulary when it saw a pipe.
+
+    Found by an adversarial prover: with `status: active  # active` in
+    decision.md, 'decision' vanished from STATUS_VALUES_FOR_TYPE, a note
+    written with `status: banana` came back clean, and validate.py still said
+    29 green, because the validator only rejected an EMPTY vocabulary and a
+    missing one is not empty.
+    """
+
+    def _w(self, tmp: Path, name: str, text: str) -> None:
+        (tmp / name).write_text(text)
+
+    def test_a_single_value_comment_is_a_vocabulary_of_one(self):
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            self._w(tmp, "thing.md",
+                    "---\ntype: thing\nstatus: active    # active\n---\n\n# T\n\nbody\n")
+            s = load_schema(tmp)
+            self.assertEqual(s["thing"]["vocab"].get("status"), ("active",))
+
+    def test_a_single_value_optional_comment_still_binds(self):
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            self._w(tmp, "thing.md",
+                    "---\ntype: thing\nk: a    # optional: a\n---\n\n# T\n\nbody\n")
+            s = load_schema(tmp)
+            self.assertIn("k", s["thing"]["optional"])
+            self.assertEqual(s["thing"]["vocab"].get("k"), ("a",))
+
+    def test_prose_after_a_field_is_not_a_vocabulary(self):
+        # The comment convention must not turn every explanatory note into an
+        # enum of its own words.
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            self._w(tmp, "thing.md",
+                    "---\ntype: thing\nupdated: 2026-01-01    # bumped on every write\n"
+                    "---\n\n# T\n\nbody\n")
+            s = load_schema(tmp)
+            self.assertIsNone(s["thing"]["vocab"].get("updated"))

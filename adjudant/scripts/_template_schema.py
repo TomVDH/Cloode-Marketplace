@@ -76,16 +76,33 @@ def _split_comment(rest: str) -> tuple[str, str]:
     return rest[:m.start()].strip(), m.group("comment").strip()
 
 
+# A vocabulary token: one bare word, no spaces. This is what separates
+# `# active | superseded` (a rule) from `# bumped on every write` (prose).
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
 def _parse_rule(comment: str) -> tuple[bool, tuple[str, ...]]:
-    """Return (is_optional, vocabulary) for a trailing comment."""
+    """Return (is_optional, vocabulary) for a trailing comment.
+
+    A comment is a vocabulary when every pipe-separated part is a single bare
+    word. It used to require a pipe, so `status: active  # active` read to a
+    human as the strictest rule possible and enforced nothing: the kind
+    dropped out of STATUS_VALUES_FOR_TYPE entirely, `status: banana` came back
+    clean, and the validator stayed green because it only rejected an EMPTY
+    vocabulary and a missing one is not empty. Found by an adversarial prover.
+    """
     c = comment.strip()
     if not c:
         return False, ()
     optional = c.startswith("optional")
     if optional:
         c = c[len("optional"):].lstrip(": ").strip()
-    vocab = tuple(v.strip() for v in c.split("|") if v.strip()) if "|" in c else ()
-    return optional, vocab
+    if not c:
+        return optional, ()
+    parts = [v.strip() for v in c.split("|")]
+    if all(_TOKEN_RE.match(v) for v in parts if v):
+        return optional, tuple(v for v in parts if v)
+    return optional, ()          # prose, not a rule
 
 
 def _parse_one(path: Path) -> tuple[str, dict[str, Any]]:

@@ -153,6 +153,15 @@ def validate_template_schema_loads(r: Result) -> None:
         missing, extra = sorted(expected - got), sorted(got - expected)
         r.add_fail(name, f"kinds drifted - missing {missing}, unexpected {extra}")
         return
+    # A status field with NO vocabulary is the hole the prover found: the
+    # validator only ever rejected an EMPTY vocabulary, and a missing one is
+    # not empty, so a one-word comment passed while enforcing nothing.
+    for kind, spec in schema.items():
+        fields = spec.get("required", frozenset()) | spec.get("optional", frozenset())
+        if "status" in fields and not spec.get("vocab", {}).get("status"):
+            r.add_fail(name, f"{kind}: status has no vocabulary, so any value "
+                             "would be accepted. Write it as `a | b | c`.")
+            return
     for kind, spec in schema.items():
         for field, values in spec.get("vocab", {}).items():
             if not values:
