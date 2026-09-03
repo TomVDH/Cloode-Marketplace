@@ -285,8 +285,14 @@ class TestGeneratedSurfaces(unittest.TestCase):
             twin = _copy_main(Path(tmp) / "twin")
             _make_public(twin)
             skill = twin / "adjudant" / "skills" / "adjudant" / "SKILL.md"
+            # Read main's version rather than naming it. This line spelled the
+            # literal "version: 3.0.0", so the next release made the replace a
+            # no-op: the fixture never got a different version, and the test
+            # failed while the generator was behaving correctly.
+            mains = re.search(r"^version:\s*(\S+)", skill.read_text(), re.M).group(1)
+            self.assertNotEqual(mains, "1.0.0", "the fixture needs two versions")
             skill.write_text(skill.read_text().replace(
-                "version: 3.0.0", "version: 1.0.0"))
+                f"version: {mains}", "version: 1.0.0"))
             pj = twin / "adjudant" / ".claude-plugin" / "plugin.json"
             pj.write_text(json.dumps(
                 {**json.loads(pj.read_text()), "version": "1.0.0"}, indent=2) + "\n")
