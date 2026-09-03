@@ -1,83 +1,71 @@
-# Vault Standards
+# Vault standards
 
-Canonical schema, naming, folder, and wikilink form for any Adjudant-managed vault. Every vault write must conform.
+Structure, naming and links. Field shapes are not here: the template file is
+the only declaration of a kind's shape, and this document links to it rather
+than restating it. Every rule stated twice is a rule that drifts.
 
-## What enforces what
+## 1. Structure
 
-Each rule states its shape once. Detail enforced mechanically is not restated:
+    {vault}/
+      Home.md                      generated
+      projects/
+        active/ paused/ finished/ archive/
+          {slug}/
+            brief.md  _handoff.md  _index.md
+            sessions/     2026-09-01.md
+            decisions/    2026-09-01-drop-bucket-a-tags.md
+            tasks/        rebuild-board-deck.md
+            notes/        cold-cache-quadratic.md
+            docs/         cache.md  bug-log.md  glossary.md
+            specs/        spec-018-page-spinup.md
+            components/   modules/button.md
+            api/          contacts.md
+            schemas/      ep-object.md
+            sources/      attribution-test-runbook.md
+            releases/     v2.1.0.md
+            dreams/       2026-09-01.md
+            images/
 
-| rule area | enforcer |
-|---|---|
-| frontmatter keys per type | the type's template, parsed by `_template_schema.py` into `FIELD_SCHEMA`; convention in `templates/README.md`; the PreToolUse gate; `clean` feature 4 repairs |
-| status vocabularies | the `status:` line's trailing `# a | b | c` comment in each template; the board's read aliases are declared in `board.py` `STATUS_TO_COLUMN` |
-| wikilink form | `clean` feature 3 |
-| folder shape, some file naming | `clean --deep` detectors |
+A folder exists when something is in it. One level of grouping inside a
+folder, never two. The folder for each kind is `KIND_FOLDER` in
+`scripts/_place.py`, and `place()` is the only thing that decides a path.
 
-The parity validators are gone. They held this document, the templates and a set of `_vault_walk.py` constants to each other, a question that only exists while a rule is written down twice. The template is the one declaration now.
+## 2. Lifecycle
 
-Caught at write time: a `Write` missing a required field, or setting both `type:` and `node_type:`, is blocked; an unknown field passes, for `clean` to strip. The gate ignores `Edit`s and status values; its skip list is internals.md detail. Everything else is reported after the fact or is judgment.
+Four folders: `active/`, `paused/`, `finished/`, `archive/`. The folder is the
+project's lifecycle state, and there is no `status:` field on a brief. Moves
+happen through the guided triage in `/adjudant status`, one project at a time.
 
-## 1. Frontmatter
+## 3. Naming
 
-Every file has YAML frontmatter. Legal keys are the type's template: no trailing comment means required, `# optional` means optional, anything else is drift. Form rules, unenforced: standard YAML, no Obsidian syntax inside values except wikilink fields such as `supersedes`; ISO `YYYY-MM-DD` for dates and full ISO 8601 for timestamps; quote any string containing a colon or bracket; omit an empty optional key rather than writing `null` or `""`; write arrays as YAML lists, not inline, though an empty array is `[]`.
+Kebab-case everywhere, no exceptions. Dated kinds keep the date prefix;
+numbered kinds keep the number. Where a filename carries a date, `created:` is
+derived from it at write time and `status` asserts the two match.
 
-Project membership is the folder path (`projects/[zone/]slug/…`), never a frontmatter field: the retired `project:` field (dropped v0.16.0) duplicated the path on every note and drifted whenever a project changed zones. The graph backlink flows through each folder's `_index.md` instead.
+## 4. Links
 
-`session:` holds the Claude Code conversation id behind a write, optional on the kinds whose template lists it and hook-stamped rather than hand-written. A stored id may dangle (transcripts are ephemeral): it retraces reasoning, never holds the conclusion, so a decision's content must land in the vault. The pre-v3 `session_id:` and `source_session:` are fields on no type; `clean` strips them.
+Wikilinks with the project-relative path and a display alias for anything in
+the vault; markdown links for anything outside it. The lifecycle folder is
+omitted:
 
-## 2. Tags (retired v3)
+    [[hubspot-nightly/decisions/2026-08-12-branch-track|branch track]]
 
-No template declares `tags:`, so a `tags:` block is an unknown field: the write gate lets it through, `check` reports it, and `clean` feature 4 strips it. Nothing adjudant writes carries one.
+Obsidian resolves by matching the end of a path, so a project moving between
+folders breaks nothing. `link()` in `scripts/_place.py` is the only thing that
+writes one, and it refuses a target that names a lifecycle folder.
 
-The retired scheme mandated exactly one tag per file restating that file's own `type:`, policed by four bucket constants, two classifiers, a normaliser and a validator. A tag that repeats a field carries no information, and the nested topical form the buckets existed to police was never enforced anywhere. Inline `#tags` in body prose are yours; nothing reads or rewrites them. `cssclasses:` was never a tag and is unaffected.
+## 5. The kinds
 
-## 3. File-type schemas
+Fifteen. Each one's shape is declared by its template and nowhere else:
 
-A template's kind is its `type:`, not its filename: `brief.md` is `project`; `home.md` and `index-project.md` are both `index`. Body shape is not machine-checked. Decision: `## Why` / `## Consequence`. Session: a closing summary line, then `## Log`. Doc: purpose sentence + `## {Section}`. Source: `## Key points` / `## Why it matters`. Release: `## Changes`. Task: `## Done when` / `## Notes`. Index: `# {Collection Name}`, one-line description, then `## Entries` of wikilinks, chronological where filenames carry dates and alphabetical otherwise. Note is free-form; the brief writes `## Stack` / `## Constraints` for coding and plugin only. handoff, dream and index are machine-written.
+    project   session   decision  task     note
+    doc       source    spec      handoff  index
+    release   dream     component api      schema
 
-Doc vs decision, the common mix-up. A decision has a date-prefixed filename, lives in `decisions/`, says "we picked X over Y because Z", and is append-only history of a moment. A doc lives at project root or in `docs/`, says "what is true now / how X works", and gets rewritten as understanding evolves.
+See `../templates/`. A runbook, a glossary, a standard and a bug log are all
+written as a `doc`: a thing gets its own kind only when it needs a line at the
+top that a plain page does not have.
 
-## 4. Naming rules
+## 6. Markdown elements
 
-Only some names are checked: `clean --deep` flags doc and decision date-prefix, doc case, session filename, and `.canvas`/`.base` kebab-case. The rest are on you: decision `{YYYY-MM-DD}-{kebab-title}.md`; session and dream report `{YYYY-MM-DD}.md`, one session per project per day, appended on resume; note, task and source `{kebab-title}.md` with no date unless time-relevant; release `v{X.Y.Z}.md`; doc `{NAME}.md` in **UPPERCASE**; project slug lowercase kebab-case with no spaces or dots (`dff2026-web`); iteration, the folder `iterations/{YYYY-MM-DD}-iter-{id}-{kebab-slug}/` holding the artefacts, with an optional `_iteration.md` inside. `brief.md`, `_handoff.md` and `_index.md` are written for you. "References" is not a file type: files in `references/` take `type: doc`, `note`, or `source` by content shape.
-
-`status:` on a task note takes one of `todo` | `next` | `doing` | `review` | `blocked` | `done` | `icebox`, one per board lane. Aliases are accepted on input and never rewritten; the board maps them to lanes (mirrors `board.py` `STATUS_TO_COLUMN`), and a card dragged on any board surface writes its lane's canonical status back here:
-
-| Alias | Board column |
-|---|---|
-| `backlog`, `todo`, `planned`, `proposed` | `backlog` |
-| `next`, `ready`, `queued` | `next` |
-| `doing`, `in-progress`, `in_progress`, `active`, `wip` | `doing` |
-| `review`, `blocked`, `in-review` | `review` |
-| `done`, `complete`, `completed`, `implemented`, `shipped`, `accepted` | `done` |
-| `icebox`, `deferred`, `parked`, `shelved`, `someday` | `icebox` |
-
-## 5. Folder structure
-
-A project starts as a directory and a `brief.md`. There are no default subfolders and no `extra_folders:` declaration: every folder is created by the write that puts something in it, and which folder that is comes from one table, `KIND_FOLDER` in `scripts/_place.py`, mapping each of the fifteen kinds to its folder. A kind that lives at the project root maps to no folder at all.
-
-Every folder under a project, or at vault root, holding two or more sibling `.md` files of the same conceptual type gets an `_index.md`. Exceptions: `sessions/` (ordering is the index), `images/`, `assets/`, `previews/`, and `iterations/` plus the iteration folders inside it, where build artefacts carry no frontmatter and `_iteration.md` is the only conformant file. `/adjudant clean` rebuilds an index that exists; a folder with none is reported as a gap, never filled.
-
-## 6. Wikilink rules
-
-All vault-internal links use `[[note-name]]` form. **Markdown-style `[text](path)` is allowed if and only if `path` does NOT resolve to a vault `.md` file.** Heading anchors and non-vault targets are fine in markdown form.
-
-Body links carry the full path and a display alias: `[[projects/{slug}/brief|{display}]]`, `[[projects/{slug}/decisions/{file}|{short title}]]`, and the same shape per zone folder. Images embed as `![[image.png]]` with a caption line below. Briefs carry `aliases: [{slug}]` so a bare `[[my-project]]` resolves cleanly.
-
-## 7. Content style
-
-Body copy is **actionable, clear, unambiguous, and short**. Style is judgment: `dream` flags suspects. The banned-term list lives in `reference/voice.md` and `validate.py`.
-
-## 8. Project status and zones (locked 2026-07-16)
-
-A project's state is one of `active` | `stale` | `fridge` | `done` | `dead` | `seed`, and picking between them is judgment. The zone folder carries it; the brief has no `status:` field, because a second answer can disagree with the first. `active`: being worked. `stale`: declared active but quiet past `stale_after_days` (default 30), the only machine-suggested state. `fridge`: deliberately paused, intent to return. `done`: shipped and complete, a success rather than an abandonment. `dead`: abandoned. `seed`: captured idea, not yet started.
-
-Placement follows status: `projects/` holds active, stale and seed; `projects/_fridge/` holds fridge; `projects/_archive/` holds done and dead. A transition is a folder move, done by hand: no verb performs it. Full-path `[[projects/…]]` wikilinks into a moved project break, which is why the `[[{slug}/brief|{slug}]]` index-row form is preferred - it resolves across zones by Obsidian suffix matching and survives the move untouched.
-
-## 9. Decision status vocabulary (locked 2026-07-27)
-
-`status:` on a decision note takes exactly one of `active` | `superseded` | `reversed`, one axis: whether the decision is in force. `active`: guiding work. `superseded`: replaced by a newer decision. `reversed`: undone without a replacement. Whether the decided work has shipped is a card's business, not the decision's. Historical values (`accepted`, `locked`, `current`) are synonyms of `active`: `check` reports them off-vocabulary, `clean` migrates them after preview.
-
-## 10. Verification
-
-The doc family (`project`, `doc`, `spec`, `component`, `api`, `schema`, `source`) carries `verified:` (a date) and `verified_by:` = `tested` | `read` | `docs`. A live probe and a skim of vendor docs are both verification and are not the same claim, so the page says which. It replaced a five-field epistemic block serving two read-only reporters.
+One rule per element, in `content-markdown.md`.

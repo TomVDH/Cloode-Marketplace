@@ -28,8 +28,9 @@ Validators:
   22. render-voice                : no banned lexicon or slop pattern in any string literal the helpers can print
   23. advisor-wiring              : the advisor's contract doc, SessionStart banner, and AGENTS.md marker stay wired
   24. place-zone-parity           : _place's lifecycle folder set matches _vault_walk.PROJECT_ZONES
+  25. standards-structure-parity  : reference/vault-standards.md names every folder in KIND_FOLDER and PROJECT_ZONES
 
-24 validators total.
+25 validators total.
 """
 
 import ast
@@ -947,6 +948,33 @@ def validate_place_zone_parity(r: Result) -> None:
     r.add_pass(name)
 
 
+def validate_standards_structure_parity(r: Result) -> None:
+    """25. standards-structure-parity — the standards doc names every folder.
+
+    The doc used to restate every field rule in prose, which made it a second
+    declaration that drifted from the templates. It now links to them, so the
+    one thing it still states alone is the folder layout — and that is what
+    this holds.
+    """
+    name = "standards-structure-parity"
+    from _place import KIND_FOLDER
+    doc = REFERENCE / "vault-standards.md"
+    if not doc.is_file():
+        r.add_fail(name, "reference/vault-standards.md missing")
+        return
+    text = doc.read_text(errors="replace")
+    missing = [f"{f}/" for f in sorted(set(KIND_FOLDER.values()) - {""})
+               if f"{f}/" not in text]
+    missing += [f"{z}/" for z in PROJECT_ZONES if f"{z}/" not in text]
+    if missing:
+        r.add_fail(name, "vault-standards.md omits: " + ", ".join(missing))
+        return
+    if "required:" in text:
+        r.add_fail(name, "vault-standards.md restates a template's field set")
+        return
+    r.add_pass(name)
+
+
 def main() -> int:
     print(f"adjudant validators — running from {ROOT}")
     r = Result()
@@ -974,6 +1002,7 @@ def main() -> int:
     validate_render_voice(r)
     validate_advisor_wiring(r)
     validate_place_zone_parity(r)
+    validate_standards_structure_parity(r)
     return r.report()
 
 

@@ -822,11 +822,6 @@ class TestDocTrim(unittest.TestCase):
         est = len((self.REF / "voice.md").read_text()) // 4
         self.assertLess(est, 780, f"voice.md is ~{est} tok, budget 780")
 
-    def test_vault_standards_names_its_enforcers(self):
-        text = (self.REF / "vault-standards.md").read_text()
-        for enforcer in ("FIELD_SCHEMA", "clean", "validate.py"):
-            self.assertIn(enforcer, text)
-
     def test_voice_keeps_the_judgement_content(self):
         text = (self.REF / "voice.md").read_text()
         for keeper in ("ELI5", "ELI12", "ELICTO", "pushback"):
@@ -1003,6 +998,36 @@ class TestShelfIsSunset(unittest.TestCase):
             for marker in ("old_link_prefix", "new_link_prefix", "link_rewrites"):
                 self.assertNotIn(marker, src,
                                  f"{py.name} still rewrites links vault-wide")
+
+
+class TestStandardsStructureParity(unittest.TestCase):
+    """The standards doc restated every rule in prose, and prose drifts. It
+    now links to templates instead, and this holds the one thing it still has
+    to state itself: the folder layout."""
+
+    def test_the_standards_doc_names_every_folder(self):
+        from _place import KIND_FOLDER
+        from _vault_walk import PROJECT_ZONES
+        text = (Path(__file__).resolve().parent.parent / "skills" / "adjudant"
+                / "reference" / "vault-standards.md").read_text()
+        for folder in sorted(set(KIND_FOLDER.values()) - {""}):
+            self.assertIn(f"{folder}/", text, f"vault-standards omits {folder}/")
+        for zone in PROJECT_ZONES:
+            self.assertIn(f"{zone}/", text, f"vault-standards omits {zone}/")
+
+    def test_the_standards_doc_does_not_restate_a_template(self):
+        text = (Path(__file__).resolve().parent.parent / "skills" / "adjudant"
+                / "reference" / "vault-standards.md").read_text()
+        self.assertNotIn("required:", text,
+                         "a field table here is a second declaration; link to "
+                         "the template instead")
+
+    def test_the_markdown_doc_states_one_rule_per_element(self):
+        text = (Path(__file__).resolve().parent.parent / "skills" / "adjudant"
+                / "reference" / "content-markdown.md").read_text()
+        for element in ("Headings", "Lists", "Emphasis", "Code", "Tables",
+                        "Callouts", "Links", "Mermaid", "Emoji", "Register"):
+            self.assertIn(f"## {element}", text, f"no rule for {element}")
 
 
 if __name__ == "__main__":

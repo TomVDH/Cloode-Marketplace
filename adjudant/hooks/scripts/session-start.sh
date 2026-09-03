@@ -203,6 +203,11 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
 
   printf -- '- Vault: `%s` (linked to project `%s`)\n' "$(basename "$vault_path")" "$slug"
 
+  # Register reminder, stated once per session rather than per turn: a
+  # per-turn copy is the ceremony plan 4 removes. content-markdown.md's
+  # `## Register` rule is the full contract; this is the one-line pointer.
+  printf -- '- Register: ASD-STE100 for vault writes. One instruction per sentence, active voice, present tense, under twenty words.\n'
+
   # AGENTS.md + CLAUDE.md detection
   local has_agents=0 has_claude=0
   [ -f "$project_dir/AGENTS.md" ] && has_agents=1

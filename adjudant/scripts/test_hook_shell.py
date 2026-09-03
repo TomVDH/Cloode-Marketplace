@@ -383,6 +383,15 @@ class TestSessionStartHook(unittest.TestCase):
             self.assertEqual(r3.returncode, 0)
             self.assertNotIn("Suitcase detected", r3.stdout)
 
+    def test_session_start_states_the_register_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, home = self._project(
+                Path(tmp), "vault_path: {vault}\nvault_name: vault\nslug: demo\n")
+            r = _run("session-start.sh", project, home,
+                     stdin=json.dumps({"session_id": "s1", "source": "startup"}))
+            self.assertEqual(r.returncode, 0)
+            self.assertEqual(r.stdout.count("ASD-STE100"), 1)
+
 
 class TestSessionEndHook(unittest.TestCase):
 
