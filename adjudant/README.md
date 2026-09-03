@@ -55,8 +55,8 @@ dream        as needed  semantic, LLM-judged, you approve every change
 | Hooks | 11 entries across 10 events, all vault-aware |
 | Templates | 16 file-type scaffolds + `board.html` |
 | Helpers | stdlib-only Python, one per file-touching verb; no build step |
-| Drift defense | `python3 scripts/validate.py` — 23 validators, run on pre-commit |
-| Tests | 1213; `python3 -m unittest discover -p 'test_*.py'` |
+| Drift defense | `python3 scripts/validate.py` — 24 validators, run on pre-commit |
+| Tests | 1358; `python3 -m unittest discover -p 'test_*.py'` |
 
 Deep reference (hook wiring, the verb-to-helper map, cross-machine details) lives in [`skills/adjudant/reference/internals.md`](skills/adjudant/reference/internals.md). Vault rules (frontmatter, folders, naming) live in [`reference/vault-standards.md`](skills/adjudant/reference/vault-standards.md).
 
