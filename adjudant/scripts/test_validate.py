@@ -779,7 +779,7 @@ class TestSkillSplit(unittest.TestCase):
         text = self.INTERNALS.read_text()
         self.assertIn("posttooluse-vault-log.py", text)   # hooks table
         self.assertIn("board_bridge.py", text)            # helper layer table
-        self.assertIn("suitcase", text)                   # environment awareness
+        self.assertIn("build-profile.json", text)         # environment awareness
 
     def test_skill_sheds_the_background_tables(self):
         text = self.SKILL.read_text()

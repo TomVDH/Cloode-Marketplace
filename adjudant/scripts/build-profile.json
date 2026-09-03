@@ -2,5 +2,14 @@
   "audience": "full",
   "description_suffix": " Pairs with hookify.",
   "cost_warn_tokens": 30000,
-  "capabilities": []
+  "capabilities": [
+    {
+      "id": "suitcase",
+      "probe": "suitcase-brief",
+      "reference": "reference/suitcase.md",
+      "check_line": "Suitcase: present (suitcase-brief for orientation)",
+      "sitrep_line": "Suitcase environment on this machine: run suitcase-brief for orientation",
+      "session_banner": "- Suitcase detected: run suitcase-brief for orientation (vault is canonical; writes via adjudant)"
+    }
+  ]
 }

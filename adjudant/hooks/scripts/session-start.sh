@@ -262,11 +262,17 @@ PY
     [ -n "$board_line" ] && printf '%s\n' "$board_line"
   fi
 
-  # Suitcase pointer: fresh startups only (never resume/compact/clear), and
-  # only when the suitcase CLI actually resolves on THIS machine's PATH.
-  # One line, never the full suitcase block.
-  if [ "$start_source" = "startup" ] && command -v suitcase-brief >/dev/null 2>&1; then
-    printf -- '- Suitcase detected: run suitcase-brief for orientation (vault is canonical; writes via adjudant)\n'
+  # Environment capabilities: probes declared in scripts/build-profile.json,
+  # rendered by _profile.py. Fresh startups only, never resume/compact/clear.
+  # A build whose registry is empty prints nothing, which is why this hook is
+  # now one file across both builds instead of two. The scripts dir is found
+  # from this script's own path, so it works with no CLAUDE_PLUGIN_ROOT set.
+  if [ "$start_source" = "startup" ]; then
+    _adj_scripts=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts" 2>/dev/null && pwd || true)
+    if [ -n "$_adj_scripts" ] && [ -f "$_adj_scripts/_profile.py" ] \
+       && command -v python3 >/dev/null 2>&1; then
+      python3 "$_adj_scripts/_profile.py" --session-banner 2>/dev/null || true
+    fi
   fi
 
   # --- 3. Session note: create or resume ---

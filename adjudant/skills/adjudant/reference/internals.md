@@ -7,12 +7,13 @@ own reference file describes the job.
 
 ## Environment awareness
 
-`reference/suitcase.md` holds the standing summary of Tom's suitcase/cockpit
-terminal environment and the ground rules for sessions that touch it (vault
-writes via adjudant, `snap` before suitcase edits, `agent-bus protocol` for the
-contract). Detection is a PATH probe for `suitcase-brief`; the SessionStart
-hook points to it on fresh starts, `check` reports presence, `sitrep` renders
-one line. Load the reference only when suitcase territory comes up.
+Adjudant probes for optional environments and never drives them. Each is
+declared once in `scripts/build-profile.json` under `capabilities`: an `id`, a
+`probe` executable looked up on PATH, a reference doc, and the three lines the
+consumers render (`status`, its briefing, and the SessionStart banner). A build
+that declares none prints nothing and loads nothing. Nothing here executes the
+probe; presence is the whole signal. Load a capability's reference doc only
+when its territory comes up.
 
 ## Python helper layer
 
@@ -37,7 +38,7 @@ This plugin registers 11 hook entries across 10 events (vault-aware only):
 
 | Event | Script | Purpose |
 |---|---|---|
-| SessionStart | `hooks/scripts/session-start.sh` | Leads the context block with the **voice directive** (see below) — the contract's fourth and widest surface, and the only one that reaches the chat rather than a file; off via `voice: off` in the breadcrumb or `ADJUDANT_VOICE_DISABLE=1`. Then: discover vault, detect AGENTS.md+CLAUDE.md, init/resume session note; stamp the Claude Code conversation UUID into `session_id:` (list, idempotent on resume); no resumed marker on `compact`/`clear` sources; writes the resolved session-note path to `$TMPDIR/adjudant-session-{session_id}` for the per-turn hook to read (the intent nudge itself moved to UserPromptSubmit — this hook runs before the session has a purpose to record, and re-runs on every resume and compact, so it nagged early and repeatedly); renders a board status line when a board exists, plus a suitcase pointer on `startup` when `suitcase-brief` is on PATH; echoes the handoff freshness banner (and a STALE warning) so a red handoff cannot sit unseen |
+| SessionStart | `hooks/scripts/session-start.sh` | Leads the context block with the **voice directive** (see below) — the contract's fourth and widest surface, and the only one that reaches the chat rather than a file; off via `voice: off` in the breadcrumb or `ADJUDANT_VOICE_DISABLE=1`. Then: discover vault, detect AGENTS.md+CLAUDE.md, init/resume session note; stamp the Claude Code conversation UUID into `session_id:` (list, idempotent on resume); no resumed marker on `compact`/`clear` sources; writes the resolved session-note path to `$TMPDIR/adjudant-session-{session_id}` for the per-turn hook to read (the intent nudge itself moved to UserPromptSubmit — this hook runs before the session has a purpose to record, and re-runs on every resume and compact, so it nagged early and repeatedly); renders a board status line when a board exists, plus one banner line per declared capability whose probe is on PATH, on `startup` only (`scripts/_profile.py --session-banner`); echoes the handoff freshness banner (and a STALE warning) so a red handoff cannot sit unseen |
 | UserPromptSubmit | `hooks/scripts/user-prompt-reminder.sh` | Two nags with inverse audiences, branched on the breadcrumb. **Unlinked project:** smart-fire vault reminder when the prompt has vault-y keywords (at most once per session). **Linked project:** the intent-line nudge — fires from the second prompt on (by then the session has a purpose; firing at the first is the mistimed nag this replaced), at most once per session, and only while the placeholder stands, so writing the line ends it. Reads the session-note path from the pointer SessionStart drops rather than re-deriving it — a second copy of the zone-aware lookup would drift |
 ### The voice contract, and where it bites
 

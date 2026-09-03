@@ -9,6 +9,7 @@ already holds.
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -146,6 +147,96 @@ print(json.dumps({
         got = json.loads(out.stdout)
         self.assertEqual(got["gate"], 12345)
         self.assertIn("cost_warn_tokens: 12345", got["breadcrumb"])
+
+
+class TestCapabilityProbing(unittest.TestCase):
+
+    def setUp(self):
+        _profile.load.cache_clear()
+        self._path = os.environ.get("PATH", "")
+
+    def tearDown(self):
+        os.environ["PATH"] = self._path
+        _profile.load.cache_clear()
+
+    def _profile_with(self, tmp: Path, caps: list) -> Path:
+        return _write(tmp / "p.json", dict(MINIMAL, capabilities=caps))
+
+    CAP = {
+        "id": "widget",
+        "probe": "widget-brief",
+        "reference": "reference/widget.md",
+        "check_line": "Widget: present (widget-brief for orientation)",
+        "sitrep_line": "Widget environment on this machine: run widget-brief",
+        "session_banner": "- Widget detected: run widget-brief for orientation",
+    }
+
+    def test_absent_probe_yields_no_capability(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            os.environ["PATH"] = str(root / "empty")
+            orig = _profile.PROFILE_PATH
+            _profile.PROFILE_PATH = self._profile_with(root, [self.CAP])
+            try:
+                self.assertEqual(_profile.present_capabilities(), [])
+            finally:
+                _profile.PROFILE_PATH = orig
+
+    def test_present_probe_yields_the_capability(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binpath = root / "bin"
+            binpath.mkdir()
+            fake = binpath / "widget-brief"
+            fake.write_text("#!/bin/sh\nexit 0\n")
+            fake.chmod(0o755)
+            os.environ["PATH"] = str(binpath)
+            orig = _profile.PROFILE_PATH
+            _profile.PROFILE_PATH = self._profile_with(root, [self.CAP])
+            try:
+                got = _profile.present_capabilities()
+                self.assertEqual([c["id"] for c in got], ["widget"])
+            finally:
+                _profile.PROFILE_PATH = orig
+
+    def test_empty_registry_never_probes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            orig = _profile.PROFILE_PATH
+            _profile.PROFILE_PATH = self._profile_with(Path(tmp), [])
+            try:
+                self.assertEqual(_profile.present_capabilities(), [])
+            finally:
+                _profile.PROFILE_PATH = orig
+
+    def test_the_session_banner_prints_one_line_per_present_capability(self):
+        # The hook's whole contract: what a fresh session actually sees.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binpath = root / "bin"
+            binpath.mkdir()
+            fake = binpath / "widget-brief"
+            fake.write_text("#!/bin/sh\nexit 0\n")
+            fake.chmod(0o755)
+            prof = self._profile_with(root, [self.CAP])
+            script = (
+                "import sys; sys.path.insert(0, sys.argv[1]);"
+                "import _profile; from pathlib import Path;"
+                "_profile.PROFILE_PATH = Path(sys.argv[2]);"
+                "sys.exit(_profile.main(['--session-banner']))")
+            env = dict(os.environ, PATH=str(binpath))
+            with_it = subprocess.run(
+                [sys.executable, "-c", script, str(SCRIPTS), str(prof)],
+                capture_output=True, text=True, timeout=60, env=env)
+            self.assertEqual(with_it.returncode, 0, with_it.stderr)
+            self.assertEqual(with_it.stdout.splitlines(),
+                             [self.CAP["session_banner"]])
+
+            env["PATH"] = str(root / "empty")
+            without = subprocess.run(
+                [sys.executable, "-c", script, str(SCRIPTS), str(prof)],
+                capture_output=True, text=True, timeout=60, env=env)
+            self.assertEqual(without.returncode, 0, without.stderr)
+            self.assertEqual(without.stdout, "")
 
 
 if __name__ == "__main__":

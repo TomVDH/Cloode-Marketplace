@@ -77,10 +77,17 @@ Results land under `synced.steps`; anything the phase could not do lands in
 - `orientation` — momentum: `project`, `purpose`, `freshness` (traffic light and
   age from real activity), `were_doing`, `whats_done`, `board`, `repo` (branch,
   dirty count, recent commits), `server` (dev servers from `.claude/launch.json`,
-  probed with a 0.6s HEAD; down is an answer, never an error), `suitcase`,
+  probed with a 0.6s HEAD; down is an answer, never an error), `capabilities`,
   `next_step`, `open_signals`, `status`
 - `compliance` — `project`, `counts`, `recent`, `handoff`, `drift_signal`,
-  `board`, `suitcase`, `remember`, `status`, `schema`, `environment`
+  `board`, `capabilities`, `remember`, `status`, `schema`, `environment`
+- `capabilities` — the optional environments present on THIS machine, each
+  `{id, line}`, in both halves. Render each `line` verbatim, one line, above the
+  board line; render nothing when the list is empty. A build that declares no
+  capabilities always sends an empty list, so nothing ever renders as absent
+- `environment` — one boolean per capability this build declares
+  (`scripts/build-profile.json`), plus `obsidian_cli`. A capability the build
+  does not declare has no key at all
 - `naming` — vault-standards §4 title violations: `{file, type, suggested, issue}`.
   Read-only; a rename breaks every wikilink pointing at the file, and that repair
   belongs to `clean`, with its preview and its backups

@@ -46,6 +46,7 @@ from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _profile  # noqa: E402
 from _cost import (  # noqa: E402
     breadcrumb_int, cost_block, read_threshold, stat_walk,
 )
@@ -312,13 +313,29 @@ def _latest_dream_signal(project_dir: Path) -> dict:
     return info
 
 
-def _suitcase_status() -> dict:
-    """PATH probe for the suitcase environment (suitcase-brief CLI).
+def _environment(project_dir: Path) -> dict:
+    """Capability probes, keyed by id. Presence only: nothing here is executed.
 
-    Presence only: the CLI is never executed here. Ground rules for working
-    alongside the suitcase live in reference/suitcase.md.
+    A capability this build does not declare produces no key at all, so a
+    reduced build renders nothing rather than rendering "absent" - the
+    difference that used to be carried by forking this file.
     """
-    return {"present": shutil.which("suitcase-brief") is not None}
+    env: dict = {"obsidian_cli": obsidian_cli_path() is not None}
+    present = {c["id"] for c in _profile.present_capabilities()}
+    for cap in _profile.capabilities():
+        env[cap["id"]] = cap["id"] in present
+    return env
+
+
+def _capability_notes(line_key: str) -> list:
+    """The line each half renders, for the capabilities present right now.
+
+    The text lives in scripts/build-profile.json, so the two report halves and
+    the SessionStart banner read three fields of one record instead of three
+    copies of one sentence.
+    """
+    return [{"id": c["id"], "line": c[line_key]}
+            for c in _profile.present_capabilities()]
 
 
 def _board_status(project_dir: Path) -> dict:
@@ -400,31 +417,19 @@ def compliance(project_dir: Path, code_root: Optional[Path] = None,
         "handoff": handoff,
         "drift_signal": drift_signal,
         "board": _board_status(project_dir),
-        "suitcase": _suitcase_status(),
+        "capabilities": _capability_notes("check_line"),
         # `.remember/` sits beside the CODE, never in the vault project — the
         # same root compute_freshness reads its dailies from.
         "remember": remember_status(code_root or project_dir),
         "status": status_block,
         "schema": schema_drift(files, _TASK_ALIASES),
-        "environment": {"obsidian_cli": obsidian_cli_path() is not None},
+        "environment": _environment(project_dir),
     }
 
 
 # ============================================================
 # Orientation (was sitrep.py)
 # ============================================================
-
-
-def _suitcase_brief() -> dict:
-    """One orientation line when the suitcase environment is on PATH.
-
-    Presence probe only, never executed. Rendered as an environment note in
-    the briefing; ground rules live in reference/suitcase.md.
-    """
-    present = shutil.which("suitcase-brief") is not None
-    line = ("Suitcase environment on this machine: run suitcase-brief "
-            "for orientation") if present else None
-    return {"present": present, "line": line}
 
 
 def _board_brief(project_dir: Path) -> dict:
@@ -583,7 +588,7 @@ def orientation(
         "board": _board_brief(project_dir),
         "repo": _repo_brief(code_root),
         "server": _server_brief(code_root),
-        "suitcase": _suitcase_brief(),
+        "capabilities": _capability_notes("sitrep_line"),
         "next_step": _next_step(project_dir),
         "open_signals": _latest_dream_signal(project_dir),
         "status": status_block,

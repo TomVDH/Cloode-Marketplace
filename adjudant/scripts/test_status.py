@@ -17,6 +17,7 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
+import _profile
 import status
 from status import (
     _board_status,
@@ -28,8 +29,6 @@ from status import (
     _read_brief,
     _repo_brief,
     _server_brief,
-    _suitcase_brief,
-    _suitcase_status,
     AGENTS_MARKER_PREFIX,
     cli_main as status_cli,
     find_remember_source,
@@ -753,30 +752,6 @@ class TestCheckCost(unittest.TestCase):
             self.assertTrue(payload["compliance"]["project"]["present"])
 
 
-class TestSuitcaseStatus(unittest.TestCase):
-    """PATH-probe awareness of the suitcase environment; never executes it."""
-
-    def test_present_when_cli_on_path(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            fake = Path(tmp) / "suitcase-brief"
-            fake.write_text("#!/bin/sh\nexit 0\n")
-            fake.chmod(0o755)
-            old_path = os.environ.get("PATH", "")
-            os.environ["PATH"] = f"{tmp}:{old_path}"
-            try:
-                self.assertTrue(_suitcase_status()["present"])
-            finally:
-                os.environ["PATH"] = old_path
-
-    def test_absent_when_cli_missing(self):
-        old_path = os.environ.get("PATH", "")
-        os.environ["PATH"] = "/usr/bin:/bin"
-        try:
-            self.assertFalse(_suitcase_status()["present"])
-        finally:
-            os.environ["PATH"] = old_path
-
-
 _CLEAN_BRIEF = (
     "---\ntype: project\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
     "verified: 2026-01-01\nverified_by: read\n---\n\n# T\n")
@@ -1058,34 +1033,6 @@ class TestSitrepCost(unittest.TestCase):
             self.assertIn("cost", payload)
             # sitrep's whole report is the `orientation` half of status's.
             self.assertIn("orientation", payload)
-
-
-class TestSuitcaseBrief(unittest.TestCase):
-    """Suitcase line rendered only when the CLI is on PATH; probe only."""
-
-    def test_line_when_present(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            fake = Path(tmp) / "suitcase-brief"
-            fake.write_text("#!/bin/sh\nexit 0\n")
-            fake.chmod(0o755)
-            old_path = os.environ.get("PATH", "")
-            os.environ["PATH"] = f"{tmp}:{old_path}"
-            try:
-                sc = _suitcase_brief()
-                self.assertTrue(sc["present"])
-                self.assertIn("suitcase-brief", sc["line"])
-            finally:
-                os.environ["PATH"] = old_path
-
-    def test_no_line_when_absent(self):
-        old_path = os.environ.get("PATH", "")
-        os.environ["PATH"] = "/usr/bin:/bin"
-        try:
-            sc = _suitcase_brief()
-            self.assertFalse(sc["present"])
-            self.assertIsNone(sc["line"])
-        finally:
-            os.environ["PATH"] = old_path
 
 
 if __name__ == "__main__":
@@ -1758,3 +1705,100 @@ class TestTheGeneratedIndexesAreActuallyGenerated(unittest.TestCase):
         src = Path(status.__file__).read_text()
         self.assertTrue(_re.search(r"^\s*(import|from)\s+_index_gen", src, _re.M),
                         "status does not import the index generator")
+
+
+class TestCapabilityReporting(unittest.TestCase):
+    """A capability the build does not declare must be invisible, not false.
+
+    Before v3 the suitcase probe was three copies of `shutil.which` plus a
+    fourth mention in the docs, and the public build carried none of them,
+    which is why check.py, sitrep.py and session-start.sh were all forked.
+    These tests replace TestSuitcaseStatus and TestSuitcaseBrief: same
+    promises, asserted through the report instead of through two private
+    helpers that no longer exist.
+    """
+
+    def _declared(self):
+        caps = _profile.capabilities()
+        if not caps:
+            self.skipTest("this build declares no capabilities")
+        return caps[0]
+
+    def _project(self, tmp: Path) -> Path:
+        _write(tmp / "brief.md", _CLEAN_BRIEF)
+        return tmp
+
+    def test_environment_carries_one_key_per_declared_capability(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = run_check(self._project(Path(tmp)))
+            for cap in _profile.capabilities():
+                self.assertIn(cap["id"], report["environment"])
+                self.assertIsInstance(report["environment"][cap["id"]], bool)
+
+    def test_environment_carries_nothing_for_undeclared_capabilities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = run_check(self._project(Path(tmp)))
+            declared = {c["id"] for c in _profile.capabilities()}
+            extra = set(report["environment"]) - declared - {"obsidian_cli"}
+            self.assertEqual(extra, set())
+
+    def test_a_capability_on_path_is_reported_in_both_halves(self):
+        cap = self._declared()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binpath = root / "bin"
+            binpath.mkdir()
+            fake = binpath / cap["probe"]
+            fake.write_text("#!/bin/sh\nexit 0\n")
+            fake.chmod(0o755)
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{binpath}:{old_path}"
+            try:
+                project = self._project(root / "p")
+                compliance = run_check(project)
+                brief = run_sitrep(project)
+            finally:
+                os.environ["PATH"] = old_path
+            self.assertTrue(compliance["environment"][cap["id"]])
+            self.assertIn(cap["check_line"],
+                          [c["line"] for c in compliance["capabilities"]])
+            self.assertIn(cap["sitrep_line"],
+                          [c["line"] for c in brief["capabilities"]])
+
+    def test_a_capability_off_path_is_false_and_renders_no_line(self):
+        cap = self._declared()
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = "/usr/bin:/bin"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                project = self._project(Path(tmp))
+                compliance = run_check(project)
+                brief = run_sitrep(project)
+        finally:
+            os.environ["PATH"] = old_path
+        self.assertFalse(compliance["environment"][cap["id"]])
+        self.assertEqual(compliance["capabilities"], [])
+        self.assertEqual(brief["capabilities"], [])
+
+    def test_the_probe_is_never_executed(self):
+        # Presence is the whole signal. A probe that ran would leave this
+        # marker behind; the old code only promised this in a docstring.
+        cap = self._declared()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binpath = root / "bin"
+            binpath.mkdir()
+            marker = root / "it-ran"
+            fake = binpath / cap["probe"]
+            fake.write_text(f"#!/bin/sh\ntouch {marker}\n")
+            fake.chmod(0o755)
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{binpath}:{old_path}"
+            try:
+                project = self._project(root / "p")
+                run_check(project)
+                run_sitrep(project)
+            finally:
+                os.environ["PATH"] = old_path
+            self.assertFalse(marker.exists(), "the probe was executed")
+
