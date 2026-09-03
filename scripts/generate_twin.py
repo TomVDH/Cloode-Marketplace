@@ -38,6 +38,7 @@ import filecmp
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple, Optional
@@ -174,21 +175,36 @@ def leaking_identifiers(plugin_root: Path) -> list[str]:
     Task 4 made the shared fixtures neutral so both builds could ship the same
     files. This charges that check before anything is copied rather than after,
     because the twin is a public repository and a published name stays
-    published. PLUGIN_ROOT is repointed for the call: the gate reads it as a
-    module global, and this process asks about a tree that is not its own.
-    """
-    sys.path.insert(0, str(plugin_root / "scripts"))
-    try:
-        import test_no_personal_identifiers as gate
-        was = gate.PLUGIN_ROOT
-        gate.PLUGIN_ROOT = plugin_root
-        try:
-            return gate.leaks()
-        finally:
-            gate.PLUGIN_ROOT = was
-    finally:
-        sys.path.pop(0)
+    published.
 
+    Run as a SUBPROCESS in the target tree, deliberately. Importing another
+    tree's module into this process depends on sys.path order and on whatever
+    sys.modules already holds, and it failed exactly that way: the same call
+    returned the leak when run standalone and returned nothing under the test
+    runner, so the generator would have published a planted client name while
+    reporting success. A separate interpreter has no such state to get wrong.
+    """
+    gate = plugin_root / "scripts" / "test_no_personal_identifiers.py"
+    if not gate.is_file():
+        return [f"{gate} is missing; the leak gate cannot run"]
+    code = ("import json,sys;"
+            "sys.path.insert(0, sys.argv[1]);"
+            "import test_no_personal_identifiers as g;"
+            "print(json.dumps(g.leaks()))")
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", code, str(plugin_root / "scripts")],
+            capture_output=True, text=True, timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        return [f"the leak gate could not run: {e}"]
+    if proc.returncode != 0:
+        detail = (proc.stderr or "").strip().split("\n")[-1]
+        return [f"the leak gate failed to run: {detail}"]
+    try:
+        found = json.loads(proc.stdout)
+    except ValueError:
+        return [f"the leak gate returned no verdict: {proc.stdout[:200]!r}"]
+    return list(found)
 
 def _deletable(plugin_root: Path) -> set[str]:
     """Paths a public build must not carry, derived from the metadata and the
@@ -230,6 +246,17 @@ def _retired(main_plugin: Path) -> set[str]:
     return {rel for rel in RETIRED if not (main_plugin / rel).exists()}
 
 
+# Repo-root scripts both builds ship. The parity gate already demands the
+# version bumper be byte-identical in the two trees, and nothing kept it that
+# way: the generator only ever looked inside adjudant/, so a fix to the bumper
+# stayed in main and the gate reported drift with no mechanism to resolve it.
+# Written as paths relative to adjudant/ so they travel through the same plan,
+# and therefore appear in the dry run like everything else.
+SHARED_ROOT_SCRIPTS = (
+    "../scripts/bump_plugin_version.py",
+    "../scripts/test_bump_plugin_version.py",
+)
+
 def plan(main_root: Path, twin_root: Path) -> Plan:
     main_plugin = main_root / "adjudant"
     twin_plugin = twin_root / "adjudant"
@@ -246,6 +273,16 @@ def plan(main_root: Path, twin_root: Path) -> Plan:
         if not target.exists():
             create.append(rel)
         elif not filecmp.cmp(main_plugin / rel, target, shallow=False):
+            update.append(rel)
+
+    for rel in SHARED_ROOT_SCRIPTS:
+        src = main_plugin / rel
+        if not src.is_file():
+            continue
+        target = twin_plugin / rel
+        if not target.exists():
+            create.append(rel)
+        elif not filecmp.cmp(src, target, shallow=False):
             update.append(rel)
 
     delete, unexplained = [], []

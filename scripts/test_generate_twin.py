@@ -72,8 +72,14 @@ class TestLeakGate(unittest.TestCase):
     def test_a_personal_identifier_stops_the_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             fake_main = _copy_main(Path(tmp) / "main")
+            # Composed, not written literally: this file is scanned by the
+            # very gate it is testing, so a banned term spelled out here would
+            # make the gate fail on its own test. The term must still be a
+            # REAL banned one, or the test proves nothing -- which is exactly
+            # what happened when a neutralisation pass replaced it.
+            planted = "hub" + "spot-night" + "ly"
             (fake_main / "adjudant" / "scripts" / "_fixture.py").write_text(
-                'DEMO_SLUG = "hubspot-nightly"\n')
+                f'DEMO_SLUG = "{planted}"\n')
             twin = _copy_main(Path(tmp) / "twin")
             rc = generate_twin.main(["--main-root", str(fake_main),
                                      "--twin", str(twin), "--apply"])
@@ -407,7 +413,7 @@ class TestApply(unittest.TestCase):
             pj = twin / "adjudant" / ".claude-plugin" / "plugin.json"
             data = json.loads(pj.read_text())
             data.update({"version": "1.0.0",
-                         "author": {"name": "Tom Vanderheyden"},
+                         "author": {"name": "A. Maintainer"},
                          "homepage": "https://example.invalid/twin",
                          "repository": "https://example.invalid/twin"})
             pj.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
@@ -415,7 +421,7 @@ class TestApply(unittest.TestCase):
                                 "--twin", str(twin), "--apply"])
             after = json.loads(pj.read_text())
             self.assertEqual(after["version"], "1.0.0")
-            self.assertEqual(after["author"], {"name": "Tom Vanderheyden"})
+            self.assertEqual(after["author"], {"name": "A. Maintainer"})
             self.assertEqual(after["homepage"], "https://example.invalid/twin")
 
     def test_an_audience_authored_file_keeps_the_twins_text(self):

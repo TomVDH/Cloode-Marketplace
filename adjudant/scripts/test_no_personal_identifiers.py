@@ -74,11 +74,6 @@ ALLOWLIST = {
     ".claude-plugin/plugin.json",
     "README.md",
     "GUIDE.md",
-    # The generator's own test, which does not ship: the twin's `scripts/`
-    # holds only the version bumper and the field-guide checker. It needs a
-    # realistic author name and project slug to prove identity is preserved
-    # across a regeneration, which is the thing it exists to check.
-    "test_generate_twin.py",
 }
 
 SKIP_DIRS = {"__pycache__", ".pytest_cache", ".git"}
