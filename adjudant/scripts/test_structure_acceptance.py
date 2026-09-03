@@ -191,10 +191,21 @@ class TestLinkRoundTrip(unittest.TestCase):
                 self.assertTrue(resolve_wikilink(t, idx), f"after move: {t}")
 
     def test_a_link_that_names_the_lifecycle_folder_is_refused(self):
+        # A BARE lifecycle folder stays refused: nothing there says whether
+        # `active` is a zone or a project called active.
         with self.assertRaises(ValueError):
             link("active/demo/notes/a")
-        with self.assertRaises(ValueError):
-            link("projects/demo/notes/a")
+
+    def test_a_vault_root_path_yields_the_zone_less_link(self):
+        # SUPERSEDED the second half of the test above, which required a
+        # vault-root path to raise. build_vault_index resolves that form, so
+        # refusing it made clean silently drop 270 of 543 conversions. The
+        # outcome that matters is that the link carries no lifecycle folder,
+        # and normalising delivers exactly that.
+        self.assertEqual(link("projects/demo/notes/a"), "[[demo/notes/a]]")
+        for zone in ("active", "paused", "finished", "archive"):
+            self.assertEqual(link(f"projects/{zone}/demo/notes/a"),
+                             "[[demo/notes/a]]")
 
 
 class TestTriageDryRun(unittest.TestCase):

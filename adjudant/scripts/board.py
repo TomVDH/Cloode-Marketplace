@@ -67,26 +67,48 @@ DECK_VERSION = 1
 # replace unable to overwrite the copy of the deck the first one saved.
 BACKUP_DIR_NAME = ".bak"
 BACKUP_KEEP = 5
+from _template_schema import load_schema
+
 DEFAULT_SUBTITLE = "Work-order board"
 DEFAULT_CATEGORIES = ["build", "docs", "infra", "chore"]
 
-DEFAULT_COLUMNS = [
-    {"id": "backlog", "name": "Backlog"},
-    {"id": "next", "name": "Next"},
-    {"id": "doing", "name": "Doing"},
-    {"id": "review", "name": "Review"},
-    {"id": "done", "name": "Done"},
-    {"id": "icebox", "name": "Icebox"},
-]
+# One status per lane, and the lanes come from the task template. Nothing here
+# is hand-declared: the template file is the only declaration of a kind shape,
+# and a vocabulary written down twice always drifts. The hand-written list this
+# replaced had grown to 26 entries with five spellings of `done`, and had never
+# gained `dropped` at all, so a dropped card displayed as planned work.
+_ORDER = ("backlog", "next", "doing", "review", "done", "icebox", "dropped")
+
+
+def _declared_statuses() -> tuple:
+    """The task template status vocabulary, in board order."""
+    vocab = tuple(load_schema()["task"]["vocab"]["status"])
+    ranked = [v for v in _ORDER if v in vocab]
+    return tuple(ranked + [v for v in vocab if v not in _ORDER])
+
+
+DEFAULT_COLUMNS = [{"id": v, "name": v.capitalize()} for v in _declared_statuses()]
+
+# The one alias the design doc keeps, named there explicitly. Every other
+# spelling is off-vocabulary now and is reported by truth.py rather than
+# quietly translated.
+STATUS_ALIASES = {"blocked": "review"}
+
 # task status (lower-cased) -> board column
-STATUS_TO_COLUMN = {
-    "backlog": "backlog", "todo": "backlog", "planned": "backlog", "proposed": "backlog",
-    "next": "next", "ready": "next", "queued": "next",
-    "doing": "doing", "in-progress": "doing", "in_progress": "doing", "active": "doing", "wip": "doing",
-    "review": "review", "blocked": "review", "in-review": "review",
-    "done": "done", "complete": "done", "completed": "done", "implemented": "done", "shipped": "done", "accepted": "done",
-    "icebox": "icebox", "deferred": "icebox", "parked": "icebox", "shelved": "icebox", "someday": "icebox",
-}
+STATUS_TO_COLUMN = dict(
+    [(v, v) for v in _declared_statuses()] + list(STATUS_ALIASES.items()))
+
+# Where a card goes when its status is in no vocabulary. NOT backlog: filing an
+# unrecognised value under planned work is exactly how `obsolete` became
+# invisible, which the design doc names as the reason off-vocabulary values are
+# reported and never coerced. Review is the lane that means a person must look.
+UNKNOWN_STATUS_COLUMN = "review"
+
+
+def column_for_status(status: str) -> str:
+    """The lane for a task status. Never silently invents planned work."""
+    return STATUS_TO_COLUMN.get(
+        str(status or "").strip().lower(), UNKNOWN_STATUS_COLUMN)
 
 
 # A quoted scalar followed by a trailing comment, e.g. `"" # optional: ...`.
@@ -202,7 +224,7 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
         cards.append({
             "id": cid,
             "title": _clean_scalar(fields.get("title")) or _first_heading(body) or f.stem,
-            "column": STATUS_TO_COLUMN.get(status, "backlog"),
+            "column": column_for_status(status),
             "category": category or "task",
             "related": _as_list(fields.get("related")),
             "notes": _clean_scalar(fields.get("note")),
@@ -220,17 +242,10 @@ def cards_from_tasks(project_dir: Path) -> list[dict[str, Any]]:
 # so the way back needs one canonical status per lane. A lane with no entry
 # here (a custom lane you added) is never written back: there is no status
 # that means it.
-CANONICAL_STATUS_FOR_COLUMN = {
-    # v3: the task template declares `backlog`, and `todo` is one of the
-    # aliases STATUS_TO_COLUMN accepts on read. Writing back the alias put a
-    # value on disk that the derived schema does not list.
-    "backlog": "backlog",
-    "next": "next",
-    "doing": "doing",
-    "review": "review",
-    "done": "done",
-    "icebox": "icebox",
-}
+# One lane per status, so the way back is the identity. Hand-listing it was a
+# third copy of the same vocabulary, and it had already fallen behind: `dropped`
+# was missing, so a card dragged to that lane could never write itself back.
+CANONICAL_STATUS_FOR_COLUMN = {v: v for v in _declared_statuses()}
 
 
 def _rewrite_status(path: Path, status: str) -> bool:
@@ -279,9 +294,12 @@ def sync_deck_to_tasks(project_dir: Path, deck: dict[str, Any]) -> list[dict[str
     lie about the vault, silently and permanently.
 
     Only writes when the note's own status maps to a DIFFERENT lane than the
-    deck has, so both an input alias (`wip` sitting in doing) and a
-    distinction the lane cannot express (`blocked` sitting in review) survive
-    untouched. Cards with no task note - hand-added on the board - are never
+    deck has, so the one documented alias (`blocked` sitting in review)
+    survives untouched. An OFF-VOCABULARY status is left untouched by the same
+    rule: its card sits in the unknown lane, which is where its own status
+    already maps, so the comparison never diverges. That matters. Rewriting an
+    unrecognised value to the lane name would be coercion on disk, and the
+    design doc is explicit that such a value is reported and never coerced. Cards with no task note - hand-added on the board - are never
     materialized into notes; that is `board_bridge`'s job, not this one.
 
     Returns one row per note actually rewritten.
@@ -304,7 +322,7 @@ def sync_deck_to_tasks(project_dir: Path, deck: dict[str, Any]) -> list[dict[str
         if target is None:
             continue
         status = _clean_scalar(fields.get("status")).lower()
-        if STATUS_TO_COLUMN.get(status, "backlog") == col:
+        if column_for_status(status) == col:
             continue
         # Divergence alone does not license a write: it is equally the
         # signature of a drag and of a human editing the note. Only the

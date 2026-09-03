@@ -141,20 +141,39 @@ def link(target_rel: str, alias: Optional[str] = None, *,
          in_table: bool = False) -> str:
     """The only wikilink adjudant writes.
 
-    `target_rel` is `{slug}/{path}` with no lifecycle folder and no `projects/`
-    prefix. `in_table` escapes the alias separator, which a markdown table cell
-    needs and nothing else does.
+    `target_rel` is `{slug}/{path}`. A vault-root path is accepted too and
+    normalised: `projects/active/slug/notes/a` becomes `slug/notes/a`, because
+    that names one file and there is one right link to it. A BARE lifecycle
+    folder (`active/slug/...`) is still refused, since nothing there says
+    whether `active` is a zone or a project of that name.
+
+    An anchor is preserved. `in_table` escapes the alias separator, which a
+    markdown table cell needs and nothing else does.
     """
     if not isinstance(target_rel, str) or not target_rel.strip():
         raise ValueError("link target must be a non-empty string")
     target = target_rel.strip().replace("\\", "/").strip("/")
+    # An anchor rides along untouched, but the extension is stripped from the
+    # PATH, not from the whole string. `a.md#Section` does not end with ".md",
+    # so testing the whole string left the extension in the link.
+    target, sep_hash, anchor = target.partition("#")
     if target.endswith(".md"):
         target = target[:-3]
+    parts = target.split("/")
+    # A vault-root path names exactly one file, and exactly one link reaches
+    # it: the zone-less one. Refusing the caller made every converter strip the
+    # prefix itself, and clean stopped converting half its links overnight
+    # because it did not. Normalising is the whole point of having one link().
+    if parts and parts[0] == "projects":
+        parts = parts[1:]
+        if parts and parts[0] in _LIFECYCLE_FOLDERS:
+            parts = parts[1:]
+        if not parts:
+            raise ValueError(
+                f"link target {target_rel!r} names no file under projects/")
+        target = "/".join(parts)
+    target = target + sep_hash + anchor
     head = target.split("/", 1)[0]
-    if head == "projects":
-        raise ValueError(
-            f"link target {target_rel!r} carries the projects/ prefix; "
-            "targets start at the project slug")
     if head in _LIFECYCLE_FOLDERS:
         raise ValueError(
             f"link target {target_rel!r} names the lifecycle folder {head!r}; "

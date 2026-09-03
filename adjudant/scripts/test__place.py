@@ -179,9 +179,12 @@ class TestLink(unittest.TestCase):
             with self.assertRaises(ValueError, msg=zone):
                 link(f"{zone}/demo/notes/a")
 
-    def test_a_projects_prefix_is_loud(self):
-        with self.assertRaises(ValueError):
-            link("projects/demo/notes/a")
+    def test_a_projects_prefix_is_normalised_not_refused(self):
+        # SUPERSEDED test_a_projects_prefix_is_loud. Refusing the vault-root
+        # form was measured to cost clean 270 of 543 conversions on a
+        # 27-project fixture, silently, with the suite green. A vault-root path
+        # names one file and one link reaches it, so link builds that link.
+        self.assertEqual(link("projects/demo/notes/a"), "[[demo/notes/a]]")
 
     def test_an_empty_target_is_loud(self):
         with self.assertRaises(ValueError):
@@ -191,6 +194,71 @@ class TestLink(unittest.TestCase):
         # An alias carrying a pipe would silently truncate the link.
         with self.assertRaises(ValueError):
             link("demo/notes/a", "a|b")
+
+
+class TestLinkAcceptsEveryFormTheIndexResolves(unittest.TestCase):
+    """build_vault_index indexes two forms per project file. link() must take
+    both.
+
+    It did not, and the cost was measured rather than guessed: clean converts
+    markdown links to wikilinks, and after link() started refusing the
+    vault-root form, 270 of 543 links on a 27-project fixture silently stopped
+    converting. The suite stayed green because every test used the
+    slug-relative form. This class uses both.
+    """
+
+    def test_the_vault_root_form_normalises_rather_than_raising(self):
+        # One file, one right link. Refusing made every caller strip the
+        # prefix itself, and the one that forgot lost half its conversions.
+        self.assertEqual(link("projects/active/alpha/notes/a", "a"),
+                         "[[alpha/notes/a|a]]")
+        self.assertEqual(link("projects/paused/alpha/notes/a"),
+                         "[[alpha/notes/a]]")
+        self.assertEqual(link("projects/finished/alpha/b.md"), "[[alpha/b]]")
+        self.assertEqual(link("projects/archive/alpha/b.md"), "[[alpha/b]]")
+
+    def test_a_project_directly_under_projects_normalises_too(self):
+        # An unmigrated vault has no lifecycle folders yet.
+        self.assertEqual(link("projects/alpha/notes/a"), "[[alpha/notes/a]]")
+
+    def test_a_bare_lifecycle_folder_is_still_refused(self):
+        # Nothing here says whether `active` is a zone or a project named
+        # active, so normalising would be a guess.
+        with self.assertRaises(ValueError):
+            link("active/alpha/notes/a")
+
+    def test_projects_naming_no_file_is_refused(self):
+        for bad in ("projects/", "projects/active/", "projects"):
+            with self.assertRaises(ValueError):
+                link(bad)
+
+    def test_an_anchor_survives_and_the_extension_does_not(self):
+        # `a.md#Section` does not end with ".md", so testing the whole string
+        # left the extension inside the link.
+        self.assertEqual(link("alpha/notes/a.md#Section"),
+                         "[[alpha/notes/a#Section]]")
+        self.assertEqual(link("projects/active/alpha/a.md#Two", "t"),
+                         "[[alpha/a#Two|t]]")
+
+    def test_every_form_the_index_carries_round_trips(self):
+        # The real contract: whatever build_vault_index resolves, link builds.
+        import tempfile
+        from _vault_walk import build_vault_index
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            note = root / "projects" / "active" / "alpha" / "notes" / "a.md"
+            note.parent.mkdir(parents=True)
+            note.write_text("---\ntype: note\n---\n# A\n")
+            index = build_vault_index(root)
+            built = set()
+            for form in index:
+                try:
+                    out = link(form)
+                except ValueError:
+                    continue
+                built.add(out)
+            self.assertTrue(built, "link built nothing from a real index")
+            self.assertIn("[[alpha/notes/a]]", built)
 
 
 if __name__ == "__main__":
