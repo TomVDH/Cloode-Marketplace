@@ -9,6 +9,7 @@ build declares). Anything else stops the run.
 """
 
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -124,6 +125,96 @@ class TestPlan(unittest.TestCase):
             self.assertIn("scripts/graph.py", p.delete)
             self.assertIn("skills/adjudant/reference/draw.md", p.delete)
             self.assertEqual(p.unexplained, [])
+
+
+def _make_public(twin: Path) -> None:
+    """Turn a copy of main into a plausible public twin: its own profile."""
+    (twin / "adjudant" / "scripts" / "build-profile.json").write_text(json.dumps({
+        "audience": "public",
+        "description_suffix": "",
+        "cost_warn_tokens": 10000,
+        "capabilities": [],
+    }, indent=2) + "\n")
+
+
+class TestGeneratedSurfaces(unittest.TestCase):
+    """The four surfaces the generator renders rather than copies.
+
+    The real twin's SKILL.md was pre-v3: it routed to sync.md, check.md,
+    sitrep.md and tidy.md. Those four docs and their four helpers are deleted
+    by this same run, so a regeneration that leaves the twin's own SKILL.md
+    alone ships a router pointing at nothing. It reports success; a reader
+    finds it.
+    """
+
+    def _stale_skill(self, twin: Path) -> None:
+        (twin / "adjudant" / "skills" / "adjudant" / "SKILL.md").write_text(
+            "---\nname: adjudant\ndescription: pre-v3\n"
+            'argument-hint: "[connect|sync|check|sitrep|tidy|dream|board] [args]"\n'
+            "---\n\n# Adjudant\n\n"
+            "| Verb | Loads | Purpose |\n|---|---|---|\n"
+            "| `sync` | `reference/sync.md` | push state |\n"
+            "| `tidy` | `reference/tidy.md` | surface sweep |\n")
+        (twin / "adjudant" / "README.md").write_text(
+            "# adjudant\n\n## The seven verbs\n\n"
+            "| Verb | Args |\n|---|---|\n| `tidy` | |\n")
+
+    def test_a_stale_skill_is_regenerated_not_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            _make_public(twin)
+            self._stale_skill(twin)
+            rc = generate_twin.main(["--main-root", str(main_root),
+                                     "--twin", str(twin), "--apply"])
+            self.assertEqual(rc, 0)
+            skill = (twin / "adjudant" / "skills" / "adjudant" / "SKILL.md").read_text()
+            for gone in ("reference/sync.md", "reference/check.md",
+                         "reference/sitrep.md", "reference/tidy.md"):
+                self.assertNotIn(gone, skill,
+                                 f"the twin's router still points at {gone}")
+
+    def test_every_reference_the_router_names_exists_in_the_twin(self):
+        # The outcome a reader gets: follow any row of the router and land on
+        # a file. This is the assertion the crash-free run has to earn.
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            _make_public(twin)
+            self._stale_skill(twin)
+            generate_twin.main(["--main-root", str(main_root),
+                                "--twin", str(twin), "--apply"])
+            skill_dir = twin / "adjudant" / "skills" / "adjudant"
+            named = re.findall(r"`(reference/[A-Za-z0-9._-]+\.md)`",
+                               (skill_dir / "SKILL.md").read_text())
+            self.assertTrue(named, "the router named no reference files at all")
+            missing = sorted({r for r in named if not (skill_dir / r).is_file()})
+            self.assertEqual(missing, [],
+                             f"SKILL.md routes to files the twin does not have: {missing}")
+
+    def test_the_readme_names_only_verbs_the_twin_ships(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            _make_public(twin)
+            self._stale_skill(twin)
+            generate_twin.main(["--main-root", str(main_root),
+                                "--twin", str(twin), "--apply"])
+            readme = (twin / "adjudant" / "README.md").read_text()
+            self.assertNotIn("`tidy`", readme)
+            self.assertNotIn("`draw`", readme, "draw is a full-only verb")
+            self.assertIn("`connect`", readme)
+
+    def test_a_render_failure_is_reported_not_a_traceback(self):
+        # The half-generated tree: copies land, the render raises, and the
+        # operator is left with a twin that is neither old nor new.
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            (twin / "adjudant" / "scripts" / "build-profile.json").write_text("{ not json")
+            rc = generate_twin.main(["--main-root", str(main_root),
+                                     "--twin", str(twin), "--apply"])
+            self.assertEqual(rc, 2)
 
 
 class TestRetirements(unittest.TestCase):

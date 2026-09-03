@@ -56,6 +56,18 @@ GENERATED = frozenset({
     ".claude-plugin/plugin.json",
 })
 
+# Two of the four carry prose the renderer does not own, so rendering alone
+# cannot bring them forward: the renderer only rewrites the regions between its
+# markers, and the twin's copies were written before the markers existed.
+# Leaving them therefore left the twin's SKILL.md routing to sync.md, check.md,
+# sitrep.md and tidy.md — four docs this same run deletes. They are seeded with
+# main's file first, then rendered down to this build's audience.
+#
+# The other two have their own sync functions because a plain copy would be
+# wrong: plugin.json carries the twin's identity, and command-metadata.json
+# carries the twin's version and its audience-filtered verb list.
+SEEDED = ("skills/adjudant/SKILL.md", "README.md")
+
 # plugin.json keys that belong to the repo, not to the build.
 IDENTITY_KEYS = ("name", "version", "author", "homepage", "repository",
                  "license", "keywords")
@@ -110,6 +122,16 @@ AUDIENCE_AUTHORED = frozenset({
 })
 
 SKIP_DIRS = {"__pycache__", ".pytest_cache", ".git"}
+
+
+class GenerateError(RuntimeError):
+    """The files copied, and then the twin could not be rendered.
+
+    Worth its own type because of what it leaves behind. The copies and
+    deletions have already landed when rendering runs, so a raw traceback here
+    hands back a tree that is neither the old twin nor the new one, with no
+    instruction on how to get out. `main` turns this into exit 2 and says so.
+    """
 
 
 class Plan(NamedTuple):
@@ -316,10 +338,21 @@ def apply_plan(main_root: Path, twin_root: Path, p: Plan) -> list[str]:
         if target.is_file():
             target.unlink()
             done.append(f"deleted {rel}")
-    _sync_plugin_json(main_plugin, twin_plugin)
-    _sync_metadata(main_plugin, twin_plugin)
-    for path in _render_in_twin(twin_plugin):
-        done.append(f"rendered {path}")
+    for rel in SEEDED:
+        src, dst = main_plugin / rel, twin_plugin / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        done.append(f"seeded {rel}")
+    # Broad on purpose, and narrow in scope: three known calls, and the reason
+    # to catch is not the error but the state it leaves behind.
+    try:
+        _sync_plugin_json(main_plugin, twin_plugin)
+        _sync_metadata(main_plugin, twin_plugin)
+        for path in _render_in_twin(twin_plugin):
+            done.append(f"rendered {path}")
+    except Exception as exc:
+        raise GenerateError(
+            f"the copy landed but the twin could not be rendered: {exc}") from exc
     return done
 
 
@@ -379,7 +412,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         pending = len(p.create) + len(p.update) + len(p.delete)
         print(f"\ndry run: {pending} change(s) pending; re-run with --apply")
         return 1 if pending else 0
-    for line in apply_plan(main_root, twin_root, p):
+    try:
+        lines = apply_plan(main_root, twin_root, p)
+    except GenerateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print("the twin is half-generated: the copies landed and the surfaces "
+              "did not. Restore it with `git -C <twin> checkout -- adjudant`, "
+              "fix the cause, and run again.", file=sys.stderr)
+        return 2
+    for line in lines:
         print(f"  {line}")
     print("\ntwin regenerated")
     return 0
