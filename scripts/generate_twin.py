@@ -19,10 +19,10 @@ something and reports success. Three rules prevent it:
      marketplace named in a shared file, nothing is planned and the run exits
      2. Publishing a name is the one mistake here that cannot be taken back.
   3. Every deletion must trace back to data: a file listed by a `full`-audience
-     verb, a `full`-audience content reference, or the reference doc of a
-     capability this build declares. A file in the twin that the data cannot
-     explain is reported as unexplained and never touched, and `--apply` exits
-     3 rather than proceeding.
+     verb, a `full`-audience content reference, the reference doc of a
+     capability this build declares, or a path named in RETIRED. A file in the
+     twin that the data cannot explain is reported as unexplained and never
+     touched, and `--apply` exits 3 rather than proceeding.
 
 Usage:
     python3 scripts/generate_twin.py --twin PATH            # dry run, the default
@@ -59,6 +59,49 @@ GENERATED = frozenset({
 # plugin.json keys that belong to the repo, not to the build.
 IDENTITY_KEYS = ("name", "version", "author", "homepage", "repository",
                  "license", "keywords")
+
+# Paths retired from the product, each with the reason. The twin predates v3
+# and still carries them; no build ships them again.
+#
+# This is the third kind of difference, and the plan only knew two. A file the
+# twin has and main does not is either audience-gated (`full_only_paths`) or
+# something to back-port. These are neither: they belong to four verbs that
+# were folded into `status` and `clean`, and to a template set the
+# templates-are-the-schema redesign replaced. Nothing wants them back, and no
+# verb entry is left to attach them to.
+#
+# It is a deletion licence, so it is held to the same standard as the rest:
+# one line per path, never a pattern, and `_retired()` subtracts anything this
+# tree still ships, so a stale tombstone cannot delete live code.
+RETIRED = {
+    "scripts/check.py": "the check verb, folded into status.compliance",
+    "scripts/test_check.py": "its tests, now test_status.py",
+    "skills/adjudant/reference/check.md": "its runbook, now reference/status.md",
+    "scripts/sitrep.py": "the sitrep verb, folded into status.orientation",
+    "scripts/test_sitrep.py": "its tests, now test_status.py",
+    "skills/adjudant/reference/sitrep.md": "its runbook, now reference/status.md",
+    "scripts/sync.py": "the sync verb, now status's make-current phase",
+    "scripts/test_sync.py": "its tests, now test_status.py",
+    "skills/adjudant/reference/sync.md": "its runbook, now reference/status.md",
+    "scripts/tidy.py": "the tidy verb, folded into clean with ramasse",
+    "scripts/test_tidy.py": "its tests, now test_clean.py",
+    "skills/adjudant/reference/tidy.md": "its runbook, now reference/clean.md",
+    "skills/adjudant/templates/_index-collection.md":
+        "folder indexes are gone; _index_gen owns Home.md and {slug}/_index.md",
+    "skills/adjudant/templates/_index-projects.md":
+        "the projects index is gone; Home.md groups by lifecycle folder",
+    "skills/adjudant/templates/dream-report.md": "kind renamed; now dream.md",
+    "skills/adjudant/templates/iteration.md": "the iteration kind is not in the fifteen",
+    "skills/adjudant/templates/memory.md": "the memory kind is not in the fifteen",
+    "skills/adjudant/templates/project-brief-coding.md":
+        "the four project-brief shapes are one template now: brief.md",
+    "skills/adjudant/templates/project-brief-knowledge.md":
+        "the four project-brief shapes are one template now: brief.md",
+    "skills/adjudant/templates/project-brief-plugin.md":
+        "the four project-brief shapes are one template now: brief.md",
+    "skills/adjudant/templates/project-brief-tinkerage.md":
+        "the four project-brief shapes are one template now: brief.md",
+}
 
 # Hand-written per audience. Named here so they are a decision, not an accident.
 AUDIENCE_AUTHORED = frozenset({
@@ -151,12 +194,25 @@ def _deletable(plugin_root: Path) -> set[str]:
         sys.path.pop(0)
 
 
+def _retired(main_plugin: Path) -> set[str]:
+    """RETIRED, minus anything this tree still ships.
+
+    A tombstone naming a live file is not a retirement, and honouring one would
+    delete the twin's copy of code main still has — the exact failure the
+    unexplained gate exists to prevent, arriving through the gate's own
+    allowlist. The subtraction makes it impossible rather than merely tested;
+    test_generate_twin still fails loudly so the stale line gets removed
+    instead of silently ignored.
+    """
+    return {rel for rel in RETIRED if not (main_plugin / rel).exists()}
+
+
 def plan(main_root: Path, twin_root: Path) -> Plan:
     main_plugin = main_root / "adjudant"
     twin_plugin = twin_root / "adjudant"
     ours = _plugin_files(main_plugin)
     theirs = _plugin_files(twin_plugin)
-    deletable = _deletable(main_plugin)
+    deletable = _deletable(main_plugin) | _retired(main_plugin)
     fixed = {PROFILE_FILE} | GENERATED | AUDIENCE_AUTHORED
 
     create, update = [], []
@@ -312,8 +368,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if p.unexplained:
         print("\nerror: files exist in the twin that this build cannot explain.",
               file=sys.stderr)
-        print("Nothing was deleted. Either add them to a verb's `files` list in "
-              "command-metadata.json, or back-port them.", file=sys.stderr)
+        print("Nothing was deleted. Either back-port them, add them to a verb's "
+              "`files` list in command-metadata.json, or — if no build ships "
+              "them any more — name each one in generate_twin.RETIRED.",
+              file=sys.stderr)
         for rel in p.unexplained:
             print(f"  unexplained {rel}", file=sys.stderr)
         return 3

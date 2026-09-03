@@ -125,6 +125,63 @@ class TestPlan(unittest.TestCase):
             self.assertIn("skills/adjudant/reference/draw.md", p.delete)
             self.assertEqual(p.unexplained, [])
 
+
+class TestRetirements(unittest.TestCase):
+    """A twin left behind by a retirement is the third kind of difference.
+
+    The plan knew two: a file is audience-gated, or it must be back-ported.
+    The real twin carried a third — 21 files belonging to verbs and templates
+    that no build ships any more. They cannot be back-ported (nothing wants
+    them) and they belong to no verb (the verbs are gone), so the generator
+    refused, correctly, and the regeneration could not start.
+
+    RETIRED names each one with the reason. It is a deletion licence, so it is
+    held to the same standard as the rest: named per path, never a pattern,
+    and it may never cover a file this tree still ships.
+    """
+
+    def test_a_retired_path_is_a_named_deletion_not_unexplained(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            # The shape the real twin was in: a retired verb's module.
+            (twin / "adjudant" / "scripts" / "tidy.py").write_text("# pre-v3\n")
+            p = generate_twin.plan(main_root, twin)
+            self.assertIn("scripts/tidy.py", p.delete)
+            self.assertEqual(p.unexplained, [])
+
+    def test_a_retirement_never_shadows_a_file_this_tree_ships(self):
+        # The way a tombstone list turns dangerous: someone revives a name,
+        # and the generator silently deletes the twin's copy of live code.
+        # This is the assertion that makes the licence safe to keep.
+        shipped = sorted(rel for rel in generate_twin.RETIRED
+                         if (MAIN_ROOT / "adjudant" / rel).exists())
+        self.assertEqual(shipped, [],
+                         "these are listed as retired but this tree ships them; "
+                         "take them off RETIRED before the generator deletes "
+                         "the twin's copy")
+
+    def test_every_retirement_carries_a_reason(self):
+        unexplained = sorted(rel for rel, why in generate_twin.RETIRED.items()
+                             if not (why or "").strip())
+        self.assertEqual(unexplained, [])
+
+    def test_a_retirement_is_not_a_licence_for_its_neighbours(self):
+        # Deleting scripts/tidy.py must not make scripts/ deletable.
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            (twin / "adjudant" / "scripts" / "tidy.py").write_text("# pre-v3\n")
+            stray = twin / "adjudant" / "scripts" / "tidy_helper.py"
+            stray.write_text("# not retired, not shared\n")
+            p = generate_twin.plan(main_root, twin)
+            self.assertIn("scripts/tidy.py", p.delete)
+            self.assertEqual(p.unexplained, ["scripts/tidy_helper.py"])
+            self.assertNotIn("scripts/tidy_helper.py", p.delete)
+
+
+class TestPlanProfile(unittest.TestCase):
+
     def test_the_profile_is_never_copied(self):
         with tempfile.TemporaryDirectory() as tmp:
             main_root = _copy_main(Path(tmp) / "main")
