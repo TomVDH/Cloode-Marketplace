@@ -4,11 +4,14 @@ files must name nobody.
 The twin used to rewrite fixtures on the way out: hubspot-nightly to acme-web,
 ob/cabinet to ob/legacy, "Tom's vault" to "a real vault". That rewrite is why
 several test files could not be shared, and skipping it would publish a client
-name and four crew nicknames to a public repository.
+name and (were they ever reintroduced) four crew nicknames to a public
+repository. FORBIDDEN bans the crew names defensively even though nothing in
+this tree currently carries them: the tag-bucket data they used to live in
+(scripts/build-profile.json's old `tags` block) is gone, not merely moved.
 
-The names that ARE the author's data belong in scripts/build-profile.json (or
-another allowlisted file that carries author/repository identity on purpose).
-Everywhere else is neutral.
+The two-entry ALLOWLIST is deliberately narrow: this file names its own
+examples, and .claude-plugin/plugin.json is where the author's and the
+repository's public identity is meant to live. Everywhere else is neutral.
 """
 
 import re
