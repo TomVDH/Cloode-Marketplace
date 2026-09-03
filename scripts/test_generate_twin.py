@@ -22,6 +22,22 @@ import generate_twin
 
 MAIN_ROOT = Path(__file__).resolve().parent.parent
 
+# generate_twin imports _profile and render_verb_surfaces by inserting a tree's
+# scripts/ on sys.path, so the first tree to be asked wins the name for the
+# whole process. These tests ask about sandboxes under /tmp that are deleted
+# straight afterwards, and a module left behind pointing into a deleted
+# directory fails whatever imports that name next — it cost the parity gate a
+# ProfileError on a build-profile.json in a temp dir that no longer existed.
+_BORROWED = ("_profile", "render_verb_surfaces", "test_backport_guard",
+             "test_no_personal_identifiers")
+
+
+def tearDownModule():
+    for name in _BORROWED:
+        mod = sys.modules.get(name)
+        if mod is not None and tempfile.gettempdir() in str(getattr(mod, "__file__", "")):
+            del sys.modules[name]
+
 
 def _copy_main(dest: Path) -> Path:
     shutil.copytree(MAIN_ROOT / "adjudant", dest / "adjudant", symlinks=True,
