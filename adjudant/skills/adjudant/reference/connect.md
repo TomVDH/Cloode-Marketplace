@@ -24,7 +24,7 @@ connect is three phases; the card in the middle is the only thing the user must 
    run /adjudant board to open a deck on them (opt-in, never auto-seeded).
 
 Config knobs land in the breadcrumb at init with defaults visible on the card:
-`cost_warn_tokens: 30000`, `stale_after_days: 30`. Existing overrides survive re-connect,
+`cost_warn_tokens` (the build profile's default), `stale_after_days: 30`. Existing overrides survive re-connect,
 as does an opt-in `stamp_source_session: true` (per-file session stamping, default off —
 connect never writes the key itself).
 

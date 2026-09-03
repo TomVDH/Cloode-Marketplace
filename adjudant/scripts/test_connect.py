@@ -9,6 +9,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+from _cost import DEFAULT_WARN_TOKENS
 from connect import (
     VALID_PROJECT_TYPES,
     append_gitignore,
@@ -512,7 +513,7 @@ class TestApplyContract(unittest.TestCase):
             summary = self._connect(code, vault)
             self.assertTrue((code / "GEMINI.md").is_file())
             bc = (code / ".claude" / "adjudant").read_text()
-            self.assertIn("cost_warn_tokens: 30000", bc)
+            self.assertIn(f"cost_warn_tokens: {DEFAULT_WARN_TOKENS}", bc)
             self.assertIn("stale_after_days: 30", bc)
             self.assertIn("receipt", summary)
             states = {r["artifact"]: r["state"] for r in summary["receipt"]}
@@ -526,7 +527,8 @@ class TestApplyContract(unittest.TestCase):
             self._connect(code, vault)
             bc_path = code / ".claude" / "adjudant"
             bc_path.write_text(bc_path.read_text().replace(
-                "cost_warn_tokens: 30000", "cost_warn_tokens: 99000"))
+                f"cost_warn_tokens: {DEFAULT_WARN_TOKENS}",
+                "cost_warn_tokens: 99000"))
             self._connect(code, vault)
             self.assertIn("cost_warn_tokens: 99000", bc_path.read_text())
 

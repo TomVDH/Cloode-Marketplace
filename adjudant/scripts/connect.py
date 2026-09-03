@@ -40,6 +40,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from _cost import DEFAULT_WARN_TOKENS
 from _render import render
 from _vault_walk import (
     _candidate_vault_paths,
@@ -286,7 +287,7 @@ def write_breadcrumb(
     Returns 'created' | 'updated' | 'already-present'.
     """
     existing = parse_breadcrumb(project_root) or {}
-    cwt = existing.get("cost_warn_tokens", "30000")
+    cwt = existing.get("cost_warn_tokens", str(DEFAULT_WARN_TOKENS))
     sad = existing.get("stale_after_days", "30")
     canonical = {"vault_path", "vault_name", "slug", "mode",
                  "cost_warn_tokens", "stale_after_days"}

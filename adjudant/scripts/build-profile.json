@@ -1,0 +1,6 @@
+{
+  "audience": "full",
+  "description_suffix": " Pairs with hookify.",
+  "cost_warn_tokens": 30000,
+  "capabilities": []
+}

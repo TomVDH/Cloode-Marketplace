@@ -46,7 +46,7 @@ Verb weights live in `scripts/command-metadata.json` (`weight: light | medium | 
 - **Light verbs** (`connect`, `draw`, `board`): no estimate; the static weight badge is enough.
 - `status all` sums two estimates: `status.py --estimate-only` plus `repo_scan.py --estimate-only`.
 - If an estimate cannot be computed (unresolvable vault or breadcrumb), treat it as `warn: true` and ask before proceeding.
-- Threshold default is 30000 estimated read tokens; per-project override via `cost_warn_tokens:` in `.claude/adjudant`.
+- Threshold default is the build profile's `cost_warn_tokens` (`scripts/build-profile.json`); per-project override via `cost_warn_tokens:` in `.claude/adjudant`.
 
 ## Voice (locked)
 
