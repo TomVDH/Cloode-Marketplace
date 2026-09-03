@@ -64,6 +64,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from _cost import cost_block, read_threshold, stat_walk
+from _place import KIND_FOLDER
 from _scratch import BACKUP_KEEP, prune_backups, scratch_dir
 from _vault_walk import (
     FIELD_SCHEMA,
@@ -636,6 +637,12 @@ def build_preview(
     # `_index_gen` owns the two surviving index surfaces, and clean creates
     # nothing (`VaultWriteGuard` refuses it at apply time regardless).
     index_gaps = detect_index_gaps(project_dir, files)
+    # references/ held six unrelated kinds; each file's own `type:` says
+    # which folder it belongs in now. Not narrowed by `scope`: it reads
+    # project_dir/references/ directly rather than the (possibly filtered)
+    # `files` list, and offering it is cheap regardless of what else a
+    # scoped run is reviewing.
+    references_split = plan_references_split(project_dir)
 
     # --- Features 2-4: per-file edits ---
     schema_actions: dict[str, dict[str, Any]] = {}
@@ -733,6 +740,7 @@ def build_preview(
         "index_gaps": index_gaps,
         "schema_actions": schema_actions,
         "structural_findings": structural,
+        "references_split": references_split,
     }
 
 
@@ -812,6 +820,20 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
         summary_lines.append("")
         for folder in change_set["index_gaps"]:
             summary_lines.append(f"- `{folder}`")
+    # references/ held six unrelated kinds at once; offered, never forced.
+    # Absent from the summary entirely when there is nothing to offer, so a
+    # project with no references/ (most of them, post-migration) sees no
+    # trace of a feature that does not apply to it.
+    if change_set.get("references_split"):
+        summary_lines.append("")
+        summary_lines.append("## References split (offered, not forced)")
+        summary_lines.append("")
+        summary_lines.append("`references/` held six unrelated kinds. Each "
+                             "file's own `type:` says which folder it "
+                             "belongs in now:")
+        summary_lines.append("")
+        for move in change_set["references_split"]:
+            summary_lines.append(f"- `{move['from']}` → `{move['to']}`")
     summary_lines.append("")
     summary_lines.append("## File modifications")
     summary_lines.append("")
@@ -1015,6 +1037,14 @@ def apply_preview(project_dir: Path) -> Path:
         except VaultCreateRefused:
             skipped.append((rel, "refused"))
 
+    # references/ split: offered in the preview, applied here when the
+    # change-set carries one. Shares this run's backup_dir rather than
+    # opening its own, so a file both a schema repair and the split touch
+    # backs up once, to its state before either write.
+    if change_set.get("references_split"):
+        apply_references_split(project_dir, change_set["references_split"],
+                               backup_dir=backup_dir)
+
     if skipped:
         _write_skipped_note(backup_dir, skipped)
 
@@ -1022,6 +1052,125 @@ def apply_preview(project_dir: Path) -> Path:
     shutil.rmtree(preview)
     prune_backups(backup_root_dir, BACKUP_KEEP)
     return backup_dir
+
+
+# ============================================================
+# The references/ split
+# ============================================================
+#
+# `references/` held six unrelated things at once: api pages, schemas, specs,
+# sections, component inventories and imported wiki pages. Each of the six now
+# has a folder that names it, and a file's own `type:` says which. A move is
+# not a create, so this stays inside clean's contract: it may delete, merge
+# and rewrite in place, and may not add a vault file.
+
+
+def plan_references_split(project_dir: Path) -> list[dict[str, str]]:
+    """Where each file in `references/` belongs, by its own `type:`.
+
+    Reads only. A file whose type has no folder of its own is left where it
+    is and reported nowhere: guessing is what produced `references/` in the
+    first place.
+    """
+    src = project_dir / "references"
+    if not src.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    for f in sorted(src.rglob("*.md")):
+        if f.name.startswith("_"):
+            continue
+        try:
+            fm, _body = parse_frontmatter(f.read_text(errors="replace"))
+        except OSError:
+            continue
+        ftype = fm.fields.get("type")
+        if not isinstance(ftype, str):
+            continue
+        folder = KIND_FOLDER.get(ftype)
+        if not folder or folder == "references":
+            continue
+        out.append({
+            "from": f.relative_to(project_dir).as_posix(),
+            "to": f"{folder}/{f.name}",
+            "type": ftype,
+        })
+    return out
+
+
+def apply_references_split(project_dir: Path,
+                           moves: list[dict[str, str]],
+                           backup_dir: Optional[Path] = None) -> list[dict]:
+    """Move each file and repoint every link that named its old path.
+
+    The link rewrite is a project-local string substitution on the zone-less
+    form `{slug}/references/{stem}`, which is the only form v3 writes. It runs
+    over every markdown file in the project, including the ones being moved.
+
+    Every live file this touches - the moved file itself, and any note whose
+    link gets repointed - is backed up before its first write, same as every
+    other write `apply_preview` makes. `backup_dir` lets a caller that already
+    has one open (`apply_preview`, applying a schema repair and a split in the
+    same run) share it; a caller with none, including every test here, gets a
+    fresh one under clean's own rotated backup root, so recovery never depends
+    on which caller happened to invoke this.
+
+    A backup is skipped once its target already exists on disk, never once
+    per some in-memory set: a file touched twice in one run (linked from two
+    moved pages, or already rewritten once by `apply_preview`'s own
+    file_proposals pass before this runs) must still recover to its state
+    before EITHER write, and a shared `backup_dir` means the first writer to
+    claim a path is the only one allowed to.
+    """
+    slug = project_dir.name
+    owns_backup_dir = backup_dir is None
+    if owns_backup_dir:
+        backup_root_dir = backup_root(project_dir)
+        backup_root_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup_dir = Path(tempfile.mkdtemp(prefix=f"{timestamp}-",
+                                           dir=backup_root_dir))
+
+    def _backup_once(live: Path) -> None:
+        rel = live.relative_to(project_dir).as_posix()
+        target = backup_dir / (rel + ".legacy")
+        if target.exists():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(live, target)
+
+    receipts: list[dict] = []
+    for move in moves:
+        src = project_dir / move["from"]
+        dest = project_dir / move["to"]
+        if not src.is_file() or dest.exists():
+            continue
+        _backup_once(src)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(dest)
+        old_target = f"{slug}/{move['from'][:-3]}"
+        new_target = f"{slug}/{move['to'][:-3]}"
+        repointed = 0
+        for f in sorted(project_dir.rglob("*.md")):
+            try:
+                text = f.read_text(errors="replace")
+            except OSError:
+                continue
+            if old_target not in text:
+                continue
+            repointed += text.count(old_target)
+            _backup_once(f)
+            f.write_text(text.replace(old_target, new_target))
+        receipts.append({"from": move["from"], "to": move["to"],
+                         "links_repointed": repointed})
+    try:
+        (project_dir / "references").rmdir()   # only when it is now empty
+    except OSError:
+        pass
+    # apply_preview prunes its own shared backup_dir once, at the end of its
+    # own run; a standalone call owns the only copy of this rotation.
+    if owns_backup_dir:
+        prune_backups(backup_root_dir, BACKUP_KEEP)
+    return receipts
 
 
 # ============================================================

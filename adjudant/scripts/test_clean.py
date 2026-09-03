@@ -14,16 +14,18 @@ from pathlib import Path
 
 from clean import (
     apply_preview,
+    apply_references_split,
     backup_root,
     build_preview,
     cli_main as clean_cli,
     detect_phase,
     fix_wikilink_form,
+    plan_references_split,
     preview_dir,
     write_preview_to_disk,
     _bump_updated_field,
 )
-from _vault_walk import build_vault_index, resolve_wikilink
+from _vault_walk import build_vault_index, extract_wikilinks, resolve_wikilink
 
 _MODULE_TMP = None
 _OLD_TMPDIR = None
@@ -846,6 +848,186 @@ class TestScratchIsOutsideTheVault(unittest.TestCase):
             root = scratch_dir(project, "clean-backup")
             kept = [d for d in root.iterdir() if d.is_dir()]
             self.assertLessEqual(len(kept), BACKUP_KEEP)
+
+
+class TestReferencesSplit(unittest.TestCase):
+    """references/ held api pages, schemas, specs, sections, component
+    inventories and imported wiki pages at once. Each now has a folder that
+    names it, and clean offers the move rather than making it."""
+
+    def _project(self, tmp: Path) -> Path:
+        pdir = tmp / "vault" / "projects" / "active" / "demo"
+        (pdir / "references").mkdir(parents=True)
+        _w(pdir / "brief.md",
+           "---\ntype: project\nupdated: 2026-09-01\nverified: 2026-09-01\n---\n\n# D\n")
+        for name, kind in (("contacts.md", "api"), ("ep-object.md", "schema"),
+                           ("spec-018-page-spinup.md", "spec"),
+                           ("button.md", "component"),
+                           ("wiki-runbook.md", "source")):
+            _w(pdir / "references" / name,
+               f"---\ntype: {kind}\nupdated: 2026-09-01\n---\n\n# {name}\n")
+        return pdir
+
+    def test_the_plan_routes_each_file_by_its_own_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            plan = {m["from"]: m["to"] for m in plan_references_split(pdir)}
+            self.assertEqual(plan["references/contacts.md"], "api/contacts.md")
+            self.assertEqual(plan["references/ep-object.md"],
+                             "schemas/ep-object.md")
+            self.assertEqual(plan["references/spec-018-page-spinup.md"],
+                             "specs/spec-018-page-spinup.md")
+            self.assertEqual(plan["references/button.md"],
+                             "components/button.md")
+            self.assertEqual(plan["references/wiki-runbook.md"],
+                             "sources/wiki-runbook.md")
+
+    def test_the_plan_moves_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            before = sorted(str(p) for p in pdir.rglob("*"))
+            plan_references_split(pdir)
+            self.assertEqual(sorted(str(p) for p in pdir.rglob("*")), before)
+
+    def test_a_file_with_no_home_is_left_where_it_is(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            # `note` has a folder of its own (KIND_FOLDER["note"] == "notes"),
+            # so it is not the "no home" case. `project`, `handoff` and
+            # `index` are the three kinds with no folder (KIND_FOLDER maps
+            # them to ""), and `project`/`index` already collide with a file
+            # `place()` itself would refuse to put in references/. `handoff`
+            # is the one that plausibly turns up there by hand and has to be
+            # left alone rather than routed to a bare project-root file.
+            _w(pdir / "references" / "loose.md",
+               "---\ntype: handoff\nupdated: 2026-09-01\n---\n\n# Loose\n")
+            froms = [m["from"] for m in plan_references_split(pdir)]
+            self.assertNotIn("references/loose.md", froms)
+
+    def test_apply_moves_the_files_and_repoints_the_links(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = self._project(root)
+            _w(pdir / "notes" / "uses.md",
+               "---\ntype: note\nupdated: 2026-09-01\n---\n\n"
+               "See [[demo/references/contacts|contacts]] and "
+               "[[demo/references/ep-object]].\n")
+            moves = plan_references_split(pdir)
+            receipts = apply_references_split(pdir, moves)
+            self.assertTrue((pdir / "api" / "contacts.md").is_file())
+            self.assertFalse((pdir / "references" / "contacts.md").exists())
+            body = (pdir / "notes" / "uses.md").read_text()
+            self.assertIn("[[demo/api/contacts|contacts]]", body)
+            self.assertIn("[[demo/schemas/ep-object]]", body)
+            self.assertNotIn("demo/references/", body)
+            repointed = {r["from"]: r["links_repointed"] for r in receipts}
+            self.assertEqual(repointed["references/contacts.md"], 1)
+
+    def test_every_link_still_resolves_after_the_split(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            pdir = self._project(root)
+            _w(pdir / "notes" / "uses.md",
+               "---\ntype: note\nupdated: 2026-09-01\n---\n\n"
+               "See [[demo/references/contacts|contacts]].\n")
+            apply_references_split(pdir, plan_references_split(pdir))
+            idx = build_vault_index(vault)
+            for wl in extract_wikilinks((pdir / "notes" / "uses.md").read_text()):
+                self.assertTrue(resolve_wikilink(wl.target, idx), wl.target)
+
+    def test_the_split_creates_no_new_vault_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = self._project(Path(tmp))
+            before = len([p for p in pdir.rglob("*") if p.is_file()])
+            apply_references_split(pdir, plan_references_split(pdir))
+            after = len([p for p in pdir.rglob("*") if p.is_file()])
+            self.assertEqual(after, before, "clean must never add a vault file")
+
+    def test_apply_backs_up_every_file_it_touches_before_writing(self):
+        # apply_preview's own contract is five gates, one of them "the
+        # pre-change copy must land in a backup dir" - every other write path
+        # in clean honours it. A move-and-rewrite with no backup would be the
+        # one exception, and the one time recovering from a bad rewrite would
+        # matter most (a moved file plus every note that linked to it).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = self._project(root)
+            _w(pdir / "notes" / "uses.md",
+               "---\ntype: note\nupdated: 2026-09-01\n---\n\n"
+               "See [[demo/references/contacts|contacts]].\n")
+            original_contact = (pdir / "references" / "contacts.md").read_text()
+            original_uses = (pdir / "notes" / "uses.md").read_text()
+            apply_references_split(pdir, plan_references_split(pdir))
+            legacies = list(backup_root(pdir).rglob("*.legacy"))
+            by_name = {p.name: p for p in legacies}
+            self.assertIn("contacts.md.legacy", by_name,
+                         "the moved file has no recoverable pre-image")
+            self.assertIn("uses.md.legacy", by_name,
+                         "the repointed note has no recoverable pre-image")
+            self.assertEqual(by_name["contacts.md.legacy"].read_text(),
+                             original_contact)
+            self.assertEqual(by_name["uses.md.legacy"].read_text(),
+                             original_uses)
+
+    def test_build_preview_offers_it_and_apply_preview_applies_it(self):
+        # Step 4 wiring: no test in the plan exercises build_preview/
+        # apply_preview at all for this feature, and it is the one write path
+        # in the file with no dedicated coverage of its own.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = self._project(root)
+            cs = build_preview(pdir, build_vault_index(root / "vault"), "demo")
+            self.assertEqual(
+                {m["from"] for m in cs["references_split"]},
+                {"references/contacts.md", "references/ep-object.md",
+                 "references/spec-018-page-spinup.md", "references/button.md",
+                 "references/wiki-runbook.md"})
+            write_preview_to_disk(pdir, cs)
+            apply_preview(pdir)
+            self.assertTrue((pdir / "api" / "contacts.md").is_file())
+            self.assertFalse((pdir / "references").exists())
+
+    def test_an_empty_split_is_absent_from_the_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = root / "vault" / "projects" / "active" / "demo"
+            _w(pdir / "brief.md",
+               "---\ntype: project\nupdated: 2026-09-01\nverified: 2026-09-01\n---\n\n# D\n")
+            cs = build_preview(pdir, build_vault_index(root / "vault"), "demo")
+            self.assertEqual(cs["references_split"], [])
+            write_preview_to_disk(pdir, cs)
+            summary = (preview_dir(pdir) / "summary.md").read_text()
+            self.assertNotIn("references", summary.lower())
+
+    def test_a_file_touched_by_both_passes_still_recovers_to_its_true_original(self):
+        # A note that BOTH file_proposals rewrites (a schema repair, here)
+        # AND the split repoints (it links to a moved reference) shares one
+        # backup path between the two passes. The backup must hold the note's
+        # state before EITHER write, never the state after only the first.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = self._project(root)
+            _w(pdir / "notes" / "uses.md",
+               "---\nnode_type: note\ncreated: 2026-01-01\nupdated: 2026-01-01\n"
+               "---\n\nSee [[demo/references/contacts|contacts]].\n")
+            original_uses = (pdir / "notes" / "uses.md").read_text()
+
+            cs = build_preview(pdir, build_vault_index(root / "vault"), "demo")
+            write_preview_to_disk(pdir, cs)
+            apply_preview(pdir)
+
+            live = (pdir / "notes" / "uses.md").read_text()
+            self.assertIn("type: note", live)
+            self.assertNotIn("node_type:", live)
+            self.assertIn("[[demo/api/contacts|contacts]]", live)
+
+            legacies = list(backup_root(pdir).rglob("uses.md.legacy"))
+            self.assertEqual(len(legacies), 1)
+            self.assertEqual(
+                legacies[0].read_text(), original_uses,
+                "the backup must be the note's state before EITHER write, "
+                "not the state after the first one")
 
 
 if __name__ == "__main__":
