@@ -675,17 +675,47 @@ class TestPrecisionRebuild(unittest.TestCase):
         # The check tested for a key named `superseded`. The schema field is
         # `superseded_by`, so the frontmatter half could never pass and only
         # the prose regex ever fired.
-        src = Path(dream.__file__).read_text()
-        self.assertNotIn('"superseded" in older.frontmatter.fields', src)
-        self.assertIn('"superseded_by" in older.frontmatter.fields', src)
+        #
+        # This asserted the SOURCE TEXT, which is the mistake this whole
+        # programme keeps finding: a test that greps for a substring passes
+        # when the behaviour breaks and fails when the code is merely
+        # reworded. It exercises the behaviour now.
+        def marker(field):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                _write_file(root / "decisions" / "2026-01-01-cache-warm-order.md",
+                            f"---\ntype: decision\nstatus: active\n{field}"
+                            "---\n\n# cache warm order\n")
+                _write_file(root / "decisions" / "2026-02-01-cache-warm-revision.md",
+                            "---\ntype: decision\nstatus: active\n---\n\n"
+                            "# cache warm revision\n")
+                pairs = detect_supersession_signals(list(walk_project(root)), TODAY)
+                self.assertEqual(len(pairs), 1, "the fixture pair must be found")
+                return pairs[0]["older_has_superseded_marker"]
+
+        self.assertTrue(marker('superseded_by: "[[2026-02-01-cache-warm-revision]]"\n'),
+                        "the real schema field must be seen")
+        self.assertFalse(marker('superseded: "[[2026-02-01-cache-warm-revision]]"\n'),
+                         "a key no template declares is not the marker")
 
     def test_a_session_link_no_longer_proves_closure(self):
         # The check skipped any decision a session linked to. Adjudant tells
         # you to link decisions from sessions, so this excluded 47 of 55 active
-        # decisions — the only verb auditing them, defeated by its own
-        # convention.
-        src = Path(dream.__file__).read_text()
-        self.assertNotIn("a session points at it", src)
+        # decisions: the only verb auditing them, defeated by its own
+        # convention. This too asserted source text, and worse, it asserted a
+        # COMMENT, so deleting the comment passed it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_file(root / "decisions" / "2026-01-01-migrate.md",
+                        "---\ntype: decision\nstatus: active\ndate: 2026-01-01\n---\n\n"
+                        "## Decision\nMigrate.\n\n## Consequence\nRewrite config.\n")
+            _write_file(root / "sessions" / "2026-02-01.md",
+                        "---\ntype: session\n---\n\n"
+                        "Did the [[2026-01-01-migrate]] rewrite today.")
+            out = detect_unacted_decisions(list(walk_project(root)), TODAY)
+            self.assertEqual([e["file"] for e in out],
+                             ["decisions/2026-01-01-migrate.md"],
+                             "a session link must not remove the decision")
 
     def test_a_session_link_lowers_the_score_instead(self):
         with tempfile.TemporaryDirectory() as tmp:

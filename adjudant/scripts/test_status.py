@@ -1747,9 +1747,13 @@ class TestTheGeneratedIndexesAreActuallyGenerated(unittest.TestCase):
             self.assertTrue((proj / "_index.md").is_file(),
                             "the project index was never generated")
 
-    def test_something_actually_calls_the_generator(self):
-        # The defect was structural: the module existed and nothing imported
-        # it. A grep is the honest guard against that coming back.
+    def test_status_imports_the_generator(self):
+        # Named for what it checks. It asserts an IMPORT, not a call, and an
+        # import is not proof the generator runs: that is
+        # TestTheGeneratedIndexesAreActuallyGenerated, which looks for the
+        # files on disk. This one survives beside it as the structural guard
+        # against the original defect, where the module existed and nothing
+        # referenced it outside a comment.
         import re as _re
         src = Path(status.__file__).read_text()
         self.assertTrue(_re.search(r"^\s*(import|from)\s+_index_gen", src, _re.M),
