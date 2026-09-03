@@ -167,18 +167,33 @@ class TestVerbSurfacesGenerated(unittest.TestCase):
 
     def test_a_wrong_count_outside_every_region_still_fails(self):
         # The escape class the old parity validator existed for, and the one
-        # generation cannot see: the README's opening paragraph names a verb
-        # count no marker covers.
+        # generation cannot see: prose that names a verb count no marker
+        # covers. It used to edit the README's own opening sentence, which
+        # tied the test to whether that sentence still carried a count — it no
+        # longer does, because a hand-typed count beside a generated one is the
+        # second declaration this whole design removes. The count is written in
+        # here now, so the check holds however the shipped prose is worded.
         import tempfile as _tf
         with _tf.TemporaryDirectory() as tmp:
             fake = self._copy_of_the_real_tree(tmp)
             readme = fake / "README.md"
-            text = readme.read_text()
-            self.assertIn("with six verbs", text, "the prose sentence moved")
-            readme.write_text(text.replace("with six verbs", "with nine verbs"))
+            readme.write_text(readme.read_text()
+                              + "\nAdjudant ships with nine verbs.\n")
             r = self._run_against(fake)
             self.assertTrue(any("says 'nine verbs' but this build ships 6" in f
                                 for f in r.failures), r.failures)
+
+    def test_a_correct_count_in_prose_is_accepted(self):
+        # The other half: the check is about the count being wrong, not about
+        # prose mentioning one.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            fake = self._copy_of_the_real_tree(tmp)
+            readme = fake / "README.md"
+            readme.write_text(readme.read_text()
+                              + "\nAdjudant ships with six verbs.\n")
+            r = self._run_against(fake)
+            self.assertIn("verb-surfaces-generated", r.passes, r.failures)
 
 
 class TestCommandMetadataCoherence(_PatchedTree):

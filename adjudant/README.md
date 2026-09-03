@@ -2,7 +2,7 @@
 
 *Every unit has someone who keeps the records straight. Now your project does too.*
 
-Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`, with six verbs. Successor to `obsidian-bridge`.
+Run an Obsidian vault from inside your code project. Adjudant keeps a vault as your project's long-term memory: session notes, decisions, a handoff, and a kanban board, all written to a schema and kept current by background hooks. One command, `/adjudant`. Successor to `obsidian-bridge`.
 
 **New here? Read the [walkthrough](GUIDE.md).** This page is the reference.
 

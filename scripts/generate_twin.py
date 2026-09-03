@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import filecmp
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -277,6 +278,36 @@ def _sync_plugin_json(main_plugin: Path, twin_plugin: Path) -> None:
     dst.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n")
 
 
+_VERSION_LINE = re.compile(r"^version:\s*\S.*$", re.MULTILINE)
+
+
+def _seed_surfaces(main_plugin: Path, twin_plugin: Path) -> list[str]:
+    """Copy the two surfaces the renderer cannot bring forward on its own.
+
+    The renderer only rewrites what is between its markers, and the twin's
+    SKILL.md and README.md were written before the markers existed. So they are
+    copied whole first, then rendered down to this build's audience.
+
+    SKILL.md's frontmatter carries the repository's version, not the build's —
+    the same way plugin.json carries the repository's identity. Copying main's
+    hands the twin a version its plugin.json, its command-metadata and its
+    marketplace entry all disagree with, and version-consistency fails.
+    """
+    done: list[str] = []
+    for rel in SEEDED:
+        src, dst = main_plugin / rel, twin_plugin / rel
+        keep = None
+        if rel == "skills/adjudant/SKILL.md" and dst.is_file():
+            found = _VERSION_LINE.search(dst.read_text())
+            keep = found.group(0) if found else None
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        if keep is not None:
+            dst.write_text(_VERSION_LINE.sub(keep, dst.read_text(), count=1))
+        done.append(f"seeded {rel}")
+    return done
+
+
 def _sync_metadata(main_plugin: Path, twin_plugin: Path) -> None:
     """The twin's command-metadata is main's, filtered to its audience, with the
     twin's own version kept so the version-consistency validator stays green.
@@ -338,11 +369,7 @@ def apply_plan(main_root: Path, twin_root: Path, p: Plan) -> list[str]:
         if target.is_file():
             target.unlink()
             done.append(f"deleted {rel}")
-    for rel in SEEDED:
-        src, dst = main_plugin / rel, twin_plugin / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        done.append(f"seeded {rel}")
+    done.extend(_seed_surfaces(main_plugin, twin_plugin))
     # Broad on purpose, and narrow in scope: three known calls, and the reason
     # to catch is not the error but the state it leaves behind.
     try:

@@ -11,6 +11,7 @@ build declares). Anything else stops the run.
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -204,6 +205,53 @@ class TestGeneratedSurfaces(unittest.TestCase):
             self.assertNotIn("`tidy`", readme)
             self.assertNotIn("`draw`", readme, "draw is a full-only verb")
             self.assertIn("`connect`", readme)
+
+    def test_a_generated_twin_passes_its_own_validators(self):
+        # The one assertion that covers the whole surface. Three defects got
+        # through the per-file tests and only this caught them: a router
+        # pointing at deleted docs, a hand-typed verb count in prose no marker
+        # covers, and main's version copied into a repo at a different one.
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            _make_public(twin)
+            self._stale_skill(twin)
+            for rel in ("scripts/graph.py", "scripts/test_graph.py",
+                        "skills/adjudant/reference/draw.md"):
+                (twin / "adjudant" / rel).unlink()
+            rc = generate_twin.main(["--main-root", str(main_root),
+                                     "--twin", str(twin), "--apply"])
+            self.assertEqual(rc, 0)
+            out = subprocess.run(
+                [sys.executable, "adjudant/scripts/validate.py"],
+                cwd=twin, capture_output=True, text=True)
+            self.assertEqual(out.returncode, 0,
+                             "the generated twin fails its own validators:\n"
+                             + "\n".join(l for l in out.stdout.splitlines()
+                                         if "\u2717" in l or "FAIL" in l))
+
+    def test_the_twin_keeps_its_own_version(self):
+        # plugin.json's identity is restored and command-metadata's version is
+        # kept; SKILL.md's frontmatter carries a version too, and seeding it
+        # from main hands the twin a version its other three surfaces disagree
+        # with.
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            _make_public(twin)
+            skill = twin / "adjudant" / "skills" / "adjudant" / "SKILL.md"
+            skill.write_text(skill.read_text().replace(
+                "version: 3.0.0", "version: 1.0.0"))
+            pj = twin / "adjudant" / ".claude-plugin" / "plugin.json"
+            pj.write_text(json.dumps(
+                {**json.loads(pj.read_text()), "version": "1.0.0"}, indent=2) + "\n")
+            cm = twin / "adjudant" / "scripts" / "command-metadata.json"
+            cm.write_text(json.dumps(
+                {**json.loads(cm.read_text()), "version": "1.0.0"}, indent=2) + "\n")
+            generate_twin.main(["--main-root", str(main_root),
+                                "--twin", str(twin), "--apply"])
+            self.assertIn("version: 1.0.0", skill.read_text())
+            self.assertEqual(json.loads(pj.read_text())["version"], "1.0.0")
 
     def test_a_render_failure_is_reported_not_a_traceback(self):
         # The half-generated tree: copies land, the render raises, and the
