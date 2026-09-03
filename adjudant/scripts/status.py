@@ -388,6 +388,19 @@ def _board_status(project_dir: Path) -> dict:
     }
 
 
+def _legacy_breadcrumb(code_root: Optional[Path]) -> bool:
+    """A retired `.claude/obsidian-bridge` file with no `.claude/adjudant`.
+
+    v3 stopped resolving it (see _vault_walk.resolve_vault). Reporting it is
+    the replacement: the project was never connected, and the fix is one
+    command, so say that rather than quietly serving a stale path.
+    """
+    if code_root is None:
+        return False
+    claude = Path(code_root) / ".claude"
+    return (claude / "obsidian-bridge").is_file() and not (claude / "adjudant").is_file()
+
+
 def compliance(project_dir: Path, code_root: Optional[Path] = None,
                today: Optional[date] = None) -> dict:
     """Compliance half of the report: schema, counts, freshness, environment.
@@ -396,6 +409,9 @@ def compliance(project_dir: Path, code_root: Optional[Path] = None,
     contract and every downstream reader survive the merge.
     """
     brief = _read_brief(project_dir)
+    # The frontmatter mirror plus one fact about the project that is not in
+    # its frontmatter: `project` is where a reader looks for both.
+    brief["legacy_breadcrumb"] = _legacy_breadcrumb(code_root)
     counts = _folder_counts(project_dir)
     recent = {
         "last_session": _most_recent_dated(project_dir / "sessions"),
@@ -994,6 +1010,13 @@ def _bands(comp: dict, orient: dict, naming: list,
         wrong_now.append({
             "signal": "brief-missing",
             "detail": "the project has no brief.md; nothing declares what it is",
+        })
+    if brief.get("legacy_breadcrumb"):
+        wrong_now.append({
+            "signal": "legacy-breadcrumb",
+            "file": ".claude/obsidian-bridge",
+            "detail": ".claude/obsidian-bridge is a retired breadcrumb and is "
+                      "no longer resolved; run /adjudant connect",
         })
     for sample in schema.get("samples") or []:
         entry = {"signal": "schema-drift"}

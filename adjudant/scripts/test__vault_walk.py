@@ -1856,5 +1856,54 @@ class TestSchemaIsDerived(unittest.TestCase):
                       _template_schema.HEADINGS_FOR_TYPE)
 
 
+class TestLegacyBreadcrumbIsNotResolved(unittest.TestCase):
+    """The retired obsidian-bridge breadcrumb stops being a resolution step.
+
+    Its only migration partner was port.py, deleted in v3, so a resolved legacy
+    path led nowhere: adjudant would quietly work from a stale vault the user
+    was never told about. Reporting it is strictly more useful than silently
+    honouring it, and it is one of the differences keeping this module forked
+    between the two builds.
+    """
+
+    def _legacy_project(self, tmp: Path):
+        vault = tmp / "OldVault"
+        (vault / "projects").mkdir(parents=True)
+        (vault / "Home.md").write_text("---\ntype: vault-home\n---\n\n# Home\n")
+        project = tmp / "code"
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "obsidian-bridge").write_text(
+            f"vault: {vault}\nslug: legacy-proj\n")
+        return project, vault
+
+    def test_legacy_breadcrumb_alone_resolves_to_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, _vault = self._legacy_project(Path(tmp))
+            self.assertIsNone(resolve_vault(project))
+
+    def test_an_adjudant_breadcrumb_still_wins_normally(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project, _old = self._legacy_project(root)
+            new_vault = root / "NewVault"
+            (new_vault / "projects").mkdir(parents=True)
+            (new_vault / "Home.md").write_text("---\ntype: vault-home\n---\n\n# Home\n")
+            (project / ".claude" / "adjudant").write_text(
+                f"vault_path: {new_vault}\nvault_name: NewVault\nslug: demo\n")
+            self.assertEqual(resolve_vault(project), new_vault)
+
+    def test_the_docstring_offers_four_steps_and_disclaims_the_fifth(self):
+        # The docstring is the contract readers trust; a five-step docstring
+        # over a four-step function is the drift this whole plan removes.
+        # The numbered list is the contract: the prose under it is allowed to
+        # name the retired breadcrumb, because saying it is not a step is the
+        # whole point of keeping the paragraph.
+        doc = resolve_vault.__doc__
+        self.assertIn("4-step resolution:", doc)
+        steps = doc.split("\n\n")[0]
+        self.assertNotIn("obsidian-bridge", steps)
+        self.assertIn("is NOT a resolution step", doc)
+
+
 if __name__ == "__main__":
     unittest.main()

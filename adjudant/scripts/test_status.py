@@ -1802,3 +1802,76 @@ class TestCapabilityReporting(unittest.TestCase):
                 os.environ["PATH"] = old_path
             self.assertFalse(marker.exists(), "the probe was executed")
 
+
+
+class TestLegacyBreadcrumbIsReported(unittest.TestCase):
+    """v3 stopped resolving `.claude/obsidian-bridge`; status says so instead.
+
+    The resolver used to serve the retired breadcrumb's vault as step 4, with
+    no migration path left after `port` was sunset. Reporting beats resolving
+    only if the user actually sees it, so the flag is asserted here and the
+    line the user reads is asserted below it.
+    """
+
+    def test_legacy_breadcrumb_without_an_adjudant_one_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "obsidian-bridge").write_text("vault: /nope\n")
+            report = run_check(root, code_root=code)
+            self.assertTrue(report["project"]["legacy_breadcrumb"])
+
+    def test_no_legacy_breadcrumb_is_false_not_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "adjudant").write_text("slug: demo\n")
+            report = run_check(root, code_root=code)
+            self.assertFalse(report["project"]["legacy_breadcrumb"])
+
+    def test_a_connected_project_is_not_nagged_about_its_old_breadcrumb(self):
+        # Both files present is the normal post-migration state. Nagging there
+        # would train people to ignore the band that earns an interruption.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "brief.md", _CLEAN_BRIEF)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "obsidian-bridge").write_text("vault: /nope\n")
+            (code / ".claude" / "adjudant").write_text("slug: demo\n")
+            report = run_check(root, code_root=code)
+            self.assertFalse(report["project"]["legacy_breadcrumb"])
+
+    def test_the_user_is_told_to_run_connect(self):
+        # The outcome, not the flag: a retired breadcrumb reaches the one band
+        # that earns an interruption, and names the command that fixes it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = root / "vault" / "projects" / "active" / "demo"
+            _write(pdir / "brief.md", _CLEAN_BRIEF)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "obsidian-bridge").write_text("vault: /nope\n")
+            report = status.run(pdir, root / "vault", code_root=code,
+                                today="2026-09-01", sync=False)
+            hits = [e for e in report["wrong_now"]
+                    if e["signal"] == "legacy-breadcrumb"]
+            self.assertEqual(len(hits), 1, report["wrong_now"])
+            self.assertIn("/adjudant connect", hits[0]["detail"])
+
+    def test_a_connected_project_says_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdir = root / "vault" / "projects" / "active" / "demo"
+            _write(pdir / "brief.md", _CLEAN_BRIEF)
+            code = root / "code"
+            (code / ".claude").mkdir(parents=True)
+            (code / ".claude" / "adjudant").write_text("slug: demo\n")
+            report = status.run(pdir, root / "vault", code_root=code,
+                                today="2026-09-01", sync=False)
+            self.assertEqual([e for e in report["wrong_now"]
+                              if e["signal"] == "legacy-breadcrumb"], [])

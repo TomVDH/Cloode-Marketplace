@@ -671,13 +671,17 @@ def resolve_vault(
     project_root: Path,
     env_vault: Optional[str] = None,
 ) -> Optional[Path]:
-    """5-step resolution:
+    """4-step resolution:
       1. env var override (OB_VAULT or passed env_vault)
       2. .claude/adjudant breadcrumb `vault_path` field (absolute, current machine)
       3. .claude/adjudant breadcrumb `vault_name` field → standard locations
          under THIS machine's $HOME (cross-machine portability)
-      4. .claude/obsidian-bridge legacy breadcrumb `vault:` field
-      5. walk up parents for `Home.md` with `type: vault-home`
+      4. walk up parents for `Home.md` with `type: vault-home`
+
+    A retired `.claude/obsidian-bridge` breadcrumb is NOT a resolution step.
+    Its only migration partner was `port`, sunset in v3, so honouring it meant
+    working from a stale path with no way to migrate off it and nothing said.
+    `status` reports its presence instead: see project.legacy_breadcrumb.
     """
     # 1. Env var override (explicit param wins; OB_VAULT read when not passed).
     # Non-absolute values are rejected, not resolved: an override that means a
@@ -706,17 +710,7 @@ def resolve_vault(
             if cand.is_dir() and _looks_like_vault(cand):
                 return cand
 
-    # 4. legacy OB breadcrumb
-    ob = project_root / ".claude" / "obsidian-bridge"
-    if ob.is_file():
-        for line in ob.read_text().splitlines():
-            m = re.match(r"^\s*vault\s*:\s*(.+?)\s*$", line)
-            if m:
-                p = Path(m.group(1)).expanduser()
-                if p.is_dir():
-                    return p
-
-    # 5. Walk up for Home.md. The type must come from parsed FRONTMATTER —
+    # 4. Walk up for Home.md. The type must come from parsed FRONTMATTER —
     # a body-wide regex made any prose Home.md that merely mentions
     # `type: vault-home` up-tree become "the vault".
     cur = project_root.resolve()

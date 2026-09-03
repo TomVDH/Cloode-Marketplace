@@ -81,6 +81,11 @@ Results land under `synced.steps`; anything the phase could not do lands in
   `next_step`, `open_signals`, `status`
 - `compliance` — `project`, `counts`, `recent`, `handoff`, `drift_signal`,
   `board`, `capabilities`, `remember`, `status`, `schema`, `environment`
+  - `project` mirrors `brief.md`'s frontmatter and adds `legacy_breadcrumb`:
+    true when `.claude/obsidian-bridge` exists and `.claude/adjudant` does not.
+    The retired breadcrumb stopped being a vault-resolution step in v3, so the
+    project is not connected at all. It arrives in the `wrong_now` band as
+    `.claude/obsidian-bridge is a retired breadcrumb ... run /adjudant connect`
 - `capabilities` — the optional environments present on THIS machine, each
   `{id, line}`, in both halves. Render each `line` verbatim, one line, above the
   board line; render nothing when the list is empty. A build that declares no
