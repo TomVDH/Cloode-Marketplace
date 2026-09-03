@@ -127,26 +127,58 @@ class TestReferenceFilesExist(_PatchedTree):
         self.assertTrue(any("reference-files-exist" in f for f in r.failures))
 
 
-class TestVerbSurfaceParity(_PatchedTree):
+class TestVerbSurfacesGenerated(unittest.TestCase):
+    """8. Runs against the REAL tree: the fixture in _build() has no markers,
+    and a validator that only ever sees a fixture proves nothing about what
+    ships."""
 
-    def test_passes_when_all_surfaces_know_all_verbs(self):
-        r = Result()
-        validate.validate_verb_surface_parity(r)
-        self.assertEqual(r.failures, [])
+    def _copy_of_the_real_tree(self, tmp: str) -> Path:
+        import shutil as _sh
+        real = Path(__file__).resolve().parent.parent
+        fake = Path(tmp) / "adjudant"
+        _sh.copytree(real, fake, symlinks=True,
+                     ignore=_sh.ignore_patterns("__pycache__", ".pytest_cache"))
+        return fake
 
-    def test_fails_when_readme_missing_a_verb(self):
-        (self.plugin / "README.md").write_text("# adjudant\n\nverbs: connect\n")  # no 'check'
-        r = Result()
-        validate.validate_verb_surface_parity(r)
-        self.assertTrue(any("README.md missing verbs" in f for f in r.failures))
+    def _run_against(self, fake: Path) -> Result:
+        orig = validate.ROOT
+        validate.ROOT = fake
+        try:
+            r = Result()
+            validate.validate_verb_surfaces_generated(r)
+        finally:
+            validate.ROOT = orig
+        return r
 
-    def test_fails_on_wrong_spelled_out_verb_count(self):
-        # The escape class this validator exists for: "nine verbs" surviving a
-        # verb addition. Fixture has 2 verbs; claim nine.
-        (self.plugin / "README.md").write_text("# adjudant\n\nnine verbs: connect, check\n")
+    def test_the_shipped_surfaces_are_current(self):
         r = Result()
-        validate.validate_verb_surface_parity(r)
-        self.assertTrue(any("says 'nine verbs' but metadata has 2" in f for f in r.failures))
+        validate.validate_verb_surfaces_generated(r)
+        self.assertIn("verb-surfaces-generated", r.passes, r.failures)
+
+    def test_a_stale_surface_fails(self):
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            fake = self._copy_of_the_real_tree(tmp)
+            readme = fake / "README.md"
+            readme.write_text(readme.read_text().replace(
+                "| Verb | What it does |", "| Verb | What it once did |"))
+            r = self._run_against(fake)
+            self.assertTrue(any("verb-surfaces-generated" in f for f in r.failures))
+
+    def test_a_wrong_count_outside_every_region_still_fails(self):
+        # The escape class the old parity validator existed for, and the one
+        # generation cannot see: the README's opening paragraph names a verb
+        # count no marker covers.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            fake = self._copy_of_the_real_tree(tmp)
+            readme = fake / "README.md"
+            text = readme.read_text()
+            self.assertIn("with six verbs", text, "the prose sentence moved")
+            readme.write_text(text.replace("with six verbs", "with nine verbs"))
+            r = self._run_against(fake)
+            self.assertTrue(any("says 'nine verbs' but this build ships 6" in f
+                                for f in r.failures), r.failures)
 
 
 class TestCommandMetadataCoherence(_PatchedTree):

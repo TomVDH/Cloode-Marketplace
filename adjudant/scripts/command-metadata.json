@@ -4,6 +4,8 @@
   "verbs": [
     {
       "name": "connect",
+      "audience": "all",
+      "blurb": "onboards a project and asks where it lives",
       "description": "Link a project to its vault. Infers slug, type, and status, confirms one card of required fields, applies with a receipt. Idempotent.",
       "argumentHint": "(no args)",
       "reference": "reference/connect.md",
@@ -11,6 +13,8 @@
     },
     {
       "name": "status",
+      "audience": "all",
+      "blurb": "reports where you are, what is wrong, and what is stale",
       "description": "Make derived state current (brief date, handoff, index row), then report in three bands: what is wrong now, what is going stale, and what is worth a look.",
       "argumentHint": "[vault|repo|all] [--no-sync]",
       "reference": "reference/status.md",
@@ -18,6 +22,8 @@
     },
     {
       "name": "clean",
+      "audience": "all",
+      "blurb": "removes what the vault does not need",
       "description": "Cleanup sweep: indexes, wikilink form, updated dates, off-schema frontmatter. Previews then applies, and never creates a vault file. --deep adds the structural pass. [vault|repo|all] adds repo symlinks.",
       "argumentHint": "[vault|repo|all] [--deep] [--folder <path>]",
       "reference": "reference/clean.md",
@@ -25,6 +31,8 @@
     },
     {
       "name": "dream",
+      "audience": "all",
+      "blurb": "reads the prose and reports what only judgement finds",
       "description": "Semantic refresh, the deepest tier: surfaces stale, superseded, redundant, or orphaned content as scored candidates you judge before anything changes. --folder scopes the walk to one subtree.",
       "argumentHint": "[--folder <path>]",
       "reference": "reference/dream.md",
@@ -32,17 +40,68 @@
     },
     {
       "name": "draw",
+      "audience": "full",
+      "blurb": "builds diagrams, canvases, and bases",
       "description": "Create a canvas, base, or mermaid diagram, either hand-authored or generated from vault data.",
       "argumentHint": "<canvas|base|diagram> <name|type>",
       "reference": "reference/draw.md",
-      "weight": "light"
+      "weight": "light",
+      "files": [
+        "scripts/graph.py",
+        "scripts/test_graph.py",
+        "skills/adjudant/reference/draw.md"
+      ]
     },
     {
       "name": "board",
+      "audience": "all",
+      "blurb": "runs a self-hosted kanban",
       "description": "Scaffold a self-hosted kanban seeded from tasks/: drag to move, saved to disk. Re-seeding keeps your dragged cards. Use --project SLUG or --all.",
       "argumentHint": "[scaffold|serve|status] [--project SLUG|--all] [--from-tasks] [--force]",
       "reference": "reference/board.md",
       "weight": "light"
+    }
+  ],
+  "content_references": [
+    {
+      "path": "reference/content-canvas.md",
+      "label": "`.canvas` files",
+      "audience": "full"
+    },
+    {
+      "path": "reference/content-bases.md",
+      "label": "`.base` files",
+      "audience": "all"
+    },
+    {
+      "path": "reference/content-mermaid.md",
+      "label": "mermaid diagrams (syntax)",
+      "audience": "full"
+    },
+    {
+      "path": "reference/mermaid-generation-rules.md",
+      "label": "mermaid generation discipline (always applies when producing fences)",
+      "audience": "full"
+    },
+    {
+      "path": "reference/content-markdown.md",
+      "label": "Obsidian-flavoured markdown (callouts, embeds, wikilinks)",
+      "audience": "all"
+    },
+    {
+      "path": "reference/content-clipper.md",
+      "label": "Web Clipper templates",
+      "audience": "all"
+    },
+    {
+      "path": "reference/content-cli.md",
+      "label": "Obsidian CLI",
+      "audience": "all"
+    },
+    {
+      "path": "reference/repo-standards.md",
+      "label": "code-repo conventions (the `status`/`clean` `[repo|all]` target)",
+      "audience": "all"
     }
   ]
 }

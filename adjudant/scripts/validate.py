@@ -11,7 +11,7 @@ Validators:
    5. plugin-version-set     — .claude-plugin/plugin.json has a non-empty version
    6. version-consistency     — plugin.json / command-metadata.json / SKILL.md (+ marketplace when present) versions all match
    7. reference-files-exist   — every reference/*.md named in command-metadata.json and the SKILL.md router exists
-   8. verb-surface-parity     — every verb name appears in plugin.json / README.md / marketplace description; spelled-out verb counts match
+   8. verb-surfaces-generated — the ten verb-derived doc surfaces are rendered from command-metadata.json, not typed twice
    9. reference-doc-links     — every relative markdown link inside reference/*.md resolves on disk
   10. verb-description-length — command-metadata verb descriptions stay router-line short (≤ 220 chars)
   11. repo-helper-parity      — repo_walk/repo_scan/repo_tidy each exist with a matching test_*.py
@@ -41,7 +41,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _profile  # noqa: E402
 import _voice  # noqa: E402
+import render_verb_surfaces  # noqa: E402
 from _vault_walk import FIELD_SCHEMA, PROJECT_ZONES  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -310,53 +312,75 @@ def validate_reference_files_exist(r: Result) -> None:
     r.add_pass(name)
 
 
-_NUMBER_WORDS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
-    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
-}
+# Word to index. render_verb_surfaces owns the language table; this inverts it,
+# so the two never disagree about what "six" means.
+_NUMBER_WORDS = {word: n for n, word
+                 in enumerate(render_verb_surfaces.NUMBER_WORDS) if n}
+
+_VERB_COUNT_RE = re.compile(r"\b(\w+)\s+verbs\b", re.I)
 
 
-def validate_verb_surface_parity(r: Result) -> None:
-    """The doc surfaces that enumerate verbs must all know every verb: each verb
-    name appears in plugin.json's description, the plugin README, and the
-    marketplace entry (when present); and any spelled-out '<N> verbs' count
-    matches command-metadata.json. Catches the 'nine verbs' escape class."""
-    name = "verb-surface-parity"
-    meta_file = _load_command_metadata()
-    try:
-        verbs = [v["name"] for v in json.loads(meta_file.read_text()).get("verbs", [])]
-    except (OSError, json.JSONDecodeError) as e:
-        r.add_fail(name, f"could not read command-metadata.json: {e}")
-        return
+def _miscounted_surfaces(expected: int) -> list[str]:
+    """Spelled-out "<N> verbs" claims in prose no marker covers.
+
+    The generated regions are right by construction; the sentences around them
+    are not. adjudant's README says "with six verbs" in an opening paragraph
+    outside every region, and the marketplace's own AGENTS.md said eleven verbs
+    when there were thirteen. This is the half of the old parity validator that
+    generation does not replace, so it stays.
+    """
     surfaces: dict[str, str] = {}
+    readme = ROOT / "README.md"
+    if readme.is_file():
+        surfaces["README.md"] = readme.read_text()
     pj = ROOT / ".claude-plugin" / "plugin.json"
     if pj.is_file():
         try:
             surfaces["plugin.json"] = json.loads(pj.read_text()).get("description", "")
         except json.JSONDecodeError:
             surfaces["plugin.json"] = ""
-    readme = ROOT / "README.md"
-    if readme.is_file():
-        surfaces["README.md"] = readme.read_text()
     mk = ROOT.parent / ".claude-plugin" / "marketplace.json"
     if mk.is_file():
         try:
-            entry = next((p for p in json.loads(mk.read_text()).get("plugins", []) if p.get("name") == "adjudant"), None)
+            entry = next((p for p in json.loads(mk.read_text()).get("plugins", [])
+                          if p.get("name") == "adjudant"), None)
             if entry is not None:
                 surfaces["marketplace.json"] = entry.get("description", "")
         except json.JSONDecodeError:
             pass
     problems: list[str] = []
     for surface, text in surfaces.items():
-        missing = [v for v in verbs if v not in text]
-        if missing:
-            problems.append(f"{surface} missing verbs: {missing}")
-        for word, n in ((m.group(1).lower(), _NUMBER_WORDS[m.group(1).lower()])
-                        for m in re.finditer(r"\b(\w+)\s+verbs\b", text, re.I)
-                        if m.group(1).lower() in _NUMBER_WORDS):
-            if n != len(verbs):
-                problems.append(f"{surface} says '{word} verbs' but metadata has {len(verbs)}")
+        for m in _VERB_COUNT_RE.finditer(text):
+            word = m.group(1).lower()
+            if word in _NUMBER_WORDS and _NUMBER_WORDS[word] != expected:
+                problems.append(
+                    f"{surface} says '{word} verbs' but this build ships {expected}")
+    return problems
+
+
+def validate_verb_surfaces_generated(r: Result) -> None:
+    """8. verb-surfaces-generated — the ten verb-derived doc surfaces are
+    rendered from command-metadata.json, not typed twice.
+
+    This used to compare copies: it checked that each verb name appeared in
+    plugin.json, the README and the marketplace entry, and that any spelled-out
+    "<N> verbs" agreed. Comparing copies is the weaker test, and it still let
+    the marketplace's own AGENTS.md say eleven verbs when there were thirteen.
+    Now there is one copy, and this fails when it is stale.
+    """
+    name = "verb-surfaces-generated"
+    try:
+        stale = render_verb_surfaces.apply(ROOT, check=True)
+        meta = render_verb_surfaces.load_metadata(ROOT)
+        expected = len(render_verb_surfaces.verbs_for(meta, _profile.audience()))
+    except (render_verb_surfaces.SurfaceError, _profile.ProfileError) as exc:
+        r.add_fail(name, f"could not render: {exc}")
+        return
+    problems: list[str] = []
+    if stale:
+        problems.append("stale surfaces (run scripts/render_verb_surfaces.py): "
+                        + ", ".join(Path(p).name for p in stale))
+    problems.extend(_miscounted_surfaces(expected))
     if problems:
         r.add_fail(name, "; ".join(problems))
         return
@@ -985,7 +1009,7 @@ def main() -> int:
     validate_plugin_version_set(r)
     validate_version_consistency(r)
     validate_reference_files_exist(r)
-    validate_verb_surface_parity(r)
+    validate_verb_surfaces_generated(r)
     validate_reference_doc_links(r)
     validate_verb_description_length(r)
     validate_repo_helper_parity(r)

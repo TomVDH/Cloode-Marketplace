@@ -20,16 +20,18 @@ Then link your project once:
 /adjudant connect
 ```
 
+<!-- VERBS:TABLE:START -->
 ## The six verbs
 
 | Verb | What it does |
 |---|---|
-| `/adjudant connect` | Link a project to its vault. Run once per project. |
-| `/adjudant status [vault\|repo\|all]` | Make derived state current (brief date, handoff, project index row), then report in three bands: wrong now, going stale, worth a look. `--no-sync` for a read-only pass; `repo`/`all` also audit repo structure. |
-| `/adjudant clean [vault\|repo\|all] [--deep]` | Cleanup: indexes, wikilinks, frontmatter. Preview then apply. It rewrites and removes; it never creates a vault file. `--deep` adds the structural pass. |
-| `/adjudant dream` | Semantic refresh: flags stale, contradictory, or orphaned content for you to judge. |
-| `/adjudant draw <canvas\|base\|diagram> <name>` | Create a canvas, base, or mermaid diagram. |
-| `/adjudant board [scaffold\|serve\|status]` | Scaffold a self-hosted kanban seeded from your tasks. |
+| `/adjudant connect` | Onboards a project and asks where it lives. |
+| `/adjudant status [vault\|repo\|all] [--no-sync]` | Reports where you are, what is wrong, and what is stale. |
+| `/adjudant clean [vault\|repo\|all] [--deep] [--folder <path>]` | Removes what the vault does not need. |
+| `/adjudant dream [--folder <path>]` | Reads the prose and reports what only judgement finds. |
+| `/adjudant draw <canvas\|base\|diagram> <name\|type>` | Builds diagrams, canvases, and bases. |
+| `/adjudant board [scaffold\|serve\|status] [--project SLUG\|--all] [--from-tasks] [--force]` | Runs a self-hosted kanban. |
+<!-- VERBS:TABLE:END -->
 
 The two cleanup verbs form a ladder by risk:
 

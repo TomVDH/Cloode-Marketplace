@@ -1,6 +1,6 @@
 ---
 name: adjudant
-description: Operate an Obsidian vault from a code project. `/adjudant {connect|status|clean|dream|draw|board}` — project init, schema-enforced writes, two-tier cleanup (clean, then dream), one report that makes derived state current and then names what is wrong now (status), diagrams and canvases (draw), and a self-hosted kanban board. Also fires whenever decisions, sessions, or notes are written into a linked vault.
+description: Operate an Obsidian vault from a code project. `/adjudant {connect|status|clean|dream|draw|board}` — connect onboards a project and asks where it lives; status reports where you are, what is wrong, and what is stale; clean removes what the vault does not need; dream reads the prose and reports what only judgement finds; draw builds diagrams, canvases, and bases; board runs a self-hosted kanban. Also fires whenever decisions, sessions, or notes are written into a linked vault.
 version: 3.0.0
 user-invocable: true
 argument-hint: "[connect|status|clean|dream|draw|board] [args]"
@@ -9,19 +9,25 @@ license: MIT
 
 # Adjudant
 
-Vault editor/writer and project initializer. One skill, one command, six verbs. Pairs with hookify for universal drift-defense hooks.
+<!-- VERBS:SUMMARY:START -->
+Vault editor/writer and project initializer. One skill, one command, six verbs.
+<!-- VERBS:SUMMARY:END -->
+
+Pairs with hookify for universal drift-defense hooks.
 
 ## Verb router
 
+<!-- VERBS:ROUTER:START -->
 | Verb | Loads | Purpose |
 |---|---|---|
-| `connect` | `reference/connect.md` | Link a project to its vault: breadcrumb, AGENTS.md+CLAUDE.md, vault scaffold, session note, .gitignore. Idempotent |
-| `status` | `reference/status.md` | Make derived state current (brief date, handoff mirror, project index row), then report in three bands: `wrong_now`, `going_stale`, `worth_a_look`. Carries orientation (where you left off, git and dev-server state), schema drift, §4 naming drift, and the advisor pulse. `--no-sync` for a read-only pass; `[vault\|repo\|all]` also audits repo structure |
-| `clean` | `reference/clean.md` | Cleanup sweep: indexes, wikilink form, `updated:`, off-schema frontmatter. Two-phase preview → apply, and it never creates a vault file. `--deep` adds the structural pass (folder shape, types, naming, broken wikilinks); `[vault\|repo\|all]` adds repo symlinks |
-| `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: flags stale, superseded, redundant, and orphaned content as scored candidates Claude judges before anything changes |
-| `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, hand-authored or generated from vault data |
-| `board` | `reference/board.md` | Scaffold a self-hosted kanban seeded from `tasks/`: drag to move, saved to disk, re-seeds without clobbering dragged cards. `--project <slug>` or `--all` |
+| `connect` | `reference/connect.md` | Link a project to its vault. Infers slug, type, and status, confirms one card of required fields, applies with a receipt. Idempotent. |
+| `status` | `reference/status.md` | Make derived state current (brief date, handoff, index row), then report in three bands: what is wrong now, what is going stale, and what is worth a look. |
+| `clean` | `reference/clean.md` | Cleanup sweep: indexes, wikilink form, updated dates, off-schema frontmatter. Previews then applies, and never creates a vault file. --deep adds the structural pass. [vault\|repo\|all] adds repo symlinks. |
+| `dream` | `reference/dream.md` | Semantic refresh, the deepest tier: surfaces stale, superseded, redundant, or orphaned content as scored candidates you judge before anything changes. --folder scopes the walk to one subtree. |
+| `draw` | `reference/draw.md` | Create a canvas, base, or mermaid diagram, either hand-authored or generated from vault data. |
+| `board` | `reference/board.md` | Scaffold a self-hosted kanban seeded from tasks/: drag to move, saved to disk. Re-seeding keeps your dragged cards. Use --project SLUG or --all. |
 | _(internals)_ | `reference/internals.md` | Not a verb. Hook wiring, verb-to-helper map, environment probes. Load only when the question is about adjudant's own machinery |
+<!-- VERBS:ROUTER:END -->
 
 When a verb is invoked, load **only** the matching reference file. Do not bring all reference files into context.
 
@@ -41,9 +47,12 @@ dream        = content/knowledge/memory refresh (semantic; judgment-heavy)
 
 Verb weights live in `scripts/command-metadata.json` (`weight: light | medium | heavy`). The estimate approximates what Claude will read back into context; helpers compute it with a stat-only walk (`bytes // 4`).
 
-- **Heavy verbs** (`dream`, `clean --deep`, `status all`): run the backing helper with `--estimate-only` FIRST. If `cost.warn` is true, stop and show the numbers ("dream would pull ~85k tokens into context: 210 files, 1.1 MB prose") and ask the user to choose: proceed, scope down (offer only where the verb has a real scoping flag), or abort. Proceed only on explicit confirmation. If `warn` is false, run normally and include the estimate as one line in the rendered output.
-- **Medium verbs** (`status`, `clean`): no pre-flight. The helper's JSON carries a `cost` block; render it as one line ("cost: ~12k tokens, 96 files").
+<!-- VERBS:WEIGHTS:START -->
+- **Heavy verbs** (`dream`): run the backing helper with `--estimate-only` FIRST. If `cost.warn` is true, stop, show the numbers, and ask the user to proceed, scope down, or abort. Proceed only on explicit confirmation. If `warn` is false, run normally and include the estimate as one line.
+- **Medium verbs** (`status`, `clean`): no pre-flight. The helper's JSON carries a `cost` block; render it as one line.
 - **Light verbs** (`connect`, `draw`, `board`): no estimate; the static weight badge is enough.
+<!-- VERBS:WEIGHTS:END -->
+- The heavy list above is by verb weight. Two flag-scoped forms escalate into it and get the same `--estimate-only` pre-flight: `clean --deep` and `status all`.
 - `status all` sums two estimates: `status.py --estimate-only` plus `repo_scan.py --estimate-only`.
 - If an estimate cannot be computed (unresolvable vault or breadcrumb), treat it as `warn: true` and ask before proceeding.
 - Threshold default is the build profile's `cost_warn_tokens` (`scripts/build-profile.json`); per-project override via `cost_warn_tokens:` in `.claude/adjudant`.
@@ -64,6 +73,7 @@ The `voice-lexicon` validator enforces the machine-checkable subset.
 
 For specialized content types, load the matching reference on demand:
 
+<!-- VERBS:CONTENT-REFS:START -->
 - `reference/content-canvas.md` — `.canvas` files
 - `reference/content-bases.md` — `.base` files
 - `reference/content-mermaid.md` — mermaid diagrams (syntax)
@@ -72,6 +82,7 @@ For specialized content types, load the matching reference on demand:
 - `reference/content-clipper.md` — Web Clipper templates
 - `reference/content-cli.md` — Obsidian CLI
 - `reference/repo-standards.md` — code-repo conventions (the `status`/`clean` `[repo|all]` target)
+<!-- VERBS:CONTENT-REFS:END -->
 
 ## Templates
 
