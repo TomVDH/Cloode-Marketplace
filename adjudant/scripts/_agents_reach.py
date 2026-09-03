@@ -29,15 +29,32 @@ from typing import Optional
 # code it sits beside. Reported, never enforced.
 AGENTS_STALE_COMMITS = 30
 
-# Extensions that make a bare filename a path even with no slash in it.
+# Extensions that make a token file-shaped. Wide on purpose: the parent-exists
+# rule below carries the precision, so a narrow list here only created blind
+# spots. The old fifteen entries could not see Go, Rust, Ruby, Java, C, JSX,
+# SCSS, SQL, CSV, SVG, PDF or XML, which is most of most repositories.
 _PATH_EXTS = (
-    ".py", ".sh", ".md", ".json", ".yaml", ".yml", ".toml", ".txt",
-    ".js", ".ts", ".html", ".css", ".cfg", ".ini", ".lock",
+    ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat",
+    ".md", ".markdown", ".rst", ".txt", ".adoc",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
+    ".lock", ".xml", ".csv", ".tsv", ".sql", ".graphql", ".proto",
+    ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
+    ".html", ".htm", ".css", ".scss", ".sass", ".less",
+    ".go", ".rs", ".rb", ".java", ".kt", ".swift", ".c", ".h", ".cc",
+    ".cpp", ".hpp", ".cs", ".php", ".pl", ".lua", ".r", ".scala", ".ex",
+    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".ico",
 )
 
+# Extensionless filenames a repository really does carry.
+_BARE_FILENAMES = {
+    "Makefile", "Dockerfile", "Justfile", "Rakefile", "Gemfile", "Procfile",
+    "LICENSE", "NOTICE", "CODEOWNERS", "Brewfile", "Vagrantfile",
+}
+
 # Characters that mark a token as a pattern, a variable or a placeholder
-# rather than a path on this disk.
-_NOT_A_PATH = set("<>{}*?|$\"'()[]")
+# rather than a path on this disk. The ellipsis is here because a document
+# abbreviates a long path with it: `~/…/Projects/IDE/` is prose, not a claim.
+_NOT_A_PATH = set("<>{}*?|$\"'()[]…")
 
 # Never walked when git cannot list the tree.
 _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv"}
@@ -48,92 +65,165 @@ _FENCE_RE = re.compile(r"^\s*```")
 
 
 def _looks_like_a_path(token: str) -> bool:
-    """True when a token names something that could exist on this disk.
+    """True when a token is shaped like a file or directory name.
 
-    A slash is NOT enough. Accepting any token with a slash mined English
-    prose for filenames: `editor/writer`, `push/PR`, `Crew/persona` and the
-    repo slug `TomVDH/toolshed` were all reported as missing files, and a
-    leading slash made the command `/adjudant` look like an absolute path.
-    Together with root-only resolution that put this check at 61% wrong on
-    this repo's own AGENTS.md, in the band reserved for what is wrong now.
+    Shape alone can never decide whether a token is a path CLAIM. `Three.js`
+    and `Vue.js` are libraries; `npm test -- auth.spec.ts` is a command;
+    `skill-name/SKILL.md` appears in a document that says the file must NOT be
+    there. Measured on 35 real AGENTS.md files, deciding on shape alone
+    reported 304 findings of which at least a third named things that exist.
 
-    So a token is path-shaped only when it says so: an explicit relative or
-    home prefix, a trailing slash, or a file extension on its last component.
-    A bare directory name written without a trailing slash is not checked.
-    Under-checking a directory costs one missed finding; over-reporting cost
-    the whole band its credibility.
+    So this function only asks "could this be a filename", and `agents_reach`
+    decides whether it is a claim, by requiring the parent directory to exist.
     """
-    t = token.strip().rstrip(".,;:").rstrip("/")
+    t = token.strip().rstrip(".,;:")
     if not t or t.startswith("-"):
         return False
-    if "://" in t or t in (".", ".."):
+    # Test the URL scheme BEFORE stripping slashes: rstrip("/") turned
+    # `file://` into `file:` and let it through as a path.
+    if "://" in t:
+        return False
+    # A command is not a path. `go test -- x/y.sh` and `bash x/y.sh` both end
+    # in something path-shaped and can never resolve. But a real path may
+    # contain spaces -- this very repository lives under "ZenaTech CC Space" --
+    # so a space is allowed only behind an explicit path prefix. A command
+    # begins with its program name; a path with spaces is written absolute.
+    if any(c.isspace() for c in t) and not t.startswith(("/", "~/", "./", "../")):
+        return False
+    t = t.rstrip("/")
+    if not t or t in (".", ".."):
         return False
     if any(c in _NOT_A_PATH for c in t):
         return False
     if t.startswith(("./", "../", "~/")):
         return True
-    if token.strip().endswith("/"):
+    # A leading slash is usually a ROUTE, not a claim about this disk.
+    # `/hero.html` and `/adjudant` were both checked at the filesystem root,
+    # which is how one static site scored 74% false. A real absolute path is
+    # told apart by asking the disk: its first component is a directory at /.
+    if t.startswith("/"):
+        first = t.split("/", 2)[1] if len(t.split("/", 2)) > 1 else ""
+        try:
+            if not first or not Path("/" + first).is_dir():
+                return False
+        except OSError:
+            return False
         return True
-    return t.split("/")[-1].endswith(_PATH_EXTS)
+    last = t.split("/")[-1]
+    if not last or last.startswith("."):
+        # A dotfile is a real name (.env, .gitignore) but only with a parent
+        # or an explicit prefix, both handled above.
+        return "/" in t
+    return last.endswith(_PATH_EXTS) or last in _BARE_FILENAMES or token.strip().endswith("/")
 
 
-# Beyond this many tracked files the basename index is not worth building, and
-# resolution falls back to the repo root alone. No repo that keeps an AGENTS.md
-# a person maintains by hand comes near it.
+# Beyond this many tracked files the index is not worth building. No repo that
+# keeps an AGENTS.md a person maintains by hand comes near it.
 _INDEX_FILE_CAP = 50_000
 
+# A copy of a path is not the path. Vendored trees, fixtures and installed
+# packages all preserve the tail of a real path, which is exactly why they
+# satisfied a claim about a file that was not there.
+_NOT_A_SOURCE_OF_TRUTH = {
+    "node_modules", "vendor", "third_party", "thirdparty", "fixtures",
+    "__pycache__", ".venv", "venv", "site-packages", "dist", "build",
+    ".git", ".tox", ".mypy_cache", ".pytest_cache",
+}
 
-def _repo_index(code_root: Path) -> dict:
-    """Every tracked path, grouped by last component.
 
-    A document names a file the way a reader would find it. Sometimes that is
-    the bare name, `marketplace.json`, which lives in `.claude-plugin/`.
-    Sometimes it is relative to a directory the surrounding prose established:
-    `scripts/validate.py`, written under a heading about plugin layout, means
-    `adjudant/scripts/validate.py`. Both are true statements, and resolving
-    them against the repo root alone called both of them false.
+def _toplevel(code_root: Path) -> Path:
+    """The git root, or code_root outside a repository.
 
-    Grouping by last component keeps this O(files) rather than O(files x depth).
+    `git ls-files` reports paths relative to the DIRECTORY IT RUNS IN, not the
+    repository root. Run from a subdirectory it strips the prefix a reader
+    naturally writes, so `hubspot-crm/nightly` failed to resolve while the
+    directory sat right there. Eight worktrees, 100% wrong.
     """
-    listing = _git(code_root, "ls-files", "-z")
+    out = _git(code_root, "rev-parse", "--show-toplevel")
+    if not out:
+        return code_root
+    try:
+        top = Path(out)
+        return top if top.is_dir() else code_root
+    except (OSError, ValueError):
+        return code_root
+
+
+def _repo_index(root: Path) -> Optional[dict]:
+    """Every real path under `root`, grouped by last component.
+
+    Returns None when no index could be built. None means SILENCE, not a
+    fallback: resolving against the root alone was measured at 61% wrong, so
+    reverting to it when the index is unavailable would quietly restore the
+    defect this replaced.
+    """
+    listing = _git(root, "ls-files", "-z")
+    rels = []
     if listing is not None:
         rels = [r for r in listing.split("\0") if r]
     else:
-        rels = []
-        for f in code_root.rglob("*"):
-            if any(part in _SKIP_DIRS for part in f.parts):
-                continue
-            if not f.is_file():
-                continue
-            rels.append(f.relative_to(code_root).as_posix())
-            if len(rels) > _INDEX_FILE_CAP:
-                return {}
+        try:
+            for f in root.rglob("*"):
+                if any(part in _NOT_A_SOURCE_OF_TRUTH for part in f.parts):
+                    continue
+                if not f.is_file():
+                    continue
+                rels.append(f.relative_to(root).as_posix())
+                if len(rels) > _INDEX_FILE_CAP:
+                    return None
+        except OSError:
+            return None
     if len(rels) > _INDEX_FILE_CAP:
-        return {}
+        return None
     index: dict = {}
     for rel in rels:
         parts = tuple(rel.split("/"))
-        # Index the file and every directory above it, so a doc may name
-        # either. `git ls-files` reports files only.
+        if any(seg in _NOT_A_SOURCE_OF_TRUTH for seg in parts):
+            continue
         for depth in range(1, len(parts) + 1):
             head = parts[:depth]
             index.setdefault(head[-1], set()).add(head)
     return index
 
 
-def _resolves_in_repo(token: str, index: dict) -> bool:
-    """True when some path in the repo ends with this token, component-wise.
+def _resolves(token: str, root: Path, index: dict) -> bool:
+    """True when some real path under `root` ends with this token.
 
-    Component-wise is what keeps the check honest. A script that moved from
-    `scripts/build.sh` to `tools/build.sh` still fails to resolve, because the
-    document's claim about where it lives is what went stale.
+    Every candidate is confirmed against the FILESYSTEM. `git ls-files` reads
+    the index, so a file deleted but not yet staged still appeared there, and
+    the suffix match then overrode a correct filesystem answer.
     """
     parts = tuple(p for p in token.split("/") if p and p != ".")
     if not parts:
         return False
     for cand in index.get(parts[-1], ()):
         if len(cand) >= len(parts) and cand[-len(parts):] == parts:
-            return True
+            if (root / Path(*cand)).exists():
+                return True
+    return False
+
+
+def _parent_exists(token: str, roots: tuple) -> bool:
+    """True when the directory this token claims to sit in is really there.
+
+    This is what makes a token a CLAIM rather than a word. `Three.js` names no
+    directory. `push/PR` names `push/`, which does not exist. A document
+    saying a file must NOT be at `skill-name/SKILL.md` names no such folder.
+    But `scripts/enforce-tags.sh`, in a repo that has `scripts/`, is a claim
+    about a real place, and that is the finding worth making.
+
+    The cost is stated plainly: a claim whose whole parent tree is gone is not
+    reported. Reporting it would mean reporting every prose token too.
+    """
+    head = token.rsplit("/", 1)[0] if "/" in token else ""
+    if not head:
+        return False
+    for root in roots:
+        try:
+            if (root / head).is_dir():
+                return True
+        except OSError:
+            continue
     return False
 
 
@@ -206,19 +296,26 @@ def agents_reach(code_root: Path) -> dict:
 
     missing: list = []
     tokens = named_paths(text)
-    index = _repo_index(code_root)
+    top = _toplevel(code_root)
+    roots = (code_root,) if top == code_root else (code_root, top)
+    index = _repo_index(top)
     for lineno, token in tokens:
-        candidate = Path(token).expanduser()
-        if candidate.is_absolute() or token.startswith("~"):
-            # An absolute or home path names one place and only that place.
-            if candidate.exists():
-                continue
-            missing.append({"line": lineno, "token": token})
+        if token.startswith("~") or token.startswith("/"):
+            # A home or absolute path names one place and only that place, so
+            # there is nothing to resolve and nothing to infer. The shape test
+            # has already rejected site routes, which is what made checking a
+            # leading slash unsafe before.
+            if not Path(token).expanduser().exists():
+                missing.append({"line": lineno, "token": token})
             continue
-        if (code_root / candidate).exists():
+        if index is None:
+            continue          # silence beats guessing; see _repo_index
+        if any((r / token).exists() for r in roots):
             continue
-        if _resolves_in_repo(token, index):
+        if _resolves(token, top, index):
             continue
+        if not _parent_exists(token, roots):
+            continue          # names no location, so makes no checkable claim
         missing.append({"line": lineno, "token": token})
 
     last_sha = _git(code_root, "log", "-1", "--format=%H", "--", "AGENTS.md")

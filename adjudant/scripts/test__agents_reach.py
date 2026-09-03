@@ -194,25 +194,141 @@ class TestPrecisionBeatsRecall(unittest.TestCase):
                              "the path resolves under a plugin directory")
 
     def test_a_genuinely_missing_script_is_still_reported(self):
-        # The check must not go silent to buy its precision.
+        # The check must not go silent to buy its precision. This is the case
+        # the design doc names: AGENTS.md describing a rule as enforced by a
+        # script that is not there.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "other.sh").write_text("#\n")
             (root / "AGENTS.md").write_text(
                 "Enforced mechanically by `scripts/enforce-tags.sh`.\n")
             missing = [m["token"] for m in agents_reach(root)["missing"]]
             self.assertEqual(missing, ["scripts/enforce-tags.sh"])
 
+    def test_the_stated_cost_a_vanished_parent_is_not_reported(self):
+        # The limit, asserted so it stays visible rather than being discovered
+        # later. When the whole parent directory is gone the token is
+        # indistinguishable from a hypothetical path in prose, and one real
+        # CLAUDE.md produced 24 such false findings in a single file, including
+        # two where the document said the file must NOT exist. Reporting this
+        # case back would reopen that.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text(
+                "Enforced by `scripts/enforce-tags.sh`.\n"
+                "Never put a file at `skill-name/SKILL.md`.\n")
+            self.assertEqual(agents_reach(root)["missing"], [],
+                             "no parent directory, so no checkable claim")
+
     def test_a_script_that_moved_is_still_reported(self):
-        # Same basename, different parent. The doc's claim about WHERE it
-        # lives is false, and that is the drift worth reporting.
+        # Same basename, different parent. The doc claim about WHERE it lives
+        # is false, and that is the drift worth reporting.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "tools").mkdir()
             (root / "tools" / "build.sh").write_text("#\n")
+            (root / "scripts").mkdir()
+            (root / "scripts" / "still-here.sh").write_text("#\n")
             (root / "AGENTS.md").write_text("Run `scripts/build.sh`.\n")
             missing = [m["token"] for m in agents_reach(root)["missing"]]
             self.assertEqual(missing, ["scripts/build.sh"],
                              "a suffix match is component-wise, not basename-wise")
+
+    def test_a_vendored_copy_does_not_satisfy_a_claim(self):
+        # node_modules, vendor and fixtures all preserve the tail of a real
+        # path, which is why a suffix match alone accepted them as proof.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for junk in ("node_modules/pkg", "vendor/thirdparty", "tests/fixtures"):
+                d = root / junk / "scripts"
+                d.mkdir(parents=True)
+                (d / "build.sh").write_text("#\n")
+            (root / "scripts").mkdir()
+            (root / "scripts" / "still-here.sh").write_text("#\n")
+            (root / "AGENTS.md").write_text("Run `scripts/build.sh`.\n")
+            missing = [m["token"] for m in agents_reach(root)["missing"]]
+            self.assertEqual(missing, ["scripts/build.sh"])
+
+    def test_a_route_is_not_checked_at_the_filesystem_root(self):
+        # `/hero.html` in a static site AGENTS.md was tested at /hero.html.
+        # One real project scored 74% false entirely on this.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text(
+                "Landing is `/hero.html`, the shelf is `/shelf.html`, "
+                "and the command is `/adjudant`.\n")
+            self.assertEqual(agents_reach(root)["missing"], [])
+
+    def test_a_library_name_is_not_a_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text(
+                "```\nBuilt with Three.js and Vue.js on Node.js\n```\n")
+            self.assertEqual(agents_reach(root)["missing"], [])
+
+    def test_a_shell_command_is_not_a_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text(
+                "Run `npm test -- auth.spec.ts` then `bash tools/check.sh`.\n")
+            self.assertEqual(agents_reach(root)["missing"], [])
+
+    def test_a_path_containing_spaces_is_still_a_path(self):
+        # This repository lives under "ZenaTech CC Space". Rejecting every
+        # token with a space to kill shell commands would have blinded the
+        # check to its own home.
+        import _agents_reach as ar
+        self.assertTrue(ar._looks_like_a_path("~/Docs/ZenaTech CC Space/a.md"))
+        self.assertFalse(ar._looks_like_a_path("npm test -- auth.spec.ts"))
+
+    def test_a_file_url_is_not_a_path(self):
+        # rstrip("/") ran before the URL test, so `file://` survived as `file:`.
+        import _agents_reach as ar
+        self.assertFalse(ar._looks_like_a_path("file://"))
+        self.assertFalse(ar._looks_like_a_path("https://example.com/a.md"))
+
+    def test_an_abbreviated_path_in_prose_is_not_a_claim(self):
+        import _agents_reach as ar
+        self.assertFalse(ar._looks_like_a_path("~/\u2026/Projects/IDE/"))
+
+    def test_a_deleted_but_unstaged_file_is_reported(self):
+        # git ls-files reads the INDEX. A file deleted but not yet staged was
+        # still listed there, and the suffix match then overrode a correct
+        # filesystem answer.
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def git(*a):
+                subprocess.run(["git", "-C", str(root), *a],
+                               capture_output=True, check=False)
+            git("init", "-q")
+            git("config", "user.email", "t@e")
+            git("config", "user.name", "t")
+            (root / "scripts").mkdir()
+            (root / "scripts" / "build.sh").write_text("#\n")
+            (root / "scripts" / "keep.sh").write_text("#\n")
+            (root / "AGENTS.md").write_text("Run `scripts/build.sh`.\n")
+            git("add", "-A")
+            git("commit", "-qm", "x")
+            (root / "scripts" / "build.sh").unlink()
+            missing = [m["token"] for m in agents_reach(root)["missing"]]
+            self.assertEqual(missing, ["scripts/build.sh"],
+                             "the filesystem is the truth, not the git index")
+
+    def test_an_untracked_but_real_file_is_not_reported(self):
+        # The same true statement used to flip between wrong-now and clean
+        # purely on staging state.
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "-C", str(root), "init", "-q"],
+                           capture_output=True, check=False)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "validate.py").write_text("#\n")
+            (root / "AGENTS.md").write_text("Run `scripts/validate.py`.\n")
+            self.assertEqual(agents_reach(root)["missing"], [])
 
     def test_this_repo_own_agents_md_reports_nothing_missing(self):
         # The outcome test. Every claim in this file was verified true by

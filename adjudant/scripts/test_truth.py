@@ -761,6 +761,11 @@ class TestAgentsReachDetector(unittest.TestCase):
             pdir = _project(root)
             code = root / "code"
             code.mkdir()
+            # scripts/ exists and the named file does not. That is what makes
+            # the claim checkable: a token whose whole parent tree is gone is
+            # indistinguishable from a hypothetical path in prose.
+            (code / "scripts").mkdir()
+            _w(code / "scripts" / "other.sh", "#\n")
             _w(code / "AGENTS.md",
                "Enforced mechanically by `scripts/enforce-branch-rule.sh`.\n")
             report = truth_report(pdir, vault=root / "vault", code_root=code,

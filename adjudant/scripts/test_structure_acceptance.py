@@ -51,7 +51,11 @@ class TestTheTruthTest(unittest.TestCase):
         self.pdir = self.vault / "projects" / "active" / "demo"
         self._ob = os.environ.pop("OB_VAULT", None)
 
-        # 1. AGENTS.md names a script that is not there.
+        # 1. AGENTS.md names a script that is not there. scripts/ itself
+        # exists, holding a sibling, which is the realistic shape of this
+        # drift and what makes the claim checkable at all.
+        (self.code / "scripts").mkdir(parents=True, exist_ok=True)
+        _w(self.code / "scripts" / "still-here.sh", "#\n")
         _w(self.code / "AGENTS.md",
            "Branch rules are enforced mechanically by "
            "`scripts/enforce-branch-rule.sh`.\n")
