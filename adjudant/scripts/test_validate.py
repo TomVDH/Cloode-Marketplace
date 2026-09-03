@@ -165,6 +165,15 @@ class TestVerbSurfacesGenerated(unittest.TestCase):
             r = self._run_against(fake)
             self.assertTrue(any("verb-surfaces-generated" in f for f in r.failures))
 
+    def _shipped(self) -> tuple[int, str]:
+        """(count, word) for THIS build. The public build ships fewer verbs
+        than this one, and a test that spells either number out is a test that
+        only passes in the tree it was written in."""
+        import render_verb_surfaces as rvs
+        meta = rvs.load_metadata(validate.ROOT)
+        n = len(rvs.verbs_for(meta, validate._profile.audience()))
+        return n, rvs.NUMBER_WORDS[n]
+
     def test_a_wrong_count_outside_every_region_still_fails(self):
         # The escape class the old parity validator existed for, and the one
         # generation cannot see: prose that names a verb count no marker
@@ -180,7 +189,8 @@ class TestVerbSurfacesGenerated(unittest.TestCase):
             readme.write_text(readme.read_text()
                               + "\nAdjudant ships with nine verbs.\n")
             r = self._run_against(fake)
-            self.assertTrue(any("says 'nine verbs' but this build ships 6" in f
+            n, _ = self._shipped()
+            self.assertTrue(any(f"says 'nine verbs' but this build ships {n}" in f
                                 for f in r.failures), r.failures)
 
     def test_a_correct_count_in_prose_is_accepted(self):
@@ -190,8 +200,9 @@ class TestVerbSurfacesGenerated(unittest.TestCase):
         with _tf.TemporaryDirectory() as tmp:
             fake = self._copy_of_the_real_tree(tmp)
             readme = fake / "README.md"
+            _, word = self._shipped()
             readme.write_text(readme.read_text()
-                              + "\nAdjudant ships with six verbs.\n")
+                              + f"\nAdjudant ships with {word} verbs.\n")
             r = self._run_against(fake)
             self.assertIn("verb-surfaces-generated", r.passes, r.failures)
 
@@ -834,9 +845,17 @@ class TestSkillSplit(unittest.TestCase):
         self.assertNotIn("board_bridge.py", text)
 
     def test_skill_still_routes_and_points_at_internals(self):
+        # The verb list comes from this build's metadata, not from a tuple
+        # typed here: `draw` is full-only, so a hard-coded list makes this test
+        # fail in the public build for a reason that is not a defect.
+        import render_verb_surfaces as rvs
+        import _profile
         text = self.SKILL.read_text()
-        for verb in ("connect", "status", "clean", "dream", "draw", "board"):
-            self.assertIn(f"`{verb}`", text)
+        meta = rvs.load_metadata(self.SKILL.parent.parent.parent)
+        shipped = rvs.verbs_for(meta, _profile.audience())
+        self.assertTrue(shipped, "this build ships no verbs at all")
+        for verb in shipped:
+            self.assertIn(f"`{verb['name']}`", text)
         self.assertIn("reference/internals.md", text)
 
     def test_skill_within_token_budget(self):

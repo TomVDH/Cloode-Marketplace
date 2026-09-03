@@ -230,6 +230,29 @@ class TestGeneratedSurfaces(unittest.TestCase):
                              + "\n".join(l for l in out.stdout.splitlines()
                                          if "\u2717" in l or "FAIL" in l))
 
+    def test_the_readme_installs_from_the_twins_own_marketplace(self):
+        # The install line is repository identity, like plugin.json's homepage.
+        # Seeding the README from main hands a public reader the marketplace
+        # slug of a repository that is not the one they are reading.
+        with tempfile.TemporaryDirectory() as tmp:
+            main_root = _copy_main(Path(tmp) / "main")
+            twin = _copy_main(Path(tmp) / "twin")
+            _make_public(twin)
+            pj = twin / "adjudant" / ".claude-plugin" / "plugin.json"
+            pj.write_text(json.dumps({
+                **json.loads(pj.read_text()),
+                "repository": "https://github.com/someone/public-twin",
+            }, indent=2) + "\n")
+            generate_twin.main(["--main-root", str(main_root),
+                                "--twin", str(twin), "--apply"])
+            readme = (twin / "adjudant" / "README.md").read_text()
+            self.assertIn("/plugin marketplace add someone/public-twin", readme)
+            ours = json.loads(
+                (main_root / "adjudant" / ".claude-plugin" / "plugin.json").read_text()
+            )["repository"].rstrip("/").split("github.com/")[-1]
+            self.assertNotIn(f"marketplace add {ours}", readme,
+                             "the twin points readers at the other repository")
+
     def test_the_twin_keeps_its_own_version(self):
         # plugin.json's identity is restored and command-metadata's version is
         # kept; SKILL.md's frontmatter carries a version too, and seeding it

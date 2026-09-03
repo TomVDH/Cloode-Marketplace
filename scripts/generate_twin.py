@@ -279,6 +279,24 @@ def _sync_plugin_json(main_plugin: Path, twin_plugin: Path) -> None:
 
 
 _VERSION_LINE = re.compile(r"^version:\s*\S.*$", re.MULTILINE)
+_MARKETPLACE_ADD = re.compile(r"(?<=/plugin marketplace add )\S+")
+
+
+def _repo_slug(twin_plugin: Path) -> Optional[str]:
+    """`owner/name` for the twin, from the identity plugin.json already keeps.
+
+    The install line is repository identity, the same as `homepage` and
+    `repository` beside it. Derived rather than declared again, so it cannot
+    disagree with the URL two lines above it.
+    """
+    try:
+        url = json.loads(
+            (twin_plugin / ".claude-plugin" / "plugin.json").read_text()
+        ).get("repository", "")
+    except (OSError, json.JSONDecodeError):
+        return None
+    slug = str(url).rstrip("/").split("github.com/")[-1]
+    return slug if slug and slug != url else None
 
 
 def _seed_surfaces(main_plugin: Path, twin_plugin: Path) -> list[str]:
@@ -288,10 +306,12 @@ def _seed_surfaces(main_plugin: Path, twin_plugin: Path) -> list[str]:
     SKILL.md and README.md were written before the markers existed. So they are
     copied whole first, then rendered down to this build's audience.
 
-    SKILL.md's frontmatter carries the repository's version, not the build's —
-    the same way plugin.json carries the repository's identity. Copying main's
-    hands the twin a version its plugin.json, its command-metadata and its
-    marketplace entry all disagree with, and version-consistency fails.
+    Two things in them belong to the repository rather than the build, and both
+    are put back after the copy. SKILL.md's frontmatter carries a version:
+    copying main's hands the twin a version its plugin.json, its
+    command-metadata and its marketplace entry all disagree with. The README's
+    `/plugin marketplace add` line carries the marketplace slug: copying main's
+    tells a reader of the public repository to install from the private one.
     """
     done: list[str] = []
     for rel in SEEDED:
@@ -304,6 +324,9 @@ def _seed_surfaces(main_plugin: Path, twin_plugin: Path) -> list[str]:
         shutil.copy2(src, dst)
         if keep is not None:
             dst.write_text(_VERSION_LINE.sub(keep, dst.read_text(), count=1))
+        slug = _repo_slug(twin_plugin)
+        if slug and rel == "README.md":
+            dst.write_text(_MARKETPLACE_ADD.sub(slug, dst.read_text()))
         done.append(f"seeded {rel}")
     return done
 

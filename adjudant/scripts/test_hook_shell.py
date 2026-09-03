@@ -353,6 +353,14 @@ class TestSessionStartHook(unittest.TestCase):
         # suitcase-brief executable on PATH. PATH-injected fake for the
         # positive cases; the negative case scrubs PATH to /usr/bin:/bin
         # because a real suitcase-brief install must not leak in.
+        #
+        # The banner is a capability, and a build that does not declare the
+        # capability is meant to print nothing. Asserting the line here would
+        # fail the public build for behaving exactly as its profile says.
+        import _profile
+        if not any(c["probe"] == "suitcase-brief"
+                   for c in _profile.capabilities()):
+            self.skipTest("this build declares no suitcase capability")
         with tempfile.TemporaryDirectory() as tmp:
             project, home = self._project(Path(tmp), "vault_path: {vault}\nslug: demo\n")
             fake_bin = Path(tmp) / "bin"
