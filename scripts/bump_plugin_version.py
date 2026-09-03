@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Bump a marketplace plugin's version across all lockstep files at once.
 
-The `version-consistency` validator (adjudant/scripts/validate.py) and the
-`marketplace-version-parity` guard require a plugin's version to match across up
-to four files. Keeping them in sync by hand is error-prone — this writes all of
-them atomically.
+The `version-consistency` validator (adjudant/scripts/validate.py) requires a
+plugin's version to match across up to four files, and a repo may add a
+marketplace-parity guard on top. Keeping them in sync by hand is error-prone —
+this writes all of them atomically.
 
 Files updated (only those that exist for the plugin):
   1. <plugin>/.claude-plugin/plugin.json          → "version"
