@@ -460,5 +460,64 @@ class TestApply(unittest.TestCase):
             self.assertIn("No vault yet? Guided location setup", doc)
 
 
+class TestTheDryRunNeverUnderReports(unittest.TestCase):
+    """A dry run smaller than the apply is worse than no dry run.
+
+    The four generated surfaces are rewritten on every apply, and the dry run
+    counted only the file diff. On two trees already in sync it printed
+    "0 change(s) pending" while --apply rewrote SKILL.md, README.md,
+    plugin.json and command-metadata.json. The one rule this generator has is
+    that nothing changes without being named.
+    """
+
+    def _files_and_hashes(self, root):
+        import hashlib
+        out = {}
+        for f in sorted(root.rglob("*")):
+            if f.is_file() and not any(p in SKIP for p in f.parts):
+                out[str(f.relative_to(root))] = hashlib.sha256(
+                    f.read_bytes()).hexdigest()
+        return out
+
+    def test_the_count_covers_everything_apply_touches(self):
+        import io, contextlib
+        global SKIP
+        SKIP = {"__pycache__", ".pytest_cache", ".git"}
+        with tempfile.TemporaryDirectory() as tmp:
+            fm = _copy_main(Path(tmp) / "main")
+            tw = _copy_main(Path(tmp) / "twin")
+            # Bring them into sync first, so the diff half is empty and only
+            # the generated surfaces remain. That is the case that printed 0.
+            generate_twin.main(["--main-root", str(fm), "--twin", str(tw), "--apply"])
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                generate_twin.main(["--main-root", str(fm), "--twin", str(tw)])
+            reported = int(re.search(r"dry run: (\d+) change", buf.getvalue()).group(1))
+
+            before = self._files_and_hashes(tw)
+            generate_twin.main(["--main-root", str(fm), "--twin", str(tw), "--apply"])
+            after = self._files_and_hashes(tw)
+            really_changed = {k for k in before if before[k] != after.get(k)}
+            really_changed |= set(after) ^ set(before)
+
+            self.assertGreaterEqual(
+                reported, len(really_changed),
+                f"dry run said {reported}, apply touched {len(really_changed)}: "
+                f"{sorted(really_changed)}")
+
+    def test_every_generated_surface_is_named_by_the_dry_run(self):
+        import io, contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            fm = _copy_main(Path(tmp) / "main")
+            tw = _copy_main(Path(tmp) / "twin")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                generate_twin.main(["--main-root", str(fm), "--twin", str(tw)])
+            text = buf.getvalue()
+            for rel in generate_twin.GENERATED:
+                self.assertIn(rel, text, f"{rel} is rewritten but never named")
+
+
 if __name__ == "__main__":
     unittest.main()

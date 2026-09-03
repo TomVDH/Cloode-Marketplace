@@ -496,9 +496,24 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"  unexplained {rel}", file=sys.stderr)
         return 3
     if not args.apply:
-        pending = len(p.create) + len(p.update) + len(p.delete)
-        print(f"\ndry run: {pending} change(s) pending; re-run with --apply")
-        return 1 if pending else 0
+        # The four generated surfaces are rewritten on EVERY apply, so a dry
+        # run that counted only the diff could print "0 change(s) pending"
+        # while --apply rewrote SKILL.md, README.md, plugin.json and
+        # command-metadata.json. A dry run whose number is smaller than what
+        # happens is worse than no dry run: the whole rule of this generator
+        # is that nothing changes without being named.
+        for rel in sorted(GENERATED):
+            print(f"  rewrite {rel}  (generated on every run)")
+        drift = len(p.create) + len(p.update) + len(p.delete)
+        print(f"\ndry run: {drift + len(GENERATED)} change(s) pending "
+              f"({len(GENERATED)} of them generated surfaces, rewritten every "
+              f"run); re-run with --apply")
+        # The exit code answers "is the twin behind main", which is what a
+        # caller can act on. The generated surfaces are rewritten every run by
+        # construction, so counting them here would mean the answer was never
+        # no. They are named above regardless, because nothing this generator
+        # touches goes unnamed.
+        return 1 if drift else 0
     try:
         lines = apply_plan(main_root, twin_root, p)
     except GenerateError as exc:
