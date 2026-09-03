@@ -20,7 +20,6 @@ Surface features, numbered 2-4 (feature 1 below):
 Feature 1 — rebuilding an EXISTING folder-level `_index.md` — is gone: plan 4's
 `_index_gen` owns the only two index surfaces left (`Home.md`,
 `{slug}/_index.md`), both generated whole from the filesystem. A folder with
-no index is still reported as a gap under `index_gaps`, never filled:
 `VaultWriteGuard` refuses the create either way.
 
 Deep pass (`--deep`), read-only, no guard needed:
@@ -356,41 +355,6 @@ def _project_type(files: list[VaultFile]) -> Optional[str]:
 # default set there is nothing for a folder to drift from, and the brief's
 # `extra_folders:` existed only to excuse a folder from that comparison.
 
-# Folders that never carry an index. Read only by detect_index_gaps below,
-# which is the last thing in adjudant that asks the question — it moved here
-# from _vault_walk when connect stopped scaffolding indexes.
-INDEX_EXEMPT_FOLDERS: frozenset[str] = frozenset({
-    "sessions", "images", "assets", "previews", "iterations", "_archive", "templates",
-})
-
-
-def detect_index_gaps(project_dir: Path, files: list[VaultFile]) -> list[str]:
-    """Folders with ≥2 same-type sibling .md files missing _index.md.
-
-    Skips INDEX_EXEMPT_FOLDERS (sessions, images, assets, previews, iterations).
-    """
-    # Group files by parent folder relative to project
-    by_parent: dict[Path, list[VaultFile]] = defaultdict(list)
-    for f in files:
-        parent = f.rel_path.parent
-        if parent == Path("."):
-            continue
-        by_parent[parent].append(f)
-
-    gaps = []
-    for parent, members in by_parent.items():
-        # Skip exempt folders (any part of the path)
-        if any(p in INDEX_EXEMPT_FOLDERS for p in parent.parts):
-            continue
-        non_index = [m for m in members if m.rel_path.name != "_index.md"]
-        if len(non_index) < 2:
-            continue
-        has_index = any(m.rel_path.name == "_index.md" for m in members)
-        if not has_index:
-            gaps.append(str(parent))
-    return sorted(gaps)
-
-
 def detect_frontmatter_drift(files: list[VaultFile]) -> list[dict]:
     """Frontmatter issues per vault-standards §1:
        - null/~ values (should omit key)
@@ -646,7 +610,6 @@ def build_preview(
     # Folders that want an index and have none. Reported, never filled:
     # `_index_gen` owns the two surviving index surfaces, and clean creates
     # nothing (`VaultWriteGuard` refuses it at apply time regardless).
-    index_gaps = detect_index_gaps(project_dir, files)
     # references/ held six unrelated kinds; each file's own `type:` says
     # which folder it belongs in now. Not narrowed by `scope`: it reads
     # project_dir/references/ directly rather than the (possibly filtered)
@@ -741,13 +704,11 @@ def build_preview(
         "scope": scope,
         "summary": {
             "files_modified": len(file_proposals),
-            "index_gaps": len(index_gaps),
             "schema_files": len(schema_actions),
             "total_changes": len(file_proposals),
             "structural_findings": _structural_count(structural),
         },
         "file_proposals": file_proposals,
-        "index_gaps": index_gaps,
         "schema_actions": schema_actions,
         "structural_findings": structural,
         "references_split": references_split,
@@ -815,21 +776,11 @@ def write_preview_to_disk(project_dir: Path, change_set: dict[str, Any]) -> Path
         "## Summary",
         "",
         f"- Files to modify: {summary['files_modified']}",
-        f"- Index gaps reported: {summary.get('index_gaps', 0)}",
         f"- Total changes: {summary['total_changes']}",
     ]
     if change_set.get("deep"):
         summary_lines.append(
             f"- Structural findings: {summary.get('structural_findings', 0)}")
-    if change_set.get("index_gaps"):
-        summary_lines.append("")
-        summary_lines.append("## Index gaps (reported, not filled)")
-        summary_lines.append("")
-        summary_lines.append("clean does not create vault files. These folders "
-                             "want an `_index.md` and have none:")
-        summary_lines.append("")
-        for folder in change_set["index_gaps"]:
-            summary_lines.append(f"- `{folder}`")
     # references/ held six unrelated kinds at once; offered, never forced.
     # Absent from the summary entirely when there is nothing to offer, so a
     # project with no references/ (most of them, post-migration) sees no
@@ -1276,10 +1227,6 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         print(f"[clean] {summary['total_changes']} changes "
               f"({summary['files_modified']} files)",
               file=sys.stderr)
-        if summary.get("index_gaps"):
-            print(f"[clean] {summary['index_gaps']} folder(s) want an index and "
-                  f"have none; clean reports them and does not create files",
-                  file=sys.stderr)
         if args.deep:
             print(f"[clean] deep pass: {summary.get('structural_findings', 0)} "
                   f"structural finding(s), reported only", file=sys.stderr)

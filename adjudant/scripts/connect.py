@@ -7,7 +7,7 @@ Onboards a code-side project to the vault:
   2. Provision AGENTS.md + CLAUDE.md + GEMINI.md at project root (skip if exist)
   3. Scaffold vault project: brief.md (from project_type template) + per-type
      subfolders + per-folder `_index.md` (skip per-folder indexes for
-     INDEX_EXEMPT_FOLDERS like sessions/ and images/)
+     folders like sessions/ and images/)
   4. Write today's session note: `{vault}/projects/{slug}/sessions/{YYYY-MM-DD}.md`
   5. Append `.claude/adjudant` to project `.gitignore`
 

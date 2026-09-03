@@ -184,12 +184,16 @@ class TestCleanIsNetSubtractive(unittest.TestCase):
     def test_a_folder_with_no_index_is_reported_not_filled(self):
         # The single write that made a cleanup verb add more than it removed:
         # a folder with two or more notes and no `_index.md` used to get one
-        # generated. It is a reported gap now, and `clean` writes nothing.
+        # generated, then merely reported as a gap. Both are gone: the spec
+        # retires every folder index but the two _index_gen writes, and
+        # prune_index_files DELETES any other _index.md on the next status
+        # run. Asking a reader to hand-build a file the tool then removes is
+        # the ceremony this redesign exists to cut.
         for folder in FOLDERS:
             with self.subTest(folder=folder), tempfile.TemporaryDirectory() as t:
                 project = self._project(Path(t), folder)
                 change_set = self._preview(project)
-                self.assertEqual(change_set["index_gaps"], [folder])
+                self.assertNotIn("index_gaps", change_set)
                 # Task 8 retired the in-place rebuild entirely: there is no
                 # second proposal dict to be empty, because there is no
                 # longer any code path that could populate one.

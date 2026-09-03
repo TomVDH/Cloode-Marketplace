@@ -249,12 +249,12 @@ class TestBuildPreview(unittest.TestCase):
                 "tags:\n  - ob/note\n---\n\nSee [target](target.md).")
             vault_index = build_vault_index(root)
             cs = build_preview(root, vault_index, project_slug="t")
-            # decisions/ has two entries and no index. clean reports the gap;
-            # it does not create the file (VaultWriteGuard would refuse it),
-            # and it no longer rebuilds one either — that feature is gone,
-            # along with the "index_proposals" key it used to populate.
+            # decisions/ has two entries and no index. clean says nothing
+            # about that: folder indexes are retired, and prune_index_files
+            # deletes any that appear. Both the old rebuild feature and the
+            # gap report that replaced it are gone.
             self.assertNotIn("index_proposals", cs)
-            self.assertIn("decisions", cs["index_gaps"])
+            self.assertNotIn("index_gaps", cs)
             # Should propose changes to src.md (unknown tags: + wikilink)
             self.assertIn("src.md", cs["file_proposals"])
             # Should propose changes to brief.md (unknown fields stripped)

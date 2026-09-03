@@ -20,7 +20,6 @@ from clean import (
     detect_broken_wikilinks,
     detect_doc_decision_flags,
     detect_frontmatter_drift,
-    detect_index_gaps,
     detect_artefact_naming,
     detect_naming_violations,
     detect_type_drift,
@@ -82,47 +81,6 @@ def _make_minimal_project(root: Path, slug: str = "test", project_type: str = "c
     _write_file(root / "_handoff.md", "---\ntype: handoff\nupdated: 2026-05-26\n---\n\nbody")
     (root / "sessions").mkdir()
     (root / "images").mkdir()
-
-
-# ============================================================
-# Index gaps
-# ============================================================
-
-
-class TestDetectIndexGaps(unittest.TestCase):
-
-    def test_two_siblings_no_index_flagged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "memory" / "a.md", "---\ntype: note\n---\n\na")
-            _write_file(root / "memory" / "b.md", "---\ntype: note\n---\n\nb")
-            files = list(walk_project(root))
-            gaps = detect_index_gaps(root, files)
-            self.assertEqual(gaps, ["memory"])
-
-    def test_index_present_no_gap(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "memory" / "a.md", "---\ntype: note\n---\n\na")
-            _write_file(root / "memory" / "b.md", "---\ntype: note\n---\n\nb")
-            _write_file(root / "memory" / "_index.md", "---\ntype: index\n---\n# Memory")
-            files = list(walk_project(root))
-            self.assertEqual(detect_index_gaps(root, files), [])
-
-    def test_exempt_folders_skipped(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "sessions" / "2026-05-26.md", "---\ntype: session\n---\n")
-            _write_file(root / "sessions" / "2026-05-27.md", "---\ntype: session\n---\n")
-            files = list(walk_project(root))
-            self.assertEqual(detect_index_gaps(root, files), [])
-
-    def test_single_file_no_gap(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _write_file(root / "notes" / "lone.md", "---\ntype: note\n---\n")
-            files = list(walk_project(root))
-            self.assertEqual(detect_index_gaps(root, files), [])
 
 
 # ============================================================

@@ -900,7 +900,7 @@ def smart_project_dir(project_dir_arg: str) -> tuple[Path, Optional[Path]]:
 # `tags:` block is now an ordinary unknown-field strip through FIELD_SCHEMA.
 
 
-# PROJECT_TYPE_DEFAULT_FOLDERS, AUTO_CREATED_FOLDERS and INDEX_EXEMPT_FOLDERS
+# PROJECT_TYPE_DEFAULT_FOLDERS and AUTO_CREATED_FOLDERS
 # were deleted in v3. Folder layout is now one table, KIND_FOLDER in
 # _place.py, and a folder is created by the write that puts something in it.
 # The three constants existed to answer "which folders does a coding project

@@ -43,15 +43,15 @@ Repo ops use `--project-dir` as the repo root directly (no breadcrumb).
 
 Feature 1 was rebuilding an existing folder-level `_index.md`. It is gone:
 plan 4's `_index_gen` owns the only two index surfaces left (`Home.md`,
-`{slug}/_index.md`), both generated whole from the filesystem. A folder with
-no index is still reported as a gap, never filled — `VaultWriteGuard` refuses
-the create either way — under `## Index gaps` in the preview. The numbers
-below stay 2-4 on purpose: `vault-standards.md` and `internals.md` both cite
+`{slug}/_index.md`), both generated whole from the filesystem. The gap report
+that replaced the rebuild is gone too: `prune_index_files` DELETES any other
+`_index.md` on the next status run, so asking a reader to hand-build one was
+asking for work the tool undoes. The numbers below stay 2-4 on purpose: `vault-standards.md` and `internals.md` both cite
 "clean feature 3" and "clean feature 4" by number.
 
 2. **Bump `updated:` frontmatter** on touched files where applicable (`doc`, `project`, `note` types). Never adds the field if absent.
-3. **Fix wikilink form** — rewrite `[text](path.md)` to `[[stem|text]]` when `path` resolves to a vault `.md`. Leaves external links and non-vault paths alone.
-4. **Repair frontmatter schema** per `FIELD_SCHEMA` (vault-standards §1/§9) — strip unknown fields (`tags:`, `project:`, stray keys), migrate the one legacy key with a live target (`node_type` → `type`; rename when `type:` is absent, drop when both exist, and `originSessionId` drops as an ordinary unknown field because no template declares `source_session`), normalise decision-status aliases (`accepted`/`locked`/`current` → `active`). Never touches required keys, parse-error files, non-canonical types, or task-status aliases (accepted input; the board normalizes lanes on read). The preview's `summary.md` lists every strip and migrate under `## Schema`.
+3. **Fix wikilink form** — rewrite `[text](path.md)` to `[[{slug}/path|text]]` when `path` resolves to a vault `.md`. Every link is built by `_place.link()`, which carries the project-relative path and never the lifecycle folder, so a project that moves keeps its inbound links. Leaves external links and non-vault paths alone.
+4. **Repair frontmatter schema** per `FIELD_SCHEMA` (vault-standards §1/§9) — strip unknown fields (`tags:`, `project:`, stray keys), migrate the one legacy key with a live target (`node_type` → `type`; rename when `type:` is absent, drop when both exist, and `originSessionId` drops as an ordinary unknown field because no template declares `source_session`), normalise decision-status aliases (`accepted`/`locked`/`current` → `active`). Never touches required keys, parse-error files or non-canonical types. Task-status aliases are retired: the board reads its vocabulary from the task template, and a value outside it is reported by `status`, never rewritten here. The preview's `summary.md` lists every strip and migrate under `## Schema`.
 
    **An uncorroborated `type:` is reported, never acted on.** The strip reads `type:` as ground truth, which holds for a file adjudant wrote and not for a foreign file that acquired a colliding `type:` some other way — a Claude Code auto-memory note flattened by an external editor arrives as `type: project` carrying none of a brief's fields, so every real field it does have (`name:`, `description:`, exactly what the memory system reads for relevance) looks unknown and gets stripped. Corroboration is the required set beyond `type` itself: a majority present means the file backs its own declaration and the strip proceeds; a minority means it is misclassified, and clean emits an `unverified_type` line instead of touching it. Retype the file or fill it in.
 
