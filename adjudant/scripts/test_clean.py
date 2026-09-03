@@ -422,11 +422,12 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
                              "the old path must not reappear beside the rename")
             self.assertTrue(renamed.is_file())
 
-    def test_an_index_file_with_drift_is_schema_repaired_like_any_other(self):
-        # Task 8 retired the in-place rebuild: an `_index.md` is no longer
-        # entangled with a second proposal dict, so a schema fix to one goes
-        # through `file_proposals` exactly like a fix to any other file, once,
-        # with the same backup contract.
+    def test_a_retired_index_is_removed_rather_than_repaired(self):
+        # SUPERSEDED test_an_index_file_with_drift_is_schema_repaired_like_any_other.
+        # A folder index is retired now, so repairing its schema and then
+        # deleting it in the same run would back up a version that never
+        # existed before the run. It is skipped for repair and removed, with
+        # the pre-clean file in the backup.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             live = root / "decisions" / "_index.md"
@@ -434,22 +435,15 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
                      "tags:\n  - index\n  - ob/cabinet\n---\n\n"
                      "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
             cs = build_preview(root, build_vault_index(root), "t")
-            self.assertIn("decisions/_index.md", cs["file_proposals"])
+            self.assertNotIn("decisions/_index.md", cs["file_proposals"],
+                             "a file being removed is not repaired first")
+            self.assertIn("decisions/_index.md", cs["retired_indexes"])
             write_preview_to_disk(root, cs)
             backup = apply_preview(root)
-            self.assertFalse((backup / "SKIPPED-STALE.txt").exists(),
-                             "nothing changed under us, so nothing is stale")
+            self.assertFalse(live.exists(), "the retired index is gone")
             legacy = backup / "decisions" / "_index.md.legacy"
             self.assertIn("ob/cabinet", legacy.read_text(),
-                          "the backup must hold the PRE-clean index")
-            self.assertNotIn("tags:", live.read_text(),
-                             "the unknown field must still be stripped")
-            self.assertIn("# Decisions\n\n## Entries\n\n- [[stale-entry]]",
-                          live.read_text(),
-                          "clean no longer touches the body of an index file")
-
-
-class TestPreviewApplyRoundTrip(unittest.TestCase):
+                          "the backup must hold the file exactly as it was")
 
     def test_full_cycle(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -583,6 +583,31 @@ def run_deep_scan(
 # ============================================================
 
 
+
+def retired_indexes(project_dir: Path) -> list[str]:
+    """Every `_index.md` in the project except its own contents page.
+
+    The spec keeps two index surfaces, both generated: `Home.md` and
+    `{slug}/_index.md`. All the rest are retired. Generation belongs to
+    status, which builds those two; removal belongs here, because clean is
+    the verb whose whole description is mechanical and net-subtractive, and
+    because without a deletion path it had none: an audit measured a run that
+    reduced bytes and left the file count exactly where it started.
+
+    The project's own `_index.md` is never touched. Deleting it would delete
+    status's output and start a rebuild loop between the two verbs.
+    """
+    keep = project_dir / "_index.md"
+    out: list[str] = []
+    for f in sorted(project_dir.rglob("_index.md")):
+        if f == keep or not f.is_file():
+            continue
+        try:
+            out.append(f.relative_to(project_dir).as_posix())
+        except ValueError:
+            continue
+    return out
+
 def build_preview(
     project_dir: Path,
     vault_index: set[str],
@@ -696,6 +721,13 @@ def build_preview(
     structural = run_deep_scan(project_dir, files, vault_index,
                                scope=scope) if deep else {}
 
+    retired = retired_indexes(project_dir)
+    # A file about to be removed is not worth repairing. Rewriting a retired
+    # index and then deleting it in the same run wrote a backup of a version
+    # that never existed before this run.
+    for rel in retired:
+        file_proposals.pop(rel, None)
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "project_dir": str(project_dir),
@@ -705,9 +737,11 @@ def build_preview(
         "summary": {
             "files_modified": len(file_proposals),
             "schema_files": len(schema_actions),
-            "total_changes": len(file_proposals),
+            "total_changes": len(file_proposals) + len(retired),
             "structural_findings": _structural_count(structural),
+            "retired_indexes": len(retired),
         },
+        "retired_indexes": retired,
         "file_proposals": file_proposals,
         "schema_actions": schema_actions,
         "structural_findings": structural,
@@ -997,6 +1031,25 @@ def apply_preview(project_dir: Path) -> Path:
             guard.rewrite(live, body)
         except VaultCreateRefused:
             skipped.append((rel, "refused"))
+
+    # Retired folder indexes. Backed up first, exactly like a rewrite, because
+    # a deletion this verb cannot undo is not a deletion it should make. This
+    # is clean's only removal of a live vault file, and without it the verb
+    # described as net-subtractive reduced bytes while leaving the file count
+    # untouched.
+    for rel in change_set.get("retired_indexes", []) or []:
+        live = _contained(project_dir, rel)
+        if live is None or not live.is_file():
+            continue
+        if live == project_dir / "_index.md":
+            continue          # status generates this one; never ours to remove
+        try:
+            backup_target = backup_dir / (rel + ".legacy")
+            backup_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(live, backup_target)
+            live.unlink()
+        except OSError:
+            skipped.append((rel, "undeletable"))
 
     # references/ split: offered in the preview, applied here when the
     # change-set carries one. Shares this run's backup_dir rather than
