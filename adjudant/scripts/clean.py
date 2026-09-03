@@ -64,7 +64,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from _cost import cost_block, read_threshold, stat_walk
-from _place import KIND_FOLDER
+from _place import KIND_FOLDER, link as _link
 from _scratch import BACKUP_KEEP, prune_backups, scratch_dir
 from _vault_walk import (
     FIELD_SCHEMA,
@@ -186,11 +186,21 @@ def fix_wikilink_form(body: str, vault_index: set[str]) -> tuple[str, int]:
                 target = f"{no_ext}#{anchor}" if anchor else no_ext
                 stem_basename = no_ext.split("/")[-1]
                 # If display text matches the basename, skip the alias
-                if text.strip() == stem_basename or text.strip() == no_ext:
-                    fixed_count += 1
-                    return f"[[{target}]]"
+                alias = None
+                if text.strip() != stem_basename and text.strip() != no_ext:
+                    alias = text
+                try:
+                    # _place.link is the only place a wikilink is built. It
+                    # refuses a target that carries the lifecycle folder or the
+                    # projects/ prefix, because such a link breaks the moment
+                    # the project moves. clean is net-subtractive, so a refused
+                    # target keeps its markdown link rather than becoming a
+                    # fragile wikilink.
+                    out = _link(target, alias)
+                except ValueError:
+                    return m.group(0)
                 fixed_count += 1
-                return f"[[{target}|{text}]]"
+                return out
             return m.group(0)
         segments = _INLINE_CODE_SPLIT_RE.split(line)
         rebuilt = "".join(

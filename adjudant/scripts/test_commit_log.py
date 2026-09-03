@@ -5,7 +5,8 @@ defense in depth, never a dependency. So these tests drive main() with full
 PostToolUse(Bash) payloads and assert the gates hold (non-commit ignored,
 failed commit ignored, stale breadcrumb fail-closed) and the writes land
 (session-log commit line, release stub rendered from templates/release.md,
-one index row in releases/_index.md, never clobbering an existing note).
+never clobbering an existing note). It writes NO folder index: the
+spec retires all of them bar the two _index_gen generates.
 
 Since v3 the stub goes through `_render`; there is no inlined fallback
 frontmatter, so a missing template writes no stub at all rather than one the
@@ -245,9 +246,10 @@ class TestReleaseScaffold(_CommitLogCase):
         self.assertIn("- board born on first task", text)
         # No pre-written empty field survived the render (README rule 1).
         self.assertNotIn('""', text)
-        index = self.project_root / "releases" / "_index.md"
-        self.assertTrue(index.is_file(), "index must be created on first release")
-        self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]", index.read_text())
+        # Folder indexes are retired. The hook hand-built one, with a
+        # bare-stem link that the tightened resolver reports as broken.
+        self.assertFalse((self.project_root / "releases" / "_index.md").exists(),
+                         "no writer hand-builds a folder index")
 
     def test_release_no_clobber(self):
         # The release must actually LAND: without _land_release the hook stops
@@ -266,17 +268,22 @@ class TestReleaseScaffold(_CommitLogCase):
                       "the hook must have got past commit verification")
         self.assertEqual(note.read_text(), "hand-written release history\n",
                          "an existing release note must never be overwritten")
-        self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]",
-                      (releases / "_index.md").read_text(),
-                      "the index row is still upserted around the kept note")
+        self.assertFalse((releases / "_index.md").exists(),
+                         "no writer hand-builds a folder index")
 
-    def test_release_index_upsert_no_duplicate(self):
+    def test_release_run_twice_writes_no_index_and_no_second_note(self):
+        # The old upsert existed to keep a hand-built index row unique. With
+        # the index gone, running twice must still leave exactly one note and
+        # still create no index.
         self._land_release()
         self._run(self._payload(self.RELEASE_CMD))
         self._run(self._payload(self.RELEASE_CMD))
-        index_text = (self.project_root / "releases" / "_index.md").read_text()
-        self.assertEqual(index_text.count("[[v0.15.0|"), 1,
-                         "upsert must not duplicate the index row")
+        releases = self.project_root / "releases"
+        self.assertFalse((releases / "_index.md").exists(),
+                         "no writer hand-builds a folder index")
+        self.assertEqual(sorted(f.name for f in releases.iterdir()),
+                         ["v0.15.0.md"],
+                         "a second run adds no file")
 
     def test_plain_commit_no_release_files(self):
         self._land("feat(demo): not a release")
@@ -365,8 +372,8 @@ class TestZoneAwareness(_CommitLogCase):
         rc = self._run(self._payload(self.RELEASE_CMD))
         self.assertEqual(rc, 0)
         self.assertTrue((shelved / "releases" / "v0.15.0.md").is_file())
-        self.assertIn("- [[v0.15.0|v0.15.0 (adjudant)]]",
-                      (shelved / "releases" / "_index.md").read_text())
+        self.assertFalse((shelved / "releases" / "_index.md").exists(),
+                         "no writer hand-builds a folder index")
         self.assertFalse((self.vault / "projects" / "demo").exists())
 
     def test_unknown_project_is_noop(self):

@@ -13,8 +13,6 @@ filter added in hooks.json is defense in depth, never a dependency. Then:
      it declared `date` and a `release` tag, neither of which is a v3 field,
      so a missing template used to produce a note the schema gate rejects.
      A missing template now writes nothing at all.
-  3. Upsert one `- [[v{version}|v{version} ({plugin})]]` row into
-     `releases/_index.md`, created in clean's canonical shape when absent.
 
 Fail open on the hook itself, fail closed on a bad vault; the index row is
 written only after the release note verifiably exists.
@@ -281,33 +279,6 @@ def _release_note(plugin: str, version: str, body: str, today: str) -> str:
                   fill)
 
 
-def _upsert_index(releases: Path, slug: str, plugin: str, version: str, today: str) -> None:
-    """One `- [[vX.Y.Z|vX.Y.Z (plugin)]]` row, deduped; new index files take
-    clean's canonical shape so the next clean pass has nothing to churn."""
-    index = releases / "_index.md"
-    row = f"- [[v{version}|v{version} ({plugin})]]"
-    try:
-        if index.exists():
-            text = index.read_text()
-            if f"[[v{version}|" in text or f"[[v{version}]]" in text:
-                return
-            if not text.endswith("\n"):
-                text += "\n"
-            index.write_text(text + row + "\n")
-        else:
-            index.write_text(
-                "---\n"
-                "type: index\n"
-                f"created: {today}\n"
-                f"updated: {today}\n"
-                "---\n\n"
-                "# Releases\n\n"
-                "## Entries\n\n"
-                + row + "\n"
-            )
-    except OSError:
-        pass  # index upsert is best-effort; the note itself already exists
-
 
 def main() -> int:
     try:
@@ -420,7 +391,6 @@ def main() -> int:
             # A missing or unparseable template raises. Writing nothing is the
             # correct outcome; the hook must not surface as a tool failure.
             return 0  # never index a note that failed to write
-    _upsert_index(releases, slug, plugin, version, today)
     return 0
 
 

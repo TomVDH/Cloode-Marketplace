@@ -1711,3 +1711,46 @@ class TestTruthSection(unittest.TestCase):
             before = sorted(str(p) for p in pdir.rglob("*"))
             truth_report(pdir, vault=Path(tmp) / "vault", today=date(2026, 9, 1))
             self.assertEqual(sorted(str(p) for p in pdir.rglob("*")), before)
+
+
+class TestTheGeneratedIndexesAreActuallyGenerated(unittest.TestCase):
+    """An adversarial prover found `_index_gen` referenced only in comments.
+
+    Plan 4 built the module that owns the two surviving index surfaces, wired
+    nothing to it, and shipped green: no test called `regenerate`, so nothing
+    noticed the surfaces were never written. `status` is the make-current
+    phase, and a generated index is derived state, so it belongs here.
+    """
+
+    def _vault(self, tmp: Path) -> tuple[Path, Path, Path]:
+        vault = tmp / "vault"
+        proj = vault / "projects" / "active" / "demo"
+        (proj / "notes").mkdir(parents=True)
+        (proj / "brief.md").write_text(
+            "---\ntype: project\ncreated: 2026-09-01\nupdated: 2026-09-01\n"
+            "verified: 2026-09-01\nverified_by: read\n---\n\n# Demo\n\nA project.\n")
+        (proj / "notes" / "a.md").write_text(
+            "---\ntype: note\ncreated: 2026-09-01\nupdated: 2026-09-01\n---\n\n# A\n")
+        code = tmp / "code"
+        (code / ".claude").mkdir(parents=True)
+        (code / ".claude" / "adjudant").write_text(
+            f"vault_path: {vault}\nvault_name: vault\nslug: demo\nmode: project\n")
+        return code, vault, proj
+
+    def test_make_current_writes_both_surfaces(self):
+        with tempfile.TemporaryDirectory() as t:
+            code, vault, proj = self._vault(Path(t))
+            status.make_current(proj, vault, "demo", code_root=code,
+                                today="2026-09-01")
+            self.assertTrue((vault / "Home.md").is_file(),
+                            "Home.md was never generated")
+            self.assertTrue((proj / "_index.md").is_file(),
+                            "the project index was never generated")
+
+    def test_something_actually_calls_the_generator(self):
+        # The defect was structural: the module existed and nothing imported
+        # it. A grep is the honest guard against that coming back.
+        import re as _re
+        src = Path(status.__file__).read_text()
+        self.assertTrue(_re.search(r"^\s*(import|from)\s+_index_gen", src, _re.M),
+                        "status does not import the index generator")

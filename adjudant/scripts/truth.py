@@ -134,7 +134,7 @@ def _check_broken_wikilinks(ctx: _Ctx) -> Iterator[Finding]:
             if resolve_wikilink(wl.target, ctx.index):
                 continue
             yield Finding("wrong-now", "broken-wikilink", ctx.rel(vf),
-                          f"line {wl.line}: [[{wl.target}]] resolves to nothing")
+                          f"line {wl.line}: link to `{wl.target}` resolves to nothing")
 
 
 def _check_superseded_target_missing(ctx: _Ctx) -> Iterator[Finding]:

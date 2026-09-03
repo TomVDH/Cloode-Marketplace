@@ -65,6 +65,7 @@ from _handoff_freshness import (  # noqa: E402
     traffic_light,
 )
 from _lifecycle import apply_move, triage_plan  # noqa: E402
+import _index_gen
 from _vault_walk import (  # noqa: E402
     DEFAULT_STALE_DAYS,
     VaultUnresolvableError,
@@ -738,6 +739,22 @@ def make_current(
             warnings.append(
                 f"brief status {declared!r} is off-vocabulary "
                 f"({' | '.join(ZONE_FOR_STATUS)}); fix the brief")
+
+    # The two generated index surfaces are derived state, so they belong in
+    # the one phase that writes. Plan 4 built _index_gen and wired nothing to
+    # it: the module was referenced only in comments, so Home.md and the
+    # project index were never actually written and the suite stayed green
+    # because no test called regenerate. Found by an adversarial prover.
+    if vault_path is not None:
+        try:
+            receipt = _index_gen.regenerate(vault_path, _dt.date.fromisoformat(today))
+            steps["indexes"] = {
+                "home": receipt["home"],
+                "projects": len(receipt["projects"]),
+                "retired": len(receipt["deleted"]),
+            }
+        except Exception as e:            # a broken vault must not fail the report
+            warnings.append(f"index regeneration skipped: {e}")
 
     return {"today": today, "slug": slug, "steps": steps, "warnings": warnings}
 
