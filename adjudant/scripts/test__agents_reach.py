@@ -140,5 +140,92 @@ class TestAgentsReach(unittest.TestCase):
         self.assertEqual(AGENTS_STALE_COMMITS, 30)
 
 
+class TestPrecisionBeatsRecall(unittest.TestCase):
+    """The redesign's thesis, applied to the one check that reaches outside.
+
+    dream produced 602 candidates and zero true positives by being generous.
+    This check was written generous in the same way: run against this repo's
+    own AGENTS.md it called 21 of 34 tokens missing, and every one of the 21
+    was a true statement. A check in the wrong-now band that is wrong 61% of
+    the time trains the reader to skip the band.
+
+    Two causes, both tested here. It mined English prose that happened to
+    contain a slash, and it resolved every token against the repo root even
+    when the file plainly said the path was relative to a plugin directory.
+    """
+
+    def _repo(self):
+        """This repo, or None when the tests run from a copied tree."""
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            if (parent / "AGENTS.md").is_file() and (parent / ".git").exists():
+                return parent
+        return None
+
+    def test_prose_with_a_slash_is_not_a_path(self):
+        # Every one of these is real prose from this repo's AGENTS.md.
+        text = ("The `TomVDH/toolshed` repo. A vault `editor/writer`. "
+                "A `Crew/persona` layer. Direct `push/PR` is not used.\n")
+        self.assertEqual(named_paths(text), [],
+                         "a slash between two English words is not a path")
+
+    def test_a_slash_command_is_not_an_absolute_path(self):
+        self.assertEqual(named_paths("Invoke `/adjudant` with a verb.\n"), [],
+                         "a slash command is not a path on this disk")
+
+    def test_a_basename_that_exists_deeper_is_not_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".claude-plugin").mkdir()
+            (root / ".claude-plugin" / "marketplace.json").write_text("{}")
+            (root / "AGENTS.md").write_text("Versions live in `marketplace.json`.\n")
+            self.assertEqual(agents_reach(root)["missing"], [],
+                             "the doc named the file by its basename, and it exists")
+
+    def test_a_path_relative_to_a_plugin_dir_is_not_missing(self):
+        # AGENTS.md says "<plugin>/scripts/validate.py" by writing
+        # `scripts/validate.py` under a heading about plugin layout.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "adjudant" / "scripts").mkdir(parents=True)
+            (root / "adjudant" / "scripts" / "validate.py").write_text("#\n")
+            (root / "AGENTS.md").write_text("Run `scripts/validate.py`.\n")
+            self.assertEqual(agents_reach(root)["missing"], [],
+                             "the path resolves under a plugin directory")
+
+    def test_a_genuinely_missing_script_is_still_reported(self):
+        # The check must not go silent to buy its precision.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text(
+                "Enforced mechanically by `scripts/enforce-tags.sh`.\n")
+            missing = [m["token"] for m in agents_reach(root)["missing"]]
+            self.assertEqual(missing, ["scripts/enforce-tags.sh"])
+
+    def test_a_script_that_moved_is_still_reported(self):
+        # Same basename, different parent. The doc's claim about WHERE it
+        # lives is false, and that is the drift worth reporting.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tools").mkdir()
+            (root / "tools" / "build.sh").write_text("#\n")
+            (root / "AGENTS.md").write_text("Run `scripts/build.sh`.\n")
+            missing = [m["token"] for m in agents_reach(root)["missing"]]
+            self.assertEqual(missing, ["scripts/build.sh"],
+                             "a suffix match is component-wise, not basename-wise")
+
+    def test_this_repo_own_agents_md_reports_nothing_missing(self):
+        # The outcome test. Every claim in this file was verified true by
+        # hand on 2026-09-02; anything reported here is a false positive.
+        repo = self._repo()
+        if repo is None:
+            self.skipTest("not running inside the repo")
+        out = agents_reach(repo)
+        self.assertGreater(out["checked"], 10, "harvesting must not collapse")
+        self.assertEqual(
+            [m["token"] for m in out["missing"]], [],
+            "every path this repo's AGENTS.md names does exist")
+
+
 if __name__ == "__main__":
     unittest.main()

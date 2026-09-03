@@ -39,13 +39,30 @@ _PATH_EXTS = (
 # rather than a path on this disk.
 _NOT_A_PATH = set("<>{}*?|$\"'()[]")
 
+# Never walked when git cannot list the tree.
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv"}
+
 _BACKTICK_RE = re.compile(r"`([^`\n]+)`")
 _MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 _FENCE_RE = re.compile(r"^\s*```")
 
 
 def _looks_like_a_path(token: str) -> bool:
-    """True when a token names something that could exist on this disk."""
+    """True when a token names something that could exist on this disk.
+
+    A slash is NOT enough. Accepting any token with a slash mined English
+    prose for filenames: `editor/writer`, `push/PR`, `Crew/persona` and the
+    repo slug `TomVDH/toolshed` were all reported as missing files, and a
+    leading slash made the command `/adjudant` look like an absolute path.
+    Together with root-only resolution that put this check at 61% wrong on
+    this repo's own AGENTS.md, in the band reserved for what is wrong now.
+
+    So a token is path-shaped only when it says so: an explicit relative or
+    home prefix, a trailing slash, or a file extension on its last component.
+    A bare directory name written without a trailing slash is not checked.
+    Under-checking a directory costs one missed finding; over-reporting cost
+    the whole band its credibility.
+    """
     t = token.strip().rstrip(".,;:").rstrip("/")
     if not t or t.startswith("-"):
         return False
@@ -53,7 +70,71 @@ def _looks_like_a_path(token: str) -> bool:
         return False
     if any(c in _NOT_A_PATH for c in t):
         return False
-    return "/" in t or t.endswith(_PATH_EXTS)
+    if t.startswith(("./", "../", "~/")):
+        return True
+    if token.strip().endswith("/"):
+        return True
+    return t.split("/")[-1].endswith(_PATH_EXTS)
+
+
+# Beyond this many tracked files the basename index is not worth building, and
+# resolution falls back to the repo root alone. No repo that keeps an AGENTS.md
+# a person maintains by hand comes near it.
+_INDEX_FILE_CAP = 50_000
+
+
+def _repo_index(code_root: Path) -> dict:
+    """Every tracked path, grouped by last component.
+
+    A document names a file the way a reader would find it. Sometimes that is
+    the bare name, `marketplace.json`, which lives in `.claude-plugin/`.
+    Sometimes it is relative to a directory the surrounding prose established:
+    `scripts/validate.py`, written under a heading about plugin layout, means
+    `adjudant/scripts/validate.py`. Both are true statements, and resolving
+    them against the repo root alone called both of them false.
+
+    Grouping by last component keeps this O(files) rather than O(files x depth).
+    """
+    listing = _git(code_root, "ls-files", "-z")
+    if listing is not None:
+        rels = [r for r in listing.split("\0") if r]
+    else:
+        rels = []
+        for f in code_root.rglob("*"):
+            if any(part in _SKIP_DIRS for part in f.parts):
+                continue
+            if not f.is_file():
+                continue
+            rels.append(f.relative_to(code_root).as_posix())
+            if len(rels) > _INDEX_FILE_CAP:
+                return {}
+    if len(rels) > _INDEX_FILE_CAP:
+        return {}
+    index: dict = {}
+    for rel in rels:
+        parts = tuple(rel.split("/"))
+        # Index the file and every directory above it, so a doc may name
+        # either. `git ls-files` reports files only.
+        for depth in range(1, len(parts) + 1):
+            head = parts[:depth]
+            index.setdefault(head[-1], set()).add(head)
+    return index
+
+
+def _resolves_in_repo(token: str, index: dict) -> bool:
+    """True when some path in the repo ends with this token, component-wise.
+
+    Component-wise is what keeps the check honest. A script that moved from
+    `scripts/build.sh` to `tools/build.sh` still fails to resolve, because the
+    document's claim about where it lives is what went stale.
+    """
+    parts = tuple(p for p in token.split("/") if p and p != ".")
+    if not parts:
+        return False
+    for cand in index.get(parts[-1], ()):
+        if len(cand) >= len(parts) and cand[-len(parts):] == parts:
+            return True
+    return False
 
 
 def _clean(token: str) -> str:
@@ -125,11 +206,18 @@ def agents_reach(code_root: Path) -> dict:
 
     missing: list = []
     tokens = named_paths(text)
+    index = _repo_index(code_root)
     for lineno, token in tokens:
         candidate = Path(token).expanduser()
-        if not candidate.is_absolute():
-            candidate = code_root / candidate
-        if candidate.exists():
+        if candidate.is_absolute() or token.startswith("~"):
+            # An absolute or home path names one place and only that place.
+            if candidate.exists():
+                continue
+            missing.append({"line": lineno, "token": token})
+            continue
+        if (code_root / candidate).exists():
+            continue
+        if _resolves_in_repo(token, index):
             continue
         missing.append({"line": lineno, "token": token})
 
