@@ -181,7 +181,7 @@ def _is_a_claim_about_this_disk(value: str) -> bool:
     `{Its Name}` on purpose, and the brief template ships `{path or url}`, so
     a braced value is a blank waiting to be filled and not a moved repo — the
     unguarded version opened every new project's first report with that lie.
-    An elided path (`~/…/HubSpot - Nightly`) is a person shortening a real
+    An elided path (`~/…/Acme - Web`) is a person shortening a real
     one. And a value that is not absolute after `~` expansion is measured
     against whatever directory the command ran from, which made the same
     brief clean from one shell and wrong from the next; `TomVDH/toolshed` is

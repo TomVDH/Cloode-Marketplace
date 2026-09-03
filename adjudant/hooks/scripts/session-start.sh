@@ -177,7 +177,7 @@ print(v or "")' "$CLAUDE_PLUGIN_ROOT/scripts" "$project_dir" 2>/dev/null || true
 
   # Advisor banner: opt-in (`advisor: on` in the breadcrumb; the /adjudant
   # advisor verb also stamps a marker into AGENTS.md so the mode is visible at
-  # project root). The banner is the acute awareness Tom asked for - the model
+  # project root). The banner is acute awareness by design: the model
   # is under the advisor contract from the first turn of every session, not
   # from whenever it happens to read the doc. After Voice: the register
   # governs how observations are said before anything decides what to notice.

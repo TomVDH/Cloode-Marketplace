@@ -48,7 +48,7 @@ Wikilinks with the project-relative path and a display alias for anything in
 the vault; markdown links for anything outside it. The lifecycle folder is
 omitted:
 
-    [[hubspot-nightly/decisions/2026-08-12-branch-track|branch track]]
+    [[acme-web/decisions/2026-08-12-branch-track|branch track]]
 
 Obsidian resolves by matching the end of a path, so a project moving between
 folders breaks nothing. `link()` in `scripts/_place.py` is the only thing that

@@ -2,7 +2,7 @@
 
 A Claude Code auto-memory note is `name` / `description` / `metadata.type`.
 Something flattened `metadata.type` up to a top-level `type:` on 9 of 50 files
-in Tom's vault, which made adjudant read them as project briefs. The value was
+in one real vault, which made adjudant read them as project briefs. The value was
 PRESERVED by that flattening, so the repair is a mechanical re-nest, not a
 reconstruct-from-content — provided nothing strips `name:`/`description:`
 first.
@@ -25,7 +25,7 @@ description: Canonical repo context lives in AGENTS.md, not CLAUDE.md
 type: project
 ---
 
-Tom keeps canonical repo context in AGENTS.md. **Why:** Claude-only files fork.
+We keep canonical repo context in AGENTS.md. **Why:** Claude-only files fork.
 """
 
 NESTED = """---
@@ -35,7 +35,7 @@ metadata:
   type: project
 ---
 
-Tom keeps canonical repo context in AGENTS.md. **Why:** Claude-only files fork.
+We keep canonical repo context in AGENTS.md. **Why:** Claude-only files fork.
 """
 
 REAL_BRIEF = """---

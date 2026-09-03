@@ -136,7 +136,7 @@ def _toplevel(code_root: Path) -> Path:
 
     `git ls-files` reports paths relative to the DIRECTORY IT RUNS IN, not the
     repository root. Run from a subdirectory it strips the prefix a reader
-    naturally writes, so `hubspot-crm/nightly` failed to resolve while the
+    naturally writes, so `acme-crm/preview` failed to resolve while the
     directory sat right there. Eight worktrees, 100% wrong.
     """
     out = _git(code_root, "rev-parse", "--show-toplevel")

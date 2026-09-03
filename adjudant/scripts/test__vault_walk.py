@@ -88,9 +88,9 @@ class TestParseFrontmatter(unittest.TestCase):
         self.assertEqual(fm.fields, {"type": "note"})
 
     def test_piped_wikilink_value_kept_raw(self):
-        text = '---\nproject: "[[projects/hubspot-nightly/brief|hubspot-nightly]]"\n---\n'
+        text = '---\nproject: "[[projects/acme-web/brief|acme-web]]"\n---\n'
         fm, _ = parse_frontmatter(text)
-        self.assertEqual(fm.fields["project"], "[[projects/hubspot-nightly/brief|hubspot-nightly]]")
+        self.assertEqual(fm.fields["project"], "[[projects/acme-web/brief|acme-web]]")
 
 
 # ============================================================
@@ -1087,7 +1087,7 @@ class TestFieldSchema(unittest.TestCase):
 
     def test_is_safe_slug_accepts_kebab(self):
         from _vault_walk import is_safe_slug
-        for good in ("demo", "a", "hubspot-nightly", "proj-2026", "0x"):
+        for good in ("demo", "a", "acme-web", "proj-2026", "0x"):
             self.assertTrue(is_safe_slug(good), good)
 
     def test_is_safe_slug_rejects_traversal_and_metachars(self):

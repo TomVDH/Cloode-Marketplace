@@ -130,6 +130,6 @@ class TestTwoProjectsNamedTheSameDoNotShareScratch(unittest.TestCase):
     def test_the_readable_name_survives_in_the_path(self):
         # Whoever finds this directory should be able to tell whose it is.
         with tempfile.TemporaryDirectory() as t:
-            p = Path(t) / "vault" / "projects" / "hubspot-nightly"
+            p = Path(t) / "vault" / "projects" / "acme-web"
             p.mkdir(parents=True)
-            self.assertIn("hubspot-nightly", str(scratch_dir(p, "clean-preview")))
+            self.assertIn("acme-web", str(scratch_dir(p, "clean-preview")))

@@ -11,7 +11,7 @@ every link into it — which is the only thing the deleted 380-line vault-wide
 link rewrite ever did.
 
 Obsidian resolves a wikilink by matching the END of a path, so
-`[[hubspot-nightly/decisions/2026-08-12-branch-track]]` finds the file under
+`[[acme-web/decisions/2026-08-12-branch-track]]` finds the file under
 any lifecycle folder. Omitting the folder is therefore not a compromise: it is
 the form that stays true.
 

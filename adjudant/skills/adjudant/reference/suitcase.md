@@ -2,7 +2,7 @@
 
 Run `suitcase-brief` for full orientation; this file is the standing summary.
 
-The suitcase is Tom's iCloud-synced terminal environment: a zsh + tmux cockpit
+The suitcase is a personal iCloud-synced terminal environment: a zsh + tmux cockpit
 plus a two-tier agent system, `yap` (talk) and `agent-bus` (work: headless
 dispatch, file-is-truth contract, multi-lane runs). It exists on both machines;
 detection is a PATH probe for `suitcase-brief` (never executed automatically).

@@ -285,7 +285,7 @@ class TestNamesSomethingThatIsNotThere(unittest.TestCase):
 
 
     def test_an_elided_repo_path_is_not_a_finding(self):
-        # The brief template's own example writes `~/…/HubSpot - Nightly`.
+        # The brief template's own example writes `~/…/Acme - Web`.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             pdir = _project(root)
@@ -293,7 +293,7 @@ class TestNamesSomethingThatIsNotThere(unittest.TestCase):
                "---\ntype: project\nupdated: 2026-09-01\nverified: 2026-09-01\n---\n\n"
                "# Demo\n\nWhat this project is.\n\n"
                "## Where things are\n| | |\n|---|---|\n"
-               "| Repo | ~/…/HubSpot - Nightly |\n")
+               "| Repo | ~/…/Acme - Web |\n")
             report = truth_report(pdir, vault=root / "vault", today=date(2026, 9, 1))
             self.assertNotIn("brief-repo-missing", _kinds(report))
 

@@ -160,9 +160,9 @@ class TestLink(unittest.TestCase):
 
     def test_the_settled_shape(self):
         self.assertEqual(
-            link("hubspot-nightly/decisions/2026-08-12-branch-track",
+            link("acme-web/decisions/2026-08-12-branch-track",
                  "branch track"),
-            "[[hubspot-nightly/decisions/2026-08-12-branch-track|branch track]]")
+            "[[acme-web/decisions/2026-08-12-branch-track|branch track]]")
 
     def test_no_alias(self):
         self.assertEqual(link("demo/notes/a"), "[[demo/notes/a]]")

@@ -292,7 +292,7 @@ class TestApplySafety(unittest.TestCase):
         p = root / "decisions" / "2026-01-01-d.md"
         _w(p, "---\ntype: decision\nstatus: accepted\n"
               "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
-              "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
+              "tags:\n  - decision\n  - ob/legacy\n---\n\nBody.\n")
         return p
 
     def test_stale_preview_does_not_clobber_a_fresh_edit(self):
@@ -395,7 +395,7 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             live = root / "decisions" / "2026-01-01-d.md"
             _w(live, "---\ntype: decision\nstatus: accepted\n"
                      "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
-                     "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
+                     "tags:\n  - decision\n  - ob/legacy\n---\n\nBody.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
             live.unlink()
@@ -412,7 +412,7 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             live = root / "decisions" / "2026-01-01-d.md"
             _w(live, "---\ntype: decision\nstatus: accepted\n"
                      "created: 2026-01-01\nupdated: 2026-01-01\ndate: 2026-01-01\n"
-                     "tags:\n  - decision\n  - ob/cabinet\n---\n\nBody.\n")
+                     "tags:\n  - decision\n  - ob/legacy\n---\n\nBody.\n")
             cs = build_preview(root, build_vault_index(root), "t")
             write_preview_to_disk(root, cs)
             renamed = root / "decisions" / "2026-01-01-better-name.md"
@@ -432,7 +432,7 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             root = Path(tmp)
             live = root / "decisions" / "_index.md"
             _w(live, "---\ntype: index\ncreated: 2020-01-01\nupdated: 2020-01-01\n"
-                     "tags:\n  - index\n  - ob/cabinet\n---\n\n"
+                     "tags:\n  - index\n  - ob/legacy\n---\n\n"
                      "# Decisions\n\n## Entries\n\n- [[stale-entry]]\n")
             cs = build_preview(root, build_vault_index(root), "t")
             self.assertNotIn("decisions/_index.md", cs["file_proposals"],
@@ -442,7 +442,7 @@ class TestStalePreviewGuardHoles(unittest.TestCase):
             backup = apply_preview(root)
             self.assertFalse(live.exists(), "the retired index is gone")
             legacy = backup / "decisions" / "_index.md.legacy"
-            self.assertIn("ob/cabinet", legacy.read_text(),
+            self.assertIn("ob/legacy", legacy.read_text(),
                           "the backup must hold the file exactly as it was")
 
     def test_full_cycle(self):
