@@ -78,6 +78,7 @@ For specialized content types, load the matching reference on demand:
 - `reference/content-bases.md` — `.base` files
 - `reference/content-mermaid.md` — mermaid diagrams (syntax)
 - `reference/mermaid-generation-rules.md` — mermaid generation discipline (always applies when producing fences)
+- `reference/content-technical.md` — technical pages (api, schema, component, spec, source) and procedures
 - `reference/content-markdown.md` — Obsidian-flavoured markdown (callouts, embeds, wikilinks)
 - `reference/content-clipper.md` — Web Clipper templates
 - `reference/content-cli.md` — Obsidian CLI
