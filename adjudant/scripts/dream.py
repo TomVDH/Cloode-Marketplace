@@ -109,6 +109,11 @@ _STOPWORDS: frozenset[str] = frozenset({
     "should", "could", "can", "not", "but", "all", "any", "our", "out", "via",
     "use", "using", "used", "new", "old", "see", "note", "notes", "doc", "docs",
     "decision", "decisions", "session", "sessions", "index", "project", "adjudant",
+    # Fillers that tie two unrelated filenames together. "per" alone made
+    # `knowledge-base-per-brand-theming` read as superseded by
+    # `per-brand-favicon-baked`.
+    "per", "off", "one", "two", "its", "own", "now", "way", "yet",
+    "per-brand", "non", "pre", "post", "sub", "top", "end",
 })
 
 
@@ -294,6 +299,32 @@ def detect_staleness(
     return out
 
 
+
+# A link most decisions carry is background, and background ties nothing. On a
+# real 93-decision project, 46 of 61 supersession pairs shared no title token
+# at all and were held together only by `../brief`, which almost every decision
+# links. Ten of the twenty capped slots went to such pairs, at the top
+# confidence band. That is the failure of the contradiction detector this
+# redesign deleted, which "fired on any two files sharing vocabulary", moved
+# one field over.
+#
+# The threshold is a share of the corpus rather than a fixed count, so a small
+# project is not silenced: with four decisions nothing is background, and a
+# link two of them carry stays evidence.
+_BACKGROUND_LINK_SHARE = 0.25
+
+
+def _background_links(decisions: list) -> set:
+    """Link targets carried by so many decisions that sharing one says nothing."""
+    if len(decisions) < 8:
+        return set()
+    counts: dict = {}
+    for f in decisions:
+        for target in {wl.target for wl in f.wikilinks if wl.target}:
+            counts[target] = counts.get(target, 0) + 1
+    ceiling = max(2, int(len(decisions) * _BACKGROUND_LINK_SHARE))
+    return {t for t, c in counts.items() if c > ceiling}
+
 def detect_supersession_signals(files: list[VaultFile], today: _dt.date) -> list[dict]:
     """Same-topic decision pairs ordered by date — older likely superseded.
 
@@ -303,13 +334,23 @@ def detect_supersession_signals(files: list[VaultFile], today: _dt.date) -> list
     """
     decisions = [f for f in files if f.file_type == "decision" and _file_date(f)]
     toks = {id(f): _title_tokens(f) for f in decisions}
+    common = _background_links(decisions)
     out: list[dict] = []
     for i in range(len(decisions)):
         for j in range(i + 1, len(decisions)):
             a, b = decisions[i], decisions[j]
             shared_tokens = sorted(toks[id(a)] & toks[id(b)])
-            shared_links = _shared_wikilink_targets(a, b)
-            if len(shared_tokens) < 2 and not shared_links:
+            shared_links = [t for t in _shared_wikilink_targets(a, b)
+                            if t not in common]
+            # A shared link SUPPORTS a pair; it can no longer create one.
+            # Supersession means one decision replaces another on the same
+            # SUBJECT, and two decisions citing a third share a citation, not a
+            # subject. Measured on a real 92-decision project: five decisions
+            # linked one hub, which alone produced ten pairs, and 46 of 61
+            # pairs had no shared vocabulary at all. Frequency filtering could
+            # not save it, because the most-linked target appeared in only 5
+            # of 92 files: the corpus has no background link, just hubs.
+            if len(shared_tokens) < 2:
                 continue
             da, db = _file_date(a), _file_date(b)
             if da == db:

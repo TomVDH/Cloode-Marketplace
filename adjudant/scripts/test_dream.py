@@ -783,6 +783,115 @@ class TestPrecisionRebuild(unittest.TestCase):
             found = dream.read_dismissals(project)
             self.assertEqual(sorted(found), ["notes/a.md", "notes/b.md"])
 
+class TestSupersessionNeedsASharedSubject(unittest.TestCase):
+    """Supersession means replacing a decision on the same SUBJECT.
+
+    Measured on a copy of a real 93-decision project: 46 of 61 supersession
+    pairs had ZERO shared title tokens, tied only by a link like `../brief`
+    that most decisions carry. Twelve of the twenty capped slots were
+    supersession, ten of those with no shared vocabulary at all, at confidence
+    0.80, which is the top band and wins the cap.
+
+    That is the same failure as the contradiction detector this redesign
+    deleted, which "fired on any two files sharing vocabulary". This one fired
+    on any two decisions sharing one link.
+    """
+
+    def _project(self, tmp, n_common=12, n_related=2):
+        root = Path(tmp)
+        d = root / "decisions"
+        d.mkdir(parents=True)
+        (root / "brief.md").write_text("---\ntype: project\n---\n# P\n")
+        # Many unrelated decisions, every one linking the project brief.
+        topics = ["form-informs-schema", "zoo-office-waitlist", "relative-gitfile",
+                  "cache-warm-order", "token-budget-split", "vendor-pin-policy",
+                  "queue-drain-rule", "colour-token-scale", "retry-backoff",
+                  "index-shard-size", "log-rotation-window", "tls-cert-source"]
+        for i in range(n_common):
+            (d / f"2026-05-{i+1:02d}-{topics[i % len(topics)]}.md").write_text(
+                "---\ntype: decision\nstatus: active\n---\n"
+                f"# {topics[i % len(topics)]}\n\nSee [[../brief|brief]].\n")
+        # A genuinely related pair: shared vocabulary AND a shared narrow link.
+        for k, day in enumerate(("20", "21")):
+            (d / f"2026-06-{day}-cache-warm-order-revision.md").write_text(
+                "---\ntype: decision\nstatus: active\n---\n"
+                "# cache warm order revision\n\n"
+                "See [[../brief|brief]] and [[../notes/cache-warm|warm]].\n")
+        (root / "notes").mkdir()
+        (root / "notes" / "cache-warm.md").write_text(
+            "---\ntype: note\n---\n# W\n")
+        return root
+
+    def _pairs(self, root):
+        files = list(walk_project(root))
+        return detect_supersession_signals(files, dt.date(2026, 9, 1))
+
+    def test_a_link_most_decisions_carry_is_not_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pairs = self._pairs(self._project(tmp))
+            tied_only_by_brief = [
+                x for x in pairs
+                if not x["shared_terms"] and x["shared_links"] == ["../brief"]]
+            self.assertEqual(
+                tied_only_by_brief, [],
+                "a link carried by most decisions ties nothing")
+
+    def test_every_reported_pair_carries_real_evidence(self):
+        # The outcome: no pair survives on nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            for x in self._pairs(self._project(tmp)):
+                self.assertTrue(
+                    len(x["shared_terms"]) >= 2 or x["shared_links"],
+                    f"pair with no evidence: {x}")
+
+    def test_a_genuinely_related_pair_still_fires(self):
+        # Precision must not be bought by going silent.
+        with tempfile.TemporaryDirectory() as tmp:
+            pairs = self._pairs(self._project(tmp))
+            hits = [x for x in pairs
+                    if "cache" in x["older"]["file"] and "cache" in x["newer"]["file"]]
+            self.assertTrue(hits, "the real supersession pair vanished")
+
+    def test_a_shared_link_alone_never_creates_a_pair(self):
+        # SUPERSEDED test_a_narrow_shared_link_alone_is_still_evidence, which
+        # I wrote before measuring. On the real 92-decision project five
+        # decisions cited one hub, and that alone produced ten pairs with no
+        # shared vocabulary. Citing the same document is not sharing a subject.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "decisions"
+            d.mkdir(parents=True)
+            (root / "notes").mkdir()
+            (root / "notes" / "narrow.md").write_text("---\ntype: note\n---\n# N\n")
+            for i, name in enumerate(("alpha-thing", "beta-other")):
+                (d / f"2026-05-0{i+1}-{name}.md").write_text(
+                    "---\ntype: decision\nstatus: active\n---\n"
+                    f"# {name}\n\nSee [[../notes/narrow|n]].\n")
+            self.assertEqual(self._pairs(root), [],
+                             "a shared citation is not an overlapping subject")
+
+    def test_a_hub_document_does_not_make_a_clique(self):
+        # The measured shape. Five decisions cited one hub decision, and that
+        # alone produced ten pairs (5 choose 2), every one with no shared
+        # vocabulary. On the real project this was 46 of 61 pairs.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "decisions"
+            d.mkdir(parents=True)
+            (d / "2026-05-11-the-hub.md").write_text(
+                "---\ntype: decision\nstatus: active\n---\n# hub\n")
+            names = ["auth-cascade", "consolidation-design", "canonical-store",
+                     "review-remediation", "hardening-sweep"]
+            for k, name in enumerate(names):
+                (d / f"2026-06-{k+1:02d}-{name}.md").write_text(
+                    "---\ntype: decision\nstatus: active\n---\n"
+                    f"# {name}\n\nPer [[2026-05-11-the-hub|hub]].\n")
+            pairs = self._pairs(root)
+            self.assertEqual(
+                pairs, [],
+                "five decisions citing one hub must not yield ten pairs")
+
+
 if __name__ == "__main__":
     unittest.main()
 
